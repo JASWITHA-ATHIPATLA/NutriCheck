@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "HealthGuard – Amazon Food Health Analyzer",
+  "version": "1.0.0",
+  "description": "Detects Add to Cart clicks on Amazon food items and sends nutrition data to your HealthGuard ML analyzer for instant Healthy/Moderate/Unhealthy alerts.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://www.amazon.com/*",
+    "https://www.amazon.in/*",
+    "https://www.amazon.co.uk/*",
+    "https://www.amazon.ca/*",
+    "https://www.amazon.de/*",
+    "http://localhost:3000/*",
+    "http://127.0.0.1:3000/*",
+    "https://*.run.app/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.amazon.com/*",
+        "https://www.amazon.in/*",
+        "https://www.amazon.co.uk/*",
+        "https://www.amazon.ca/*",
+        "https://www.amazon.de/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "HealthGuard Settings"
+  }
+}

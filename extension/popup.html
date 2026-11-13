@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>HealthGuard Settings</title>
+    <style>
+      body {
+        width: 310px;
+        margin: 0;
+        padding: 16px;
+        font-family: system-ui, -apple-system, sans-serif;
+        color: #111827;
+        background: #ffffff;
+      }
+      h1 {
+        font-size: 16px;
+        margin: 0 0 4px;
+        color: #5b21b6;
+      }
+      p {
+        font-size: 12.5px;
+        color: #4b5563;
+        margin: 0 0 12px;
+        line-height: 1.45;
+      }
+      label {
+        display: block;
+        font-size: 12px;
+        font-weight: 600;
+        margin-bottom: 5px;
+      }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 8px 10px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-size: 13px;
+        margin-bottom: 10px;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+      }
+      button {
+        flex: 1;
+        padding: 8px 10px;
+        border-radius: 6px;
+        font-size: 12.5px;
+        font-weight: 600;
+        cursor: pointer;
+        border: 1px solid #d1d5db;
+        background: #ffffff;
+        color: #111827;
+      }
+      button.primary {
+        background: #6d28d9;
+        border-color: #6d28d9;
+        color: #ffffff;
+      }
+      #status {
+        margin-top: 8px;
+        font-size: 12px;
+        color: #15803d;
+        min-height: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>HealthGuard Amazon Watcher</h1>
+    <p>
+      Monitors Add to Cart clicks on Amazon food pages and sends them to your
+      HealthGuard analyzer.
+    </p>
+    <label for="hg-url">HealthGuard Website URL</label>
+    <input
+      id="hg-url"
+      type="url"
+      placeholder="http://localhost:3000"
+    />
+    <div class="row">
+      <button id="save-btn" class="primary" type="button">Save URL</button>
+      <button id="open-btn" type="button">Open Dashboard</button>
+    </div>
+    <div id="status"></div>
+    <script src="popup.js"></script>
+  </body>
+</html>

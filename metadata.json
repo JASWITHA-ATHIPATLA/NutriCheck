@@ -1,0 +1,6 @@
+{
+  "name": "HealthGuard – Food Health Analyzer",
+  "description": "Nutrition-based food health classification and cart alert analyzer powered by Scikit-learn, FastAPI, and React.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

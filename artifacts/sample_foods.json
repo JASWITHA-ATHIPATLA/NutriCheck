@@ -1,0 +1,112 @@
+[
+  {
+    "food": "Broccoli Cooked",
+    "calories": 98.0,
+    "sugars": 3.9,
+    "fat": 1.1,
+    "protein": 6.7,
+    "sodium_mg": 100.0,
+    "dataset_label": "Healthy",
+    "source_group": "FOOD-DATA-GROUP5_135b5646.csv"
+  },
+  {
+    "food": "Salmon Cooked",
+    "calories": 733.0,
+    "sugars": 0.0,
+    "fat": 44.0,
+    "protein": 78.7,
+    "sodium_mg": 200.0,
+    "dataset_label": "Healthy",
+    "source_group": "FOOD-DATA-GROUP1_0facb17b.csv"
+  },
+  {
+    "food": "Oatmeal Bread",
+    "calories": 73.0,
+    "sugars": 2.2,
+    "fat": 1.2,
+    "protein": 2.3,
+    "sodium_mg": 100.0,
+    "dataset_label": "Healthy",
+    "source_group": "FOOD-DATA-GROUP5_135b5646.csv"
+  },
+  {
+    "food": "Spinach Spaghetti Cooked",
+    "calories": 182.0,
+    "sugars": 0.0,
+    "fat": 0.9,
+    "protein": 6.4,
+    "sodium_mg": 61.0,
+    "dataset_label": "Healthy",
+    "source_group": "FOOD-DATA-GROUP1_0facb17b.csv"
+  },
+  {
+    "food": "Pepperoni Pizza Dominos",
+    "calories": 308.0,
+    "sugars": 4.2,
+    "fat": 12.6,
+    "protein": 12.7,
+    "sodium_mg": 700.0,
+    "dataset_label": "Moderate",
+    "source_group": "FOOD-DATA-GROUP1_0facb17b.csv"
+  },
+  {
+    "food": "French Fries Mcdonalds",
+    "calories": 378.0,
+    "sugars": 0.2,
+    "fat": 18.1,
+    "protein": 4.0,
+    "sodium_mg": 200.0,
+    "dataset_label": "Moderate",
+    "source_group": "FOOD-DATA-GROUP1_0facb17b.csv"
+  },
+  {
+    "food": "Chocolate Pudding",
+    "calories": 213.0,
+    "sugars": 25.8,
+    "fat": 6.9,
+    "protein": 3.1,
+    "sodium_mg": 200.0,
+    "dataset_label": "Moderate",
+    "source_group": "FOOD-DATA-GROUP4_a4dc353a.csv"
+  },
+  {
+    "food": "Root Beer",
+    "calories": 202.0,
+    "sugars": 52.3,
+    "fat": 0.0,
+    "protein": 0.0,
+    "sodium_mg": 68.0,
+    "dataset_label": "Unhealthy",
+    "source_group": "FOOD-DATA-GROUP2_e71e2aa7.csv"
+  },
+  {
+    "food": "Apple Crisp",
+    "calories": 454.0,
+    "sugars": 55.5,
+    "fat": 9.7,
+    "protein": 4.9,
+    "sodium_mg": 1000.0,
+    "dataset_label": "Unhealthy",
+    "source_group": "FOOD-DATA-GROUP1_0facb17b.csv"
+  },
+  {
+    "food": "Cheddar Cheese",
+    "calories": 113.0,
+    "sugars": 0.1,
+    "fat": 9.3,
+    "protein": 6.4,
+    "sodium_mg": 200.0,
+    "dataset_label": "Unhealthy",
+    "source_group": "FOOD-DATA-GROUP1_0facb17b.csv"
+  },
+  {
+    "food": "Biscuit With Egg Cheese Bacon",
+    "calories": 436.0,
+    "sugars": 2.5,
+    "fat": 25.3,
+    "protein": 17.4,
+    "sodium_mg": 1200.0,
+    "dataset_label": "Unhealthy",
+    "source_group": "FOOD-DATA-GROUP1_0facb17b.csv"
+  }
+]
