@@ -128,6 +128,8 @@ export interface AmazonCartEvent {
   matched_food: string | null;
   message: string | null;
   analysis: PredictionResult | null;
+  ingredients_text?: string | null;
+  ingredient_scan?: PacketScanResult | null;
 }
 
 export interface CatalogFoodItem {

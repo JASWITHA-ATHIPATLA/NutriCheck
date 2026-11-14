@@ -17,11 +17,18 @@ interface AmazonConnectViewProps {
   onAnalyzeAmazonText: (payload: {
     product_title: string;
     nutrition_text: string;
+    ingredients_text?: string;
     product_url?: string;
   }) => Promise<void>;
   onInspectEventInAnalyzer: (event: AmazonCartEvent) => void;
   onDeleteEvent: (eventId: string) => void;
   onClearEvents: () => void;
+}
+
+function getVerdictLabel(classification: 'Healthy' | 'Moderate' | 'Unhealthy'): string {
+  if (classification === 'Healthy') return 'Good';
+  if (classification === 'Moderate') return 'Moderate';
+  return 'Not Good';
 }
 
 export function AmazonConnectView({
@@ -35,6 +42,7 @@ export function AmazonConnectView({
 }: AmazonConnectViewProps) {
   const [productTitle, setProductTitle] = useState('');
   const [nutritionText, setNutritionText] = useState('');
+  const [ingredientsText, setIngredientsText] = useState('');
   const [productUrl, setProductUrl] = useState('');
   const [copiedUrl, setCopiedUrl] = useState(false);
 
@@ -55,6 +63,7 @@ export function AmazonConnectView({
     await onAnalyzeAmazonText({
       product_title: productTitle.trim(),
       nutrition_text: nutritionText.trim(),
+      ingredients_text: ingredientsText.trim() || undefined,
       product_url: productUrl.trim() || undefined,
     });
   }
@@ -69,20 +78,17 @@ export function AmazonConnectView({
                 Amazon Add-to-Cart Browser Extension
               </h2>
               <p className="card-subtitle">
-                Real-time interception on Amazon grocery &amp; food product pages.
+                Automatically scans Amazon food ingredients &amp; calories on every Add to Cart click.
               </p>
             </div>
             <Puzzle size={20} color="#059669" />
           </div>
 
           <div className="info-callout">
-            <strong>Works with both Localhost &amp; Vercel:</strong> Load the{' '}
-            <code>extension/</code> folder in Chrome/Edge and paste your live
-            website URL (such as <code>https://your-app.vercel.app</code> or{' '}
-            <code>http://localhost:3000</code>) into the extension popup. When
-            you click <strong>Add to Cart</strong> on Amazon, the extension
-            analyzes the food immediately and syncs it straight into this
-            website tab automatically.
+            <strong>Works for all packed &amp; staple Amazon food items:</strong> Load the{' '}
+            <code>extension/</code> folder in Chrome/Edge and save your live URL (
+            <code>https://your-app.vercel.app</code> or <code>http://localhost:3000</code>). When you click{' '}
+            <strong>Add to Cart</strong> on Amazon, NutriCheck reads the product page ingredients &amp; nutrition facts, falls back across Open Food Facts, our 2,158-food dataset, and grocery staples (like rice, atta, dal, noodles, snacks), and syncs straight to this website.
           </div>
 
           <ol className="rule-list" style={{ marginBottom: '16px' }}>
@@ -90,7 +96,7 @@ export function AmazonConnectView({
               Open <code>chrome://extensions</code> in Chrome/Edge, enable{' '}
               <strong>Developer mode</strong>, and click{' '}
               <strong>Load unpacked</strong> on the <code>extension/</code>{' '}
-              folder (or click Reload if already loaded).
+              folder (or click Reload ↻ if already loaded).
             </li>
             <li>
               Click the <strong>NutriCheck</strong> extension icon, paste your
@@ -98,8 +104,7 @@ export function AmazonConnectView({
             </li>
             <li>
               Keep Amazon and NutriCheck in the same Chrome browser — every{' '}
-              <strong>Add to Cart</strong> click syncs here automatically, or
-              click <strong>Open in NutriCheck Website</strong> on the popup.
+              <strong>Add to Cart</strong> click syncs here automatically.
             </li>
           </ol>
 
@@ -120,11 +125,10 @@ export function AmazonConnectView({
           <div className="card-header">
             <div>
               <h2 id="amazon-paste-heading" className="card-title">
-                Analyze Copied Amazon Item (App / Manual Intake)
+                Analyze Any Amazon Food Item (Manual Intake)
               </h2>
               <p className="card-subtitle">
-                Using the mobile Amazon app? Paste the product title and optional
-                nutrition label text to analyze immediately.
+                Enter an Amazon food title (like &ldquo;rice&rdquo; or &ldquo;Maggi Masala Noodles&rdquo;) and optional Amazon page ingredients/nutrition text.
               </p>
             </div>
           </div>
@@ -140,21 +144,37 @@ export function AmazonConnectView({
                 type="text"
                 required
                 className="field-input"
-                placeholder="e.g., Quaker Oatmeal Cookies or A&W Root Beer"
+                placeholder="e.g., India Gate Basmati Rice, Rice, or Maggi Masala Noodles"
                 value={productTitle}
                 onChange={(e) => setProductTitle(e.target.value)}
               />
             </div>
 
             <div className="field">
+              <label htmlFor="amz-ingredients" className="field-label">
+                <span>Ingredients Text (from Amazon page)</span>
+                <span className="field-unit">Optional</span>
+              </label>
+              <textarea
+                id="amz-ingredients"
+                className="field-input field-textarea"
+                style={{ minHeight: '72px' }}
+                placeholder="e.g., Ingredients: Refined Wheat Flour (Maida), Palm Oil, Salt, Sugar, TBHQ"
+                value={ingredientsText}
+                onChange={(e) => setIngredientsText(e.target.value)}
+              />
+            </div>
+
+            <div className="field">
               <label htmlFor="amz-nutrition" className="field-label">
-                <span>Nutrition Facts Text (from product page)</span>
+                <span>Nutrition Facts Text (from Amazon page)</span>
                 <span className="field-unit">Optional</span>
               </label>
               <textarea
                 id="amz-nutrition"
                 className="field-input field-textarea"
-                placeholder="e.g., Calories 160, Total Fat 6g, Sugars 12g, Protein 2g, Sodium 190mg (leave blank to auto-lookup across Open Food Facts & the 2,158-food dataset)"
+                style={{ minHeight: '72px' }}
+                placeholder="e.g., Calories 356, Sugars 0.1g, Fat 0.6g, Protein 7.1g, Sodium 5mg (or leave blank for auto-lookup)"
                 value={nutritionText}
                 onChange={(e) => setNutritionText(e.target.value)}
               />
@@ -169,7 +189,7 @@ export function AmazonConnectView({
                 id="amz-url"
                 type="url"
                 className="field-input"
-                placeholder="https://www.amazon.com/dp/..."
+                placeholder="https://www.amazon.in/dp/... or https://www.amazon.com/dp/..."
                 value={productUrl}
                 onChange={(e) => setProductUrl(e.target.value)}
               />
@@ -220,13 +240,14 @@ export function AmazonConnectView({
             <p className="empty-desc">
               Click <strong>Add to Cart</strong> on any food product in Amazon
               (with the Chrome extension loaded) or submit an item on the left to
-              see its Healthy, Moderate, or Unhealthy verdict here.
+              see its Good, Moderate, or Not Good verdict, calories table, and ingredients here.
             </p>
           </div>
         ) : (
           <div className="event-card-list">
             {events.map((ev) => {
               const a = ev.analysis;
+              const scan = ev.ingredient_scan;
               const badgeCls = !a
                 ? 'is-pending'
                 : a.classification === 'Healthy'
@@ -234,6 +255,16 @@ export function AmazonConnectView({
                 : a.classification === 'Moderate'
                 ? 'is-moderate'
                 : 'is-unhealthy';
+
+              const ingGoodCount = scan
+                ? scan.ingredient_findings.filter((f) => f.rating === 'good').length
+                : 0;
+              const ingBadCount = scan
+                ? scan.ingredient_findings.filter((f) => f.rating === 'high').length
+                : 0;
+              const ingModCount = scan
+                ? scan.ingredient_findings.filter((f) => f.rating === 'moderate').length
+                : 0;
 
               return (
                 <article key={ev.event_id} className="event-item">
@@ -243,24 +274,13 @@ export function AmazonConnectView({
                       <div className="event-item-meta">
                         Source: {ev.nutrition_source}
                         {ev.matched_food ? ` (${ev.matched_food})` : ''}
-                        {a ? (
-                          <>
-                            {' '}
-                            · <span className="tabular">{a.nutrition.calories}</span> kcal ·{' '}
-                            <span className="tabular">{a.nutrition.sugars}g</span> sugar ·{' '}
-                            <span className="tabular">
-                              {Math.round(a.nutrition.sodium_mg)}mg
-                            </span>{' '}
-                            sodium
-                          </>
-                        ) : null}
                       </div>
                     </div>
 
                     <div className={`status-badge ${badgeCls}`}>
                       {a ? (
                         <span>
-                          {a.classification} ·{' '}
+                          {getVerdictLabel(a.classification)} ·{' '}
                           <span className="tabular">{a.health_score}</span>
                         </span>
                       ) : (
@@ -269,7 +289,49 @@ export function AmazonConnectView({
                     </div>
                   </div>
 
-                  <p className="card-subtitle" style={{ color: '#374151' }}>
+                  {a && (
+                    <div className="data-table-wrap" style={{ margin: '10px 0' }}>
+                      <table className="data-table nutrition-table amz-mini-table">
+                        <thead>
+                          <tr>
+                            <th className="num">Calories</th>
+                            <th className="num">Sugars</th>
+                            <th className="num">Fat</th>
+                            <th className="num">Protein</th>
+                            <th className="num">Sodium</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td className="num">{a.nutrition.calories} kcal</td>
+                            <td className="num">{a.nutrition.sugars} g</td>
+                            <td className="num">{a.nutrition.fat} g</td>
+                            <td className="num">{a.nutrition.protein} g</td>
+                            <td className="num">{Math.round(a.nutrition.sodium_mg)} mg</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {scan && (
+                    <div className="amz-ing-strip">
+                      <span className={`eval-pill ${scan.verdict === 'Good' ? 'is-good' : scan.verdict === 'Moderate' ? 'is-moderate' : 'is-high'}`}>
+                        Ingredients: {scan.verdict} ({scan.score}/100)
+                      </span>
+                      <span className="amz-ing-counts">
+                        {ingGoodCount} good · {ingModCount} caution · {ingBadCount} bad
+                      </span>
+                      {scan.parsed_ingredients.length > 0 && (
+                        <div className="amz-ing-preview">
+                          Scanned: {scan.parsed_ingredients.slice(0, 6).join(', ')}
+                          {scan.parsed_ingredients.length > 6 ? '…' : ''}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <p className="card-subtitle" style={{ color: '#374151', marginTop: 6 }}>
                     {a ? a.explanation : ev.message}
                   </p>
 
@@ -280,7 +342,7 @@ export function AmazonConnectView({
                       style={{ padding: '6px 10px', fontSize: '12.5px' }}
                       onClick={() => onInspectEventInAnalyzer(ev)}
                     >
-                      {a ? 'Open Full Breakdown' : 'Enter Nutrition Values'}
+                      {a ? 'View Pie Chart & Tables' : 'Enter Nutrition Values'}
                     </button>
 
                     {!a && (
@@ -292,6 +354,7 @@ export function AmazonConnectView({
                           setProductTitle(ev.product_title);
                           setProductUrl(ev.product_url || '');
                           setNutritionText('');
+                          setIngredientsText(ev.ingredients_text || '');
                           document
                             .getElementById('amz-nutrition')
                             ?.focus();

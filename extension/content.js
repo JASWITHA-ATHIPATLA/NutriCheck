@@ -9,7 +9,9 @@
     'button[name="submit.addToCart"]',
   ].join(',');
 
-  const NUTRITION_REGEX = /calori|energy|sugar|sodium|salt|protein|fat|nutrition|kcal|carbohydrate/i;
+  const NUTRITION_REGEX =
+    /calori|energy|sugar|sodium|salt|protein|fat|nutrition|kcal|carbohydrate|carbs/i;
+  const INGREDIENT_REGEX = /\bingredients?\b|\bcontains\b|\ballergen/i;
 
   function isAddToCartElement(target) {
     if (!target || !(target instanceof Element)) return null;
@@ -32,31 +34,47 @@
     return null;
   }
 
-  function extractProductTitle(clickedEl) {
+  function extractProductLinkFromCard(clickedEl) {
     const card = clickedEl.closest('[data-asin]');
-    if (card) {
-      const cardTitle = card.querySelector(
-        'h2 a span, h2 span, [data-cy="title-recipe"] span, .a-size-medium, .a-size-base-plus'
-      );
-      if (cardTitle && cardTitle.textContent.trim()) {
-        return cardTitle.textContent.trim();
+    if (!card) return null;
+    const link = card.querySelector('a[href*="/dp/"], a[href*="/gp/product/"]');
+    if (!link) return null;
+    try {
+      return new URL(link.getAttribute('href'), window.location.origin).href;
+    } catch {
+      return null;
+    }
+  }
+
+  function extractProductTitleFromDoc(doc, clickedEl) {
+    if (clickedEl) {
+      const card = clickedEl.closest('[data-asin]');
+      if (card) {
+        const cardTitle = card.querySelector(
+          'h2 a span, h2 span, [data-cy="title-recipe"] span, .a-size-medium, .a-size-base-plus'
+        );
+        if (cardTitle && cardTitle.textContent.trim()) {
+          return cardTitle.textContent.trim();
+        }
       }
     }
 
     const pageTitle =
-      document.querySelector('#productTitle') ||
-      document.querySelector('#title') ||
-      document.querySelector('h1');
+      doc.querySelector('#productTitle') ||
+      doc.querySelector('#title') ||
+      doc.querySelector('h1');
     if (pageTitle && pageTitle.textContent.trim()) {
       return pageTitle.textContent.trim();
     }
 
-    return document.title.replace(/^Amazon\.[^:]+:\s*/i, '').trim();
+    return (doc.title || document.title)
+      .replace(/^Amazon\.[^:]+:\s*/i, '')
+      .trim();
   }
 
-  function extractBrandAndBarcode() {
+  function extractBrandAndBarcodeFromDoc(doc) {
     let brand = '';
-    const byline = document.querySelector('#bylineInfo, #brand');
+    const byline = doc.querySelector('#bylineInfo, #brand');
     if (byline && byline.textContent) {
       brand = byline.textContent
         .replace(/visit the\s+/i, '')
@@ -70,11 +88,14 @@
       '#detailBullets_feature_div',
       '#productDetails_techSpec_section_1',
       '#productDetails_detailBullets_sections1',
+      '#productFactsDesktopExpander',
     ];
     for (const sel of detailRoots) {
-      const el = document.querySelector(sel);
-      if (!el || !el.innerText) continue;
-      const m = el.innerText.match(
+      const el = doc.querySelector(sel);
+      if (!el) continue;
+      const txt = (el.innerText || el.textContent || '').trim();
+      if (!txt) continue;
+      const m = txt.match(
         /(?:EAN|UPC|GTIN|Barcode)\s*[:\s\-]*([0-9]{8,14})/i
       );
       if (m) {
@@ -85,45 +106,124 @@
     return { brand, barcode };
   }
 
-  function extractNutritionText() {
-    const chunks = [];
+  function extractIngredientsAndNutritionFromDoc(doc) {
+    const nutritionChunks = [];
+    const ingredientChunks = [];
+
     const candidateSelectors = [
+      '#important-information',
+      '[data-feature-name="importantInformation"]',
+      '#productFactsDesktopExpander',
       '#productDetails_techSpec_section_1',
       '#productDetails_detailBullets_sections1',
       '#detailBullets_feature_div',
-      '#important-information',
       '#productOverview_feature_div',
       '#feature-bullets',
       '#productDescription',
       '#aplus',
+      '#aplus_feature_div',
       '#vital-info',
       '.a-expander-content',
     ];
 
     for (const sel of candidateSelectors) {
-      document.querySelectorAll(sel).forEach((el) => {
-        const text = (el.innerText || '').trim();
-        if (text && NUTRITION_REGEX.test(text)) {
-          chunks.push(text.slice(0, 2000));
+      doc.querySelectorAll(sel).forEach((el) => {
+        const text = (el.innerText || el.textContent || '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (!text) return;
+        if (NUTRITION_REGEX.test(text)) {
+          nutritionChunks.push(text.slice(0, 2200));
+        }
+        if (INGREDIENT_REGEX.test(text)) {
+          const ingMatch = text.match(
+            /ingredients?\s*[:\-]?\s*([^]{3,1200}?)(?:\bdirections\b|\blegal disclaimer\b|\bnutrition\b|\ballergen\b|\bstorage\b|$)/i
+          );
+          if (ingMatch && ingMatch[1]) {
+            ingredientChunks.push(`Ingredients: ${ingMatch[1].trim()}`);
+          } else {
+            ingredientChunks.push(text.slice(0, 1000));
+          }
         }
       });
     }
 
-    document.querySelectorAll('table').forEach((tbl) => {
-      const t = (tbl.innerText || '').trim();
-      if (t && NUTRITION_REGEX.test(t)) {
-        chunks.push(t.slice(0, 1500));
+    doc.querySelectorAll('table').forEach((tbl) => {
+      const t = (tbl.innerText || tbl.textContent || '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (!t) return;
+      if (NUTRITION_REGEX.test(t)) {
+        nutritionChunks.push(t.slice(0, 1500));
+      }
+      if (INGREDIENT_REGEX.test(t)) {
+        ingredientChunks.push(t.slice(0, 1200));
       }
     });
 
-    document.querySelectorAll('img[alt]').forEach((img) => {
+    doc.querySelectorAll('img[alt]').forEach((img) => {
       const alt = (img.getAttribute('alt') || '').trim();
-      if (alt && NUTRITION_REGEX.test(alt)) {
-        chunks.push(alt.slice(0, 800));
-      }
+      if (!alt) return;
+      if (NUTRITION_REGEX.test(alt)) nutritionChunks.push(alt.slice(0, 800));
+      if (INGREDIENT_REGEX.test(alt)) ingredientChunks.push(alt.slice(0, 800));
     });
 
-    return chunks.join('\n').slice(0, 6000);
+    return {
+      nutritionText: Array.from(new Set(nutritionChunks)).join('\n').slice(0, 6000),
+      ingredientsText: Array.from(new Set(ingredientChunks)).join('\n').slice(0, 3500),
+    };
+  }
+
+  async function resolveProductDetails(btn) {
+    let targetDoc = document;
+    let productTitle = extractProductTitleFromDoc(document, btn);
+    let productUrl = window.location.href;
+
+    const extractedCurrent = extractIngredientsAndNutritionFromDoc(document);
+    let nutritionText = extractedCurrent.nutritionText;
+    let ingredientsText = extractedCurrent.ingredientsText;
+    let meta = extractBrandAndBarcodeFromDoc(document);
+
+    // If clicked on an Amazon search card without full product HTML, fetch the /dp/ page
+    if (!nutritionText && !ingredientsText) {
+      const dpUrl = extractProductLinkFromCard(btn);
+      if (dpUrl) {
+        productUrl = dpUrl;
+        try {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 2500);
+          const res = await fetch(dpUrl, {
+            credentials: 'same-origin',
+            signal: ctrl.signal,
+          });
+          clearTimeout(timer);
+          if (res.ok) {
+            const html = await res.text();
+            const parsedDoc = new DOMParser().parseFromString(html, 'text/html');
+            targetDoc = parsedDoc;
+            const fetchedTitle = extractProductTitleFromDoc(targetDoc, null);
+            if (fetchedTitle && fetchedTitle.length > 2) {
+              productTitle = fetchedTitle;
+            }
+            const fetchedData = extractIngredientsAndNutritionFromDoc(targetDoc);
+            nutritionText = fetchedData.nutritionText;
+            ingredientsText = fetchedData.ingredientsText;
+            meta = extractBrandAndBarcodeFromDoc(targetDoc);
+          }
+        } catch {
+          // Ignore network/timeout errors and proceed with title lookup
+        }
+      }
+    }
+
+    return {
+      productTitle,
+      productUrl,
+      nutritionText,
+      ingredientsText,
+      brand: meta.brand,
+      barcode: meta.barcode,
+    };
   }
 
   function removeExistingToast() {
@@ -146,11 +246,11 @@
         success: { bg: '#f0fdf4', border: '#86efac', ink: '#14532d' },
         warning: { bg: '#fffbeb', border: '#fcd34d', ink: '#92400e' },
         danger: { bg: '#fef2f2', border: '#fca5a5', ink: '#991b1b' },
-        info: { bg: '#f5f3ff', border: '#c4b5fd', ink: '#4c1d95' },
+        info: { bg: '#ecfdf5', border: '#a7f3d0', ink: '#047857' },
       }[level || 'info'] || {
-        bg: '#f5f3ff',
-        border: '#c4b5fd',
-        ink: '#4c1d95',
+        bg: '#ecfdf5',
+        border: '#a7f3d0',
+        ink: '#047857',
       };
 
     const toast = document.createElement('div');
@@ -229,7 +329,6 @@
     document.body.appendChild(toast);
   }
 
-  // Restore any active toast after Amazon navigates (e.g. to /cart/smart-wagon)
   function restoreStoredToast() {
     if (!chrome?.storage?.local) return;
     chrome.storage.local.get(['lastHealthGuardToast'], (res) => {
@@ -260,32 +359,31 @@
       const btn = isAddToCartElement(event.target);
       if (!btn) return;
 
-      const productTitle = extractProductTitle(btn);
-      if (!productTitle) return;
+      void (async () => {
+        const details = await resolveProductDetails(btn);
+        if (!details.productTitle) return;
 
-      const nutritionText = extractNutritionText();
-      const { brand, barcode } = extractBrandAndBarcode();
-      const productUrl = window.location.href;
-
-      chrome.runtime.sendMessage(
-        {
-          type: 'HEALTHGUARD_ADD_TO_CART',
-          payload: {
-            product_title: productTitle,
-            product_url: productUrl,
-            nutrition_text: nutritionText,
-            brand: brand || undefined,
-            barcode: barcode || undefined,
-            source: 'amazon_browser_extension',
+        chrome.runtime.sendMessage(
+          {
+            type: 'HEALTHGUARD_ADD_TO_CART',
+            payload: {
+              product_title: details.productTitle,
+              product_url: details.productUrl,
+              nutrition_text: details.nutritionText,
+              ingredients_text: details.ingredientsText,
+              brand: details.brand || undefined,
+              barcode: details.barcode || undefined,
+              source: 'amazon_browser_extension',
+            },
           },
-        },
-        (response) => {
-          if (chrome.runtime.lastError || !response) return;
-          if (response.toast) {
-            showHealthToast(response.toast);
+          (response) => {
+            if (chrome.runtime.lastError || !response) return;
+            if (response.toast) {
+              showHealthToast(response.toast);
+            }
           }
-        }
-      );
+        );
+      })();
     },
     true
   );

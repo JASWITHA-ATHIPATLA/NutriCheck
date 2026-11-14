@@ -1773,6 +1773,35 @@ textarea {
   text-decoration: underline;
 }
 
+.amz-mini-table th,
+.amz-mini-table td {
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.amz-ing-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-surface);
+  margin: 8px 0;
+}
+
+.amz-ing-counts {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.amz-ing-preview {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
 /* Clean Gauge + Pie Visual Grid & Structured Nutrition Tables */
 .score-visual-grid {
   display: grid;

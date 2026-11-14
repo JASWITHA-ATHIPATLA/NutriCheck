@@ -68,6 +68,7 @@ class AmazonAddToCartInput(BaseModel):
     product_title: str = Field(..., min_length=2, max_length=300)
     product_url: str | None = Field(default=None, max_length=1000)
     nutrition_text: str | None = Field(default=None, max_length=8000)
+    ingredients_text: str | None = Field(default=None, max_length=6000)
     brand: str | None = Field(default=None, max_length=120)
     barcode: str | None = Field(default=None, max_length=40)
     calories: float | None = Field(default=None, ge=0, le=10000)
@@ -104,6 +105,30 @@ class PredictionResponse(BaseModel):
     model_used: str
 
 
+class IngredientFinding(BaseModel):
+    ingredient: str
+    rating: Literal["good", "moderate", "high"]
+    reason: str
+
+
+class ScanReason(BaseModel):
+    type: Literal["good", "warning", "danger"]
+    text: str
+
+
+class PacketScanResponse(BaseModel):
+    product_name: str
+    verdict: Literal["Good", "Moderate", "Not Good"]
+    score: float
+    nutrition_found: bool
+    ingredients_count: int
+    parsed_ingredients: list[str]
+    ingredient_findings: list[IngredientFinding]
+    reasons: list[ScanReason]
+    summary: str
+    nutrition_analysis: PredictionResponse | None = None
+
+
 class AmazonCartEvent(BaseModel):
     event_id: str
     timestamp: str
@@ -115,6 +140,8 @@ class AmazonCartEvent(BaseModel):
     matched_food: str | None
     message: str | None = None
     analysis: PredictionResponse | None = None
+    ingredients_text: str | None = None
+    ingredient_scan: PacketScanResponse | None = None
 
 
 def build_feature_frame(payload: FoodNutritionInput) -> tuple[pd.DataFrame, dict[str, float]]:
@@ -399,6 +426,7 @@ def parse_nutrition_text(text: str) -> dict[str, float] | None:
     )
     fat = extract_grams(r"(?:total\s+)?fat\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b")
     protein = extract_grams(r"protein\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b")
+    carbs = extract_grams(r"(?:total\s+)?carbohydrate[s]?\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b")
 
     sodium_mg: float | None = None
     sod_mg_match = re.search(
@@ -417,8 +445,8 @@ def parse_nutrition_text(text: str) -> dict[str, float] | None:
     elif salt_g_match:
         sodium_mg = float(salt_g_match.group(1)) * 393.4
 
-    found_macros = sum(x is not None for x in (sugars, fat, protein, sodium_mg))
-    if found_macros < 2:
+    found_macros = sum(x is not None for x in (sugars, fat, protein, sodium_mg, carbs))
+    if found_macros < 1:
         return None
 
     return {
@@ -467,6 +495,82 @@ def _clean_tokens(text: str) -> list[str]:
         for t in cleaned.split()
         if len(t) > 1 and t not in STOP_WORDS and not t.isdigit()
     ]
+
+
+GROCERY_STAPLE_PROFILES: list[dict[str, Any]] = [
+    {"keywords": ["brown rice", "red rice", "black rice", "wild rice"], "name": "Brown Rice (Whole Grain, per 100g)", "calories": 362.0, "sugars": 0.7, "fat": 2.7, "protein": 7.5, "sodium_mg": 4.0},
+    {"keywords": ["basmati rice", "sona masoori", "jasmine rice", "ponni rice", "white rice", "rice"], "name": "Rice (Dry Grain, per 100g)", "calories": 356.0, "sugars": 0.1, "fat": 0.6, "protein": 7.1, "sodium_mg": 5.0},
+    {"keywords": ["quinoa"], "name": "Quinoa (Whole Grain, per 100g)", "calories": 368.0, "sugars": 1.6, "fat": 6.1, "protein": 14.1, "sodium_mg": 5.0},
+    {"keywords": ["rolled oats", "steel cut oats", "oats", "oatmeal"], "name": "Wholegrain Oats (per 100g)", "calories": 375.0, "sugars": 1.0, "fat": 7.0, "protein": 13.0, "sodium_mg": 5.0},
+    {"keywords": ["muesli", "granola"], "name": "Granola / Muesli (per 100g)", "calories": 410.0, "sugars": 18.0, "fat": 11.5, "protein": 9.5, "sodium_mg": 180.0},
+    {"keywords": ["cornflakes", "corn flakes", "cereal"], "name": "Breakfast Cornflakes (per 100g)", "calories": 378.0, "sugars": 9.5, "fat": 0.9, "protein": 7.5, "sodium_mg": 620.0},
+    {"keywords": ["whole wheat", "atta", "multigrain flour", "chakki", "ragi", "millet", "jowar", "bajra", "besan", "poha", "suji", "rava"], "name": "Whole Grain Flour / Atta / Millet (per 100g)", "calories": 341.0, "sugars": 0.4, "fat": 1.8, "protein": 12.1, "sodium_mg": 3.0},
+    {"keywords": ["maida", "all purpose flour", "refined flour"], "name": "Refined White Flour / Maida (per 100g)", "calories": 364.0, "sugars": 0.3, "fat": 1.0, "protein": 10.3, "sodium_mg": 2.0},
+    {"keywords": ["toor dal", "moong dal", "masoor dal", "chana dal", "urad dal", "lentil", "dal", "rajma", "chickpea", "kabuli chana"], "name": "Lentils / Dal (Dry, per 100g)", "calories": 343.0, "sugars": 2.0, "fat": 1.5, "protein": 22.3, "sodium_mg": 12.0},
+    {"keywords": ["brown bread", "whole wheat bread", "multigrain bread"], "name": "Whole Wheat Bread (per 100g)", "calories": 252.0, "sugars": 4.3, "fat": 3.4, "protein": 11.2, "sodium_mg": 440.0},
+    {"keywords": ["white bread", "milk bread", "bread", "bun", "pav"], "name": "Packaged Bread (per 100g)", "calories": 266.0, "sugars": 5.7, "fat": 3.3, "protein": 8.9, "sodium_mg": 490.0},
+    {"keywords": ["instant noodles", "maggi", "ramen", "yippee", "top ramen", "cup noodles", "noodles"], "name": "Instant Noodles (per 100g)", "calories": 427.0, "sugars": 2.1, "fat": 15.7, "protein": 8.2, "sodium_mg": 1120.0},
+    {"keywords": ["pasta", "spaghetti", "macaroni", "penne", "fusilli", "vermicelli"], "name": "Dry Pasta / Vermicelli (per 100g)", "calories": 358.0, "sugars": 2.7, "fat": 1.5, "protein": 12.8, "sodium_mg": 6.0},
+    {"keywords": ["potato chips", "lays", "kurkure", "bingo", "doritos", "pringles", "nachos", "namkeen", "bhujia", "mixture", "chips", "popcorn"], "name": "Packaged Chips / Namkeen (per 100g)", "calories": 536.0, "sugars": 1.5, "fat": 34.0, "protein": 6.8, "sodium_mg": 620.0},
+    {"keywords": ["biscuit", "cookies", "oreo", "parle", "good day", "bourbon", "marie", "cracker", "rusk", "wafer", "cake", "donut", "pastry"], "name": "Packaged Biscuits / Baked Snack (per 100g)", "calories": 472.0, "sugars": 24.0, "fat": 19.5, "protein": 6.4, "sodium_mg": 340.0},
+    {"keywords": ["dark chocolate"], "name": "Dark Chocolate (per 100g)", "calories": 546.0, "sugars": 24.0, "fat": 31.0, "protein": 7.8, "sodium_mg": 20.0},
+    {"keywords": ["chocolate", "dairy milk", "kitkat", "snickers", "mars", "candy", "toffee", "barfi", "gulab jamun"], "name": "Chocolate / Confectionery (per 100g)", "calories": 535.0, "sugars": 51.5, "fat": 29.7, "protein": 7.6, "sodium_mg": 79.0},
+    {"keywords": ["coca cola", "pepsi", "sprite", "fanta", "thums up", "mountain dew", "soft drink", "soda", "cola", "energy drink", "red bull"], "name": "Sweetened Soft Drink (per 250ml)", "calories": 105.0, "sugars": 26.5, "fat": 0.0, "protein": 0.0, "sodium_mg": 22.0},
+    {"keywords": ["fruit juice", "real juice", "tropicana", "mango drink", "frooti", "maaza", "juice"], "name": "Packaged Fruit Juice / Nectar (per 250ml)", "calories": 120.0, "sugars": 27.0, "fat": 0.0, "protein": 0.4, "sodium_mg": 25.0},
+    {"keywords": ["coconut water", "mineral water", "drinking water"], "name": "Coconut / Natural Hydration Drink (per 250ml)", "calories": 46.0, "sugars": 6.0, "fat": 0.0, "protein": 0.5, "sodium_mg": 45.0},
+    {"keywords": ["green tea", "herbal tea", "chamomile", "black tea", "tea", "chai", "coffee", "espresso", "nescafe"], "name": "Unsweetened Tea / Coffee (Prepared)", "calories": 5.0, "sugars": 0.0, "fat": 0.0, "protein": 0.3, "sodium_mg": 4.0},
+    {"keywords": ["milk", "toned milk", "skim milk", "almond milk", "soy milk", "lassi", "buttermilk"], "name": "Milk / Dairy Beverage (per 100ml)", "calories": 61.0, "sugars": 4.8, "fat": 3.3, "protein": 3.2, "sodium_mg": 43.0},
+    {"keywords": ["greek yogurt", "yogurt", "curd", "dahi"], "name": "Plain Yogurt / Curd (per 100g)", "calories": 63.0, "sugars": 4.0, "fat": 3.3, "protein": 4.2, "sodium_mg": 46.0},
+    {"keywords": ["paneer", "cottage cheese", "tofu"], "name": "Paneer / Cottage Cheese (per 100g)", "calories": 265.0, "sugars": 1.2, "fat": 20.8, "protein": 18.3, "sodium_mg": 30.0},
+    {"keywords": ["mozzarella", "cheddar", "cheese"], "name": "Processed / Cheddar Cheese (per 100g)", "calories": 375.0, "sugars": 1.0, "fat": 31.0, "protein": 22.0, "sodium_mg": 680.0},
+    {"keywords": ["butter"], "name": "Salted Butter (per 100g)", "calories": 717.0, "sugars": 0.1, "fat": 81.1, "protein": 0.9, "sodium_mg": 643.0},
+    {"keywords": ["ghee"], "name": "Clarified Butter / Ghee (per 100g)", "calories": 876.0, "sugars": 0.0, "fat": 99.5, "protein": 0.0, "sodium_mg": 2.0},
+    {"keywords": ["olive oil"], "name": "Extra Virgin Olive Oil (per tbsp 15ml)", "calories": 119.0, "sugars": 0.0, "fat": 13.5, "protein": 0.0, "sodium_mg": 0.0},
+    {"keywords": ["sunflower oil", "mustard oil", "groundnut oil", "coconut oil", "cooking oil", "refined oil", "oil"], "name": "Cooking Oil (per tbsp 15ml)", "calories": 120.0, "sugars": 0.0, "fat": 14.0, "protein": 0.0, "sodium_mg": 0.0},
+    {"keywords": ["peanut butter", "almond butter"], "name": "Nut / Peanut Butter (per 100g)", "calories": 588.0, "sugars": 9.2, "fat": 50.0, "protein": 25.1, "sodium_mg": 420.0},
+    {"keywords": ["almond", "badam", "walnut", "pistachio", "cashew", "peanut", "chia", "flax", "pumpkin seed", "sunflower seed", "dry fruits", "mixed nuts"], "name": "Nuts & Seeds (per 100g)", "calories": 579.0, "sugars": 4.4, "fat": 49.9, "protein": 21.2, "sodium_mg": 4.0},
+    {"keywords": ["dates", "khajoor", "raisins", "kishmish"], "name": "Dried Dates / Raisins (per 100g)", "calories": 282.0, "sugars": 63.0, "fat": 0.4, "protein": 2.5, "sodium_mg": 3.0},
+    {"keywords": ["honey"], "name": "Honey (per 100g)", "calories": 304.0, "sugars": 82.1, "fat": 0.0, "protein": 0.3, "sodium_mg": 4.0},
+    {"keywords": ["jaggery", "gur", "sugar"], "name": "Sugar / Sweetener (per 100g)", "calories": 387.0, "sugars": 99.8, "fat": 0.0, "protein": 0.0, "sodium_mg": 1.0},
+    {"keywords": ["ketchup", "tomato sauce", "sauce", "chutney"], "name": "Tomato Ketchup / Sauce (per 100g)", "calories": 112.0, "sugars": 22.8, "fat": 0.1, "protein": 1.7, "sodium_mg": 907.0},
+    {"keywords": ["mayonnaise", "mayo", "dressing"], "name": "Mayonnaise / Dressing (per 100g)", "calories": 680.0, "sugars": 1.0, "fat": 75.0, "protein": 1.0, "sodium_mg": 635.0},
+    {"keywords": ["jam", "marmalade", "nutella", "spread"], "name": "Fruit Jam / Sweet Spread (per 100g)", "calories": 278.0, "sugars": 48.5, "fat": 0.1, "protein": 0.4, "sodium_mg": 32.0},
+    {"keywords": ["whey protein", "protein powder", "protein bar"], "name": "Protein Supplement / Bar (per serving)", "calories": 130.0, "sugars": 2.5, "fat": 2.0, "protein": 24.0, "sodium_mg": 140.0},
+    {"keywords": ["egg"], "name": "Eggs (per 100g)", "calories": 143.0, "sugars": 0.4, "fat": 9.5, "protein": 12.6, "sodium_mg": 142.0},
+    {"keywords": ["chicken"], "name": "Chicken Breast (per 100g)", "calories": 165.0, "sugars": 0.0, "fat": 3.6, "protein": 31.0, "sodium_mg": 74.0},
+    {"keywords": ["salmon", "tuna", "fish", "prawns"], "name": "Fish / Seafood (per 100g)", "calories": 184.0, "sugars": 0.0, "fat": 8.1, "protein": 25.4, "sodium_mg": 62.0},
+    {"keywords": ["turmeric", "cumin", "coriander", "garam masala", "masala", "pepper", "cinnamon", "spice", "seasoning"], "name": "Culinary Spices / Herbs (per 10g)", "calories": 31.0, "sugars": 0.3, "fat": 0.8, "protein": 1.1, "sodium_mg": 18.0},
+    {"keywords": ["salt", "rock salt", "sea salt"], "name": "Culinary Salt (per 5g)", "calories": 0.0, "sugars": 0.0, "fat": 0.0, "protein": 0.0, "sodium_mg": 1938.0},
+    {"keywords": ["apple", "banana", "orange", "mango", "berry", "berries", "grape", "watermelon", "fruit"], "name": "Fresh Fruit (per 100g)", "calories": 58.0, "sugars": 11.2, "fat": 0.2, "protein": 0.7, "sodium_mg": 1.0},
+    {"keywords": ["broccoli", "spinach", "carrot", "tomato", "onion", "potato", "beans", "peas", "vegetable"], "name": "Fresh Vegetable (per 100g)", "calories": 42.0, "sugars": 2.5, "fat": 0.3, "protein": 2.1, "sodium_mg": 22.0},
+    {"keywords": ["ice cream", "kulfi", "gelato"], "name": "Ice Cream (per 100g)", "calories": 207.0, "sugars": 21.2, "fat": 11.0, "protein": 3.5, "sodium_mg": 80.0},
+    {"keywords": ["pickle", "achar", "papad"], "name": "Pickles / Papad (per 100g)", "calories": 220.0, "sugars": 2.0, "fat": 11.0, "protein": 4.5, "sodium_mg": 2400.0},
+]
+
+
+def match_grocery_staple(product_title: str) -> dict[str, Any] | None:
+    norm = re.sub(r"\s+", " ", re.sub(r"[^a-z0-9\s]", " ", product_title.lower())).strip()
+    if not norm:
+        return None
+    best_profile: dict[str, Any] | None = None
+    best_len = 0
+    for profile in GROCERY_STAPLE_PROFILES:
+        for kw in profile["keywords"]:
+            if re.search(rf"\b{re.escape(kw)}\b", norm) and len(kw) > best_len:
+                best_profile = profile
+                best_len = len(kw)
+    if best_profile is None:
+        return None
+    return {
+        "food": best_profile["name"],
+        "food_norm": best_profile["name"].lower(),
+        "calories": best_profile["calories"],
+        "sugars": best_profile["sugars"],
+        "fat": best_profile["fat"],
+        "protein": best_profile["protein"],
+        "sodium_mg": best_profile["sodium_mg"],
+        "source_group": "Grocery Staple Nutrition Profile",
+    }
 
 
 def match_catalog_food(product_title: str, min_score: float = 0.44) -> dict[str, Any] | None:
@@ -821,6 +925,9 @@ def analyze_amazon_add_to_cart(payload: AmazonAddToCartInput) -> AmazonCartEvent
     title = payload.product_title.strip()
     nutrition_source = ""
     matched_food: str | None = None
+    combined_label_text = "\n".join(
+        t for t in (payload.ingredients_text or "", payload.nutrition_text or "") if t and t.strip()
+    )
 
     has_explicit_numbers = all(
         v is not None
@@ -846,7 +953,7 @@ def analyze_amazon_add_to_cart(payload: AmazonAddToCartInput) -> AmazonCartEvent
             sodium_mg=float(payload.sodium_mg),  # type: ignore[arg-type]
         )
     else:
-        parsed = parse_nutrition_text(payload.nutrition_text or "")
+        parsed = parse_nutrition_text(combined_label_text)
         if parsed is not None:
             nutrition_source = "Amazon Page Nutrition Text"
             nutrition_input = FoodNutritionInput(
@@ -872,6 +979,8 @@ def analyze_amazon_add_to_cart(payload: AmazonAddToCartInput) -> AmazonCartEvent
                 sodium_mg=float(barcode_match["sodium_mg"]),
             )
 
+    staple_match = match_grocery_staple(title) if nutrition_input is None else None
+
     if nutrition_input is None:
         exact_local = match_catalog_food(title, min_score=0.95)
         if exact_local is not None:
@@ -886,25 +995,53 @@ def analyze_amazon_add_to_cart(payload: AmazonAddToCartInput) -> AmazonCartEvent
                 sodium_mg=float(exact_local["sodium_mg"]),
             )
 
+    if nutrition_input is None and staple_match is not None and len(_clean_tokens(title)) <= 2:
+        nutrition_source = str(staple_match["source_group"])
+        matched_food = str(staple_match["food"])
+        nutrition_input = FoodNutritionInput(
+            food_name=title,
+            calories=float(staple_match["calories"]),
+            sugars=float(staple_match["sugars"]),
+            fat=float(staple_match["fat"]),
+            protein=float(staple_match["protein"]),
+            sodium_mg=float(staple_match["sodium_mg"]),
+        )
+
     if nutrition_input is None:
         for q_try in build_progressive_queries(title, payload.brand):
             off_hits = search_openfoodfacts(q_try, limit=3)
             if off_hits:
                 best_off = off_hits[0]
-                nutrition_source = "Open Food Facts (Live Packaged Food DB)"
-                matched_food = str(best_off["food"])
-                nutrition_input = FoodNutritionInput(
-                    food_name=title,
-                    calories=float(best_off["calories"]),
-                    sugars=float(best_off["sugars"]),
-                    fat=float(best_off["fat"]),
-                    protein=float(best_off["protein"]),
-                    sodium_mg=float(best_off["sodium_mg"]),
-                )
-                break
+                q_stems = {_stem_token(t) for t in _clean_tokens(title)}
+                h_stems = {_stem_token(t) for t in _clean_tokens(str(best_off["food"]))}
+                overlap_ratio = len(q_stems & h_stems) / max(len(q_stems), 1)
+                if staple_match is None or overlap_ratio >= 0.5:
+                    nutrition_source = "Open Food Facts (Live Packaged Food DB)"
+                    matched_food = str(best_off["food"])
+                    nutrition_input = FoodNutritionInput(
+                        food_name=title,
+                        calories=float(best_off["calories"]),
+                        sugars=float(best_off["sugars"]),
+                        fat=float(best_off["fat"]),
+                        protein=float(best_off["protein"]),
+                        sodium_mg=float(best_off["sodium_mg"]),
+                    )
+                    break
+
+    if nutrition_input is None and staple_match is not None:
+        nutrition_source = str(staple_match["source_group"])
+        matched_food = str(staple_match["food"])
+        nutrition_input = FoodNutritionInput(
+            food_name=title,
+            calories=float(staple_match["calories"]),
+            sugars=float(staple_match["sugars"]),
+            fat=float(staple_match["fat"]),
+            protein=float(staple_match["protein"]),
+            sodium_mg=float(staple_match["sodium_mg"]),
+        )
 
     if nutrition_input is None:
-        fallback_local = match_catalog_food(title, min_score=0.34)
+        fallback_local = match_catalog_food(title, min_score=0.25)
         if fallback_local is not None:
             nutrition_source = f"Matched Dataset Category ({fallback_local['source_group']})"
             matched_food = str(fallback_local["food"])
@@ -917,7 +1054,15 @@ def analyze_amazon_add_to_cart(payload: AmazonAddToCartInput) -> AmazonCartEvent
                 sodium_mg=float(fallback_local["sodium_mg"]),
             )
 
-    if nutrition_input is None:
+    has_ingredients = bool(
+        (payload.ingredients_text and payload.ingredients_text.strip())
+        or re.search(r"\bingredients?\b", payload.nutrition_text or "", re.I)
+    )
+    ingredient_scan: PacketScanResponse | None = None
+    if has_ingredients and combined_label_text:
+        ingredient_scan = analyze_packet_text(title, combined_label_text, raise_on_empty=False)
+
+    if nutrition_input is None and ingredient_scan is None:
         event = AmazonCartEvent(
             event_id=str(uuid.uuid4())[:8],
             timestamp=datetime.now(timezone.utc).isoformat(),
@@ -932,12 +1077,31 @@ def analyze_amazon_add_to_cart(payload: AmazonAddToCartInput) -> AmazonCartEvent
                 "and no packaged-food match was found. Enter nutrition values or paste label text to classify."
             ),
             analysis=None,
+            ingredients_text=payload.ingredients_text,
+            ingredient_scan=None,
         )
         CART_EVENTS.insert(0, event.model_dump())
         del CART_EVENTS[30:]
         return event
 
+    if nutrition_input is None:
+        nutrition_input = FoodNutritionInput(
+            food_name=title,
+            calories=150.0,
+            sugars=0.0,
+            fat=0.0,
+            protein=0.0,
+            sodium_mg=0.0,
+        )
+        nutrition_source = "Amazon Page Ingredients Scan"
+
     analysis = run_ml_prediction(nutrition_input)
+    if ingredient_scan is not None:
+        if "Ingredients" not in nutrition_source:
+            nutrition_source = f"{nutrition_source} + Amazon Ingredients"
+        if ingredient_scan.nutrition_analysis is None:
+            ingredient_scan.nutrition_analysis = analysis
+
     event = AmazonCartEvent(
         event_id=str(uuid.uuid4())[:8],
         timestamp=datetime.now(timezone.utc).isoformat(),
@@ -947,8 +1111,14 @@ def analyze_amazon_add_to_cart(payload: AmazonAddToCartInput) -> AmazonCartEvent
         product_url=payload.product_url,
         nutrition_source=nutrition_source,
         matched_food=matched_food,
-        message=analysis.explanation,
+        message=(
+            f"{analysis.explanation} Scanned {ingredient_scan.ingredients_count} ingredients ({ingredient_scan.verdict})."
+            if ingredient_scan is not None
+            else analysis.explanation
+        ),
         analysis=analysis,
+        ingredients_text=payload.ingredients_text,
+        ingredient_scan=ingredient_scan,
     )
 
     CART_EVENTS.insert(0, event.model_dump())
@@ -977,30 +1147,6 @@ def clear_amazon_cart_events() -> dict[str, str]:
 class PacketScanInput(BaseModel):
     product_name: str = Field(default="Scanned Food Packet", max_length=200)
     raw_text: str = Field(..., min_length=3, max_length=12000)
-
-
-class IngredientFinding(BaseModel):
-    ingredient: str
-    rating: Literal["good", "moderate", "high"]
-    reason: str
-
-
-class ScanReason(BaseModel):
-    type: Literal["good", "warning", "danger"]
-    text: str
-
-
-class PacketScanResponse(BaseModel):
-    product_name: str
-    verdict: Literal["Good", "Moderate", "Not Good"]
-    score: float
-    nutrition_found: bool
-    ingredients_count: int
-    parsed_ingredients: list[str]
-    ingredient_findings: list[IngredientFinding]
-    reasons: list[ScanReason]
-    summary: str
-    nutrition_analysis: PredictionResponse | None = None
 
 
 BENEFICIAL_INGREDIENTS: list[tuple[str, str, str]] = [
@@ -1117,21 +1263,27 @@ def _extract_ingredients_segment(raw_text: str) -> list[str]:
     return cleaned[:40]
 
 
-@app.post("/api/scan-packet", response_model=PacketScanResponse)
-def scan_packet_ingredients(payload: PacketScanInput) -> PacketScanResponse:
-    raw = payload.raw_text.strip()
+def analyze_packet_text(
+    product_name: str,
+    raw_text: str,
+    raise_on_empty: bool = True,
+) -> PacketScanResponse | None:
+    raw = raw_text.strip()
     if len(raw) < 3:
-        raise HTTPException(
-            status_code=422,
-            detail="No readable text found. Upload a clearer photo of the packet or paste the ingredients / nutrition text.",
-        )
+        if raise_on_empty:
+            raise HTTPException(
+                status_code=422,
+                detail="No readable text found. Upload a clearer photo of the packet or paste the ingredients / nutrition text.",
+            )
+        return None
 
+    clean_product_name = product_name.strip() or "Scanned Food Packet"
     parsed_nutrition = parse_nutrition_text(raw)
     nutrition_analysis: PredictionResponse | None = None
     if parsed_nutrition is not None:
         nutrition_analysis = run_ml_prediction(
             FoodNutritionInput(
-                food_name=payload.product_name.strip() or "Scanned Food Packet",
+                food_name=clean_product_name,
                 calories=parsed_nutrition["calories"],
                 sugars=parsed_nutrition["sugars"],
                 fat=parsed_nutrition["fat"],
@@ -1157,8 +1309,6 @@ def scan_packet_ingredients(payload: PacketScanInput) -> PacketScanResponse:
 
     ing_score = 72.0
     good_hits = 0
-    mod_hits = 0
-    high_hits = 0
 
     for kw, label, reason in sorted(CONCERN_INGREDIENTS, key=lambda item: len(item[0]), reverse=True):
         pattern = re.compile(rf"\b{re.escape(kw)}s?\b")
@@ -1167,7 +1317,6 @@ def scan_packet_ingredients(payload: PacketScanInput) -> PacketScanResponse:
             if label not in seen_labels:
                 seen_labels.add(label)
                 findings.append(IngredientFinding(ingredient=label, rating="high", reason=reason))
-                high_hits += 1
                 ing_score -= 16.0
 
     for kw, label, reason in sorted(CAUTION_INGREDIENTS, key=lambda item: len(item[0]), reverse=True):
@@ -1189,7 +1338,6 @@ def scan_packet_ingredients(payload: PacketScanInput) -> PacketScanResponse:
                         ),
                     )
                 )
-                mod_hits += 1
                 ing_score -= 10.0 if is_top_ingredient else 6.0
 
     for kw, label, reason in sorted(BENEFICIAL_INGREDIENTS, key=lambda item: len(item[0]), reverse=True):
@@ -1202,11 +1350,13 @@ def scan_packet_ingredients(payload: PacketScanInput) -> PacketScanResponse:
                 good_hits += 1
                 ing_score += 7.0 if good_hits <= 3 else 3.0
 
-    if not findings and nutrition_analysis is None and len(parsed_ingredients) < 2:
-        raise HTTPException(
-            status_code=422,
-            detail="Could not identify nutrition facts or food ingredients in that text. Try cropping closer to the Ingredients or Nutrition Facts box.",
-        )
+    if not findings and nutrition_analysis is None and len(parsed_ingredients) < 1:
+        if raise_on_empty:
+            raise HTTPException(
+                status_code=422,
+                detail="Could not identify nutrition facts or food ingredients in that text. Try cropping closer to the Ingredients or Nutrition Facts box.",
+            )
+        return None
 
     ing_score = round(float(np.clip(ing_score, 8.0, 98.0)), 1)
 
@@ -1255,7 +1405,6 @@ def scan_packet_ingredients(payload: PacketScanInput) -> PacketScanResponse:
             )
         )
 
-    # Sort positive highlights near top when verdict is Good, or warnings first when Not Good
     if verdict == "Good":
         reasons.sort(key=lambda r: 0 if r.type == "good" else 1 if r.type == "warning" else 2)
     else:
@@ -1263,19 +1412,19 @@ def scan_packet_ingredients(payload: PacketScanInput) -> PacketScanResponse:
 
     if verdict == "Good":
         summary = (
-            f"{payload.product_name} scores {combined_score}/100 (Good) — whole-food ingredients and balanced nutrient profile with low additive concern."
+            f"{clean_product_name} scores {combined_score}/100 (Good) — whole-food ingredients and balanced nutrient profile with low additive concern."
         )
     elif verdict == "Moderate":
         summary = (
-            f"{payload.product_name} scores {combined_score}/100 (Moderate) — contains refined ingredients or moderate sugar/fat/sodium; enjoy occasionally in controlled portions."
+            f"{clean_product_name} scores {combined_score}/100 (Moderate) — contains refined ingredients or moderate sugar/fat/sodium; enjoy occasionally in controlled portions."
         )
     else:
         summary = (
-            f"{payload.product_name} scores {combined_score}/100 (Not Good) — flagged for added sugars, refined/hydrogenated fats, high sodium, or synthetic additives."
+            f"{clean_product_name} scores {combined_score}/100 (Not Good) — flagged for added sugars, refined/hydrogenated fats, high sodium, or synthetic additives."
         )
 
     return PacketScanResponse(
-        product_name=payload.product_name.strip() or "Scanned Food Packet",
+        product_name=clean_product_name,
         verdict=verdict,
         score=combined_score,
         nutrition_found=nutrition_analysis is not None,
@@ -1286,4 +1435,11 @@ def scan_packet_ingredients(payload: PacketScanInput) -> PacketScanResponse:
         summary=summary,
         nutrition_analysis=nutrition_analysis,
     )
+
+
+@app.post("/api/scan-packet", response_model=PacketScanResponse)
+def scan_packet_ingredients(payload: PacketScanInput) -> PacketScanResponse:
+    res = analyze_packet_text(payload.product_name, payload.raw_text, raise_on_empty=True)
+    assert res is not None
+    return res
 

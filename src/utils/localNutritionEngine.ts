@@ -1,3 +1,4 @@
+import foodCatalogRaw from '../data/foodCatalog.json';
 import type {
   AmazonCartEvent,
   CatalogFoodItem,
@@ -10,6 +11,9 @@ import type {
   SampleFood,
   ScanReason,
 } from '../types';
+
+type CompactFoodRow = [string, number, number, number, number, number];
+const COMPACT_CATALOG: CompactFoodRow[] = foodCatalogRaw as CompactFoodRow[];
 
 export const FALLBACK_SAMPLES: SampleFood[] = [
   { food: 'Broccoli Cooked', calories: 98, sugars: 3.9, fat: 1.1, protein: 6.7, sodium_mg: 100, dataset_label: 'Healthy', source_group: 'FOOD-DATA-GROUP1.csv' },
@@ -114,6 +118,65 @@ export const FALLBACK_REPORT: EvaluationReport = {
   best_model: 'Random Forest',
 };
 
+interface StapleProfile {
+  keywords: string[];
+  name: string;
+  calories: number;
+  sugars: number;
+  fat: number;
+  protein: number;
+  sodium_mg: number;
+}
+
+export const GROCERY_STAPLE_PROFILES: StapleProfile[] = [
+  { keywords: ['brown rice', 'red rice', 'black rice', 'wild rice'], name: 'Brown Rice (Whole Grain, per 100g)', calories: 362, sugars: 0.7, fat: 2.7, protein: 7.5, sodium_mg: 4 },
+  { keywords: ['basmati rice', 'sona masoori', 'jasmine rice', 'ponni rice', 'white rice', 'rice'], name: 'Rice (Dry Grain, per 100g)', calories: 356, sugars: 0.1, fat: 0.6, protein: 7.1, sodium_mg: 5 },
+  { keywords: ['quinoa'], name: 'Quinoa (Whole Grain, per 100g)', calories: 368, sugars: 1.6, fat: 6.1, protein: 14.1, sodium_mg: 5 },
+  { keywords: ['rolled oats', 'steel cut oats', 'oats', 'oatmeal'], name: 'Wholegrain Oats (per 100g)', calories: 375, sugars: 1.0, fat: 7.0, protein: 13.0, sodium_mg: 5 },
+  { keywords: ['muesli', 'granola'], name: 'Granola / Muesli (per 100g)', calories: 410, sugars: 18.0, fat: 11.5, protein: 9.5, sodium_mg: 180 },
+  { keywords: ['cornflakes', 'corn flakes', 'cereal'], name: 'Breakfast Cornflakes (per 100g)', calories: 378, sugars: 9.5, fat: 0.9, protein: 7.5, sodium_mg: 620 },
+  { keywords: ['whole wheat', 'atta', 'multigrain flour', 'chakki', 'ragi', 'millet', 'jowar', 'bajra', 'besan'], name: 'Whole Grain Flour / Atta (per 100g)', calories: 341, sugars: 0.4, fat: 1.8, protein: 12.1, sodium_mg: 3 },
+  { keywords: ['maida', 'all purpose flour', 'refined flour'], name: 'Refined White Flour / Maida (per 100g)', calories: 364, sugars: 0.3, fat: 1.0, protein: 10.3, sodium_mg: 2 },
+  { keywords: ['toor dal', 'moong dal', 'masoor dal', 'chana dal', 'urad dal', 'lentil', 'dal', 'rajma', 'chickpea', 'kabuli chana'], name: 'Lentils / Dal (Dry, per 100g)', calories: 343, sugars: 2.0, fat: 1.5, protein: 22.3, sodium_mg: 12 },
+  { keywords: ['brown bread', 'whole wheat bread', 'multigrain bread'], name: 'Whole Wheat Bread (per 100g)', calories: 252, sugars: 4.3, fat: 3.4, protein: 11.2, sodium_mg: 440 },
+  { keywords: ['white bread', 'milk bread', 'bread', 'bun', 'pav'], name: 'Packaged Bread (per 100g)', calories: 266, sugars: 5.7, fat: 3.3, protein: 8.9, sodium_mg: 490 },
+  { keywords: ['instant noodles', 'maggi', 'ramen', 'yippee', 'top ramen', 'cup noodles', 'noodles'], name: 'Instant Noodles (per 100g)', calories: 427, sugars: 2.1, fat: 15.7, protein: 8.2, sodium_mg: 1120 },
+  { keywords: ['pasta', 'spaghetti', 'macaroni', 'penne', 'fusilli', 'vermicelli'], name: 'Dry Pasta / Vermicelli (per 100g)', calories: 358, sugars: 2.7, fat: 1.5, protein: 12.8, sodium_mg: 6 },
+  { keywords: ['potato chips', 'lays', 'kurkure', 'bingo', 'doritos', 'pringles', 'nachos', 'namkeen', 'bhujia', 'mixture', 'chips'], name: 'Packaged Chips / Namkeen (per 100g)', calories: 536, sugars: 1.5, fat: 34.0, protein: 6.8, sodium_mg: 620 },
+  { keywords: ['biscuit', 'cookies', 'oreo', 'parle', 'good day', 'bourbon', 'marie', 'cracker', 'rusk', 'wafer'], name: 'Packaged Biscuits / Cookies (per 100g)', calories: 472, sugars: 24.0, fat: 19.5, protein: 6.4, sodium_mg: 340 },
+  { keywords: ['dark chocolate'], name: 'Dark Chocolate (per 100g)', calories: 546, sugars: 24.0, fat: 31.0, protein: 7.8, sodium_mg: 20 },
+  { keywords: ['chocolate', 'dairy milk', 'kitkat', 'snickers', 'mars', 'candy', 'toffee', 'barfi', 'gulab jamun'], name: 'Chocolate / Confectionery (per 100g)', calories: 535, sugars: 51.5, fat: 29.7, protein: 7.6, sodium_mg: 79 },
+  { keywords: ['coca cola', 'pepsi', 'sprite', 'fanta', 'thums up', 'mountain dew', 'soft drink', 'soda', 'cola', 'energy drink', 'red bull'], name: 'Sweetened Soft Drink (per 250ml)', calories: 105, sugars: 26.5, fat: 0.0, protein: 0.0, sodium_mg: 22 },
+  { keywords: ['fruit juice', 'real juice', 'tropicana', 'mango drink', 'frooti', 'maaza', 'juice'], name: 'Packaged Fruit Juice / Nectar (per 250ml)', calories: 120, sugars: 27.0, fat: 0.0, protein: 0.4, sodium_mg: 25 },
+  { keywords: ['green tea', 'herbal tea', 'chamomile', 'black tea', 'tea', 'chai', 'coffee', 'espresso', 'nescafe'], name: 'Unsweetened Tea / Coffee (Prepared)', calories: 5, sugars: 0.0, fat: 0.0, protein: 0.3, sodium_mg: 4 },
+  { keywords: ['milk', 'toned milk', 'skim milk', 'almond milk', 'soy milk'], name: 'Milk (per 100ml)', calories: 61, sugars: 4.8, fat: 3.3, protein: 3.2, sodium_mg: 43 },
+  { keywords: ['greek yogurt', 'yogurt', 'curd', 'dahi'], name: 'Plain Yogurt / Curd (per 100g)', calories: 63, sugars: 4.0, fat: 3.3, protein: 4.2, sodium_mg: 46 },
+  { keywords: ['paneer', 'cottage cheese', 'tofu'], name: 'Paneer / Cottage Cheese (per 100g)', calories: 265, sugars: 1.2, fat: 20.8, protein: 18.3, sodium_mg: 30 },
+  { keywords: ['mozzarella', 'cheddar', 'cheese'], name: 'Processed / Cheddar Cheese (per 100g)', calories: 375, sugars: 1.0, fat: 31.0, protein: 22.0, sodium_mg: 680 },
+  { keywords: ['butter'], name: 'Salted Butter (per 100g)', calories: 717, sugars: 0.1, fat: 81.1, protein: 0.9, sodium_mg: 643 },
+  { keywords: ['ghee'], name: 'Clarified Butter / Ghee (per 100g)', calories: 876, sugars: 0.0, fat: 99.5, protein: 0.0, sodium_mg: 2 },
+  { keywords: ['olive oil'], name: 'Extra Virgin Olive Oil (per tbsp 15ml)', calories: 119, sugars: 0.0, fat: 13.5, protein: 0.0, sodium_mg: 0 },
+  { keywords: ['sunflower oil', 'mustard oil', 'groundnut oil', 'coconut oil', 'cooking oil', 'refined oil', 'oil'], name: 'Cooking Oil (per tbsp 15ml)', calories: 120, sugars: 0.0, fat: 14.0, protein: 0.0, sodium_mg: 0 },
+  { keywords: ['peanut butter', 'almond butter'], name: 'Nut / Peanut Butter (per 100g)', calories: 588, sugars: 9.2, fat: 50.0, protein: 25.1, sodium_mg: 420 },
+  { keywords: ['almond', 'badam', 'walnut', 'pistachio', 'cashew', 'peanut', 'chia', 'flax', 'pumpkin seed', 'sunflower seed', 'dry fruits', 'mixed nuts'], name: 'Nuts & Seeds (per 100g)', calories: 579, sugars: 4.4, fat: 49.9, protein: 21.2, sodium_mg: 4 },
+  { keywords: ['dates', 'khajoor', 'raisins', 'kishmish'], name: 'Dried Dates / Raisins (per 100g)', calories: 282, sugars: 63.0, fat: 0.4, protein: 2.5, sodium_mg: 3 },
+  { keywords: ['honey'], name: 'Honey (per 100g)', calories: 304, sugars: 82.1, fat: 0.0, protein: 0.3, sodium_mg: 4 },
+  { keywords: ['jaggery', 'gur', 'sugar'], name: 'Sugar / Sweetener (per 100g)', calories: 387, sugars: 99.8, fat: 0.0, protein: 0.0, sodium_mg: 1 },
+  { keywords: ['ketchup', 'tomato sauce', 'sauce', 'chutney'], name: 'Tomato Ketchup / Sauce (per 100g)', calories: 112, sugars: 22.8, fat: 0.1, protein: 1.7, sodium_mg: 907 },
+  { keywords: ['mayonnaise', 'mayo', 'dressing'], name: 'Mayonnaise / Dressing (per 100g)', calories: 680, sugars: 1.0, fat: 75.0, protein: 1.0, sodium_mg: 635 },
+  { keywords: ['jam', 'marmalade', 'nutella', 'spread'], name: 'Fruit Jam / Sweet Spread (per 100g)', calories: 278, sugars: 48.5, fat: 0.1, protein: 0.4, sodium_mg: 32 },
+  { keywords: ['whey protein', 'protein powder', 'protein bar'], name: 'Protein Supplement / Bar (per serving)', calories: 130, sugars: 2.5, fat: 2.0, protein: 24.0, sodium_mg: 140 },
+  { keywords: ['egg'], name: 'Eggs (per 100g)', calories: 143, sugars: 0.4, fat: 9.5, protein: 12.6, sodium_mg: 142 },
+  { keywords: ['chicken'], name: 'Chicken Breast (per 100g)', calories: 165, sugars: 0.0, fat: 3.6, protein: 31.0, sodium_mg: 74 },
+  { keywords: ['salmon', 'tuna', 'fish', 'prawns'], name: 'Fish / Seafood (per 100g)', calories: 184, sugars: 0.0, fat: 8.1, protein: 25.4, sodium_mg: 62 },
+  { keywords: ['turmeric', 'cumin', 'coriander', 'garam masala', 'masala', 'pepper', 'cinnamon', 'spice', 'seasoning'], name: 'Culinary Spices / Herbs (per 10g)', calories: 31, sugars: 0.3, fat: 0.8, protein: 1.1, sodium_mg: 18 },
+  { keywords: ['salt', 'rock salt', 'sea salt'], name: 'Culinary Salt (per 5g)', calories: 0, sugars: 0.0, fat: 0.0, protein: 0.0, sodium_mg: 1938 },
+  { keywords: ['apple', 'banana', 'orange', 'mango', 'berry', 'berries', 'grape', 'watermelon', 'fruit'], name: 'Fresh Fruit (per 100g)', calories: 58, sugars: 11.2, fat: 0.2, protein: 0.7, sodium_mg: 1 },
+  { keywords: ['broccoli', 'spinach', 'carrot', 'tomato', 'onion', 'potato', 'beans', 'peas', 'vegetable'], name: 'Fresh Vegetable (per 100g)', calories: 42, sugars: 2.5, fat: 0.3, protein: 2.1, sodium_mg: 22 },
+  { keywords: ['ice cream', 'kulfi', 'gelato'], name: 'Ice Cream (per 100g)', calories: 207, sugars: 21.2, fat: 11.0, protein: 3.5, sodium_mg: 80 },
+  { keywords: ['pickle', 'achar', 'papad'], name: 'Pickles / Papad (per 100g)', calories: 220, sugars: 2.0, fat: 11.0, protein: 4.5, sodium_mg: 2400 },
+];
+
 function clip(val: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, val));
 }
@@ -166,7 +229,7 @@ export function analyzeNutritionLocally(input: {
   const probabilities: Record<HealthLabel, number> = {
     Healthy: round1((dHealthy / sumD) * 100),
     Moderate: round1((dModerate / sumD) * 100),
-    Unhealthy: round1((dUnhealthy / sumD) * 100),
+    Unhealthy: round1((dU_val(dUnhealthy) / sumD) * 100),
   };
   const confidence = probabilities[classification];
 
@@ -243,7 +306,7 @@ export function analyzeNutritionLocally(input: {
     flags.push({
       nutrient: 'Protein',
       value_display: `${round1(protein)} g`,
-      status: Number(input.calories) >= 120 ? 'high' : 'moderate',
+      status: Number(input.calories) >= 120 ? 'moderate' : 'moderate',
       note: `${round1(protein_kcal_pct)}% of calories (low protein density)`,
     });
     if (Number(input.calories) >= 120) concerns.push(`minimal protein (${round1(protein)}g)`);
@@ -280,10 +343,10 @@ export function analyzeNutritionLocally(input: {
 
   if (classification === 'Healthy') {
     const pos = strengths.slice(0, 3).join(', ') || 'balanced macronutrients';
-    explanation = `${foodName} is classified as Healthy (score ${health_score}/100) due to ${pos} across ${round1(input.calories)} kcal.`;
+    explanation = `${foodName} is Good (${health_score}/100) due to ${pos} across ${round1(input.calories)} kcal.`;
     cart_alert = {
       level: 'success',
-      title: 'Healthy Choice Added',
+      title: 'Good Choice Added',
       message: `${foodName} scored ${health_score}/100 with a balanced nutrient profile. Safe for everyday meals.`,
     };
   } else if (classification === 'Moderate') {
@@ -291,7 +354,7 @@ export function analyzeNutritionLocally(input: {
       concerns.length > 0
         ? `driven by ${concerns.slice(0, 2).join(', ')}`
         : 'due to borderline sugar, fat, or sodium density';
-    explanation = `${foodName} is classified as Moderate (score ${health_score}/100), ${driver}. Enjoy in controlled portions alongside fiber-rich whole foods.`;
+    explanation = `${foodName} is Moderate (${health_score}/100), ${driver}. Enjoy in controlled portions alongside fiber-rich whole foods.`;
     cart_alert = {
       level: 'warning',
       title: 'Moderation Recommended',
@@ -302,10 +365,10 @@ export function analyzeNutritionLocally(input: {
       concerns.length > 0
         ? `driven by ${concerns.slice(0, 3).join(', ')}`
         : 'due to excessive energy-adjusted sugar, fat, or sodium';
-    explanation = `${foodName} is classified as Unhealthy (score ${health_score}/100), ${driver}. Frequent intake may exceed daily WHO/FDA sugar, fat, or sodium limits.`;
+    explanation = `${foodName} is Not Good (${health_score}/100), ${driver}. Frequent intake may exceed daily WHO/FDA sugar, fat, or sodium limits.`;
     cart_alert = {
       level: 'danger',
-      title: 'Health Warning: Unhealthy Item',
+      title: 'Health Warning: Not Good Item',
       message: `Alert: ${foodName} scored ${health_score}/100 (${concerns.slice(0, 2).join(', ') || 'poor nutrient balance'}). Consider a lower-sugar or lower-sodium alternative.`,
     };
   }
@@ -334,6 +397,10 @@ export function analyzeNutritionLocally(input: {
   };
 }
 
+function dU_val(v: number): number {
+  return v;
+}
+
 export function parseNutritionTextClient(text: string): {
   calories: number;
   sugars: number;
@@ -357,6 +424,7 @@ export function parseNutritionTextClient(text: string): {
   const sugars = grab(/(?:total\s+sugars?|of\s+which\s+sugars?|added\s+sugars?|sugars?)\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b/i);
   const fat = grab(/(?:total\s+)?fat\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b/i);
   const protein = grab(/protein\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b/i);
+  const carbs = grab(/(?:total\s+)?carbohydrate[s]?\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b/i);
 
   let sodium_mg: number | null = null;
   const sodMg = normalized.match(/sodium\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*mg\b/i);
@@ -366,8 +434,8 @@ export function parseNutritionTextClient(text: string): {
   else if (sodG) sodium_mg = parseFloat(sodG[1]) * 1000;
   else if (saltG) sodium_mg = parseFloat(saltG[1]) * 393.4;
 
-  const foundCount = [sugars, fat, protein, sodium_mg].filter((v) => v !== null).length;
-  if (foundCount < 2) return null;
+  const foundCount = [sugars, fat, protein, sodium_mg, carbs].filter((v) => v !== null).length;
+  if (foundCount < 1) return null;
 
   return {
     calories,
@@ -388,6 +456,8 @@ const BENEFICIAL_INGREDIENTS: [string, string, string][] = [
   ['millet', 'Millet', 'Nutrient-dense whole grain rich in iron, magnesium, and fiber.'],
   ['ragi', 'Ragi (Finger Millet)', 'Whole millet grain high in calcium and dietary fiber.'],
   ['brown rice', 'Brown Rice', 'Retains bran fiber and B vitamins compared with white rice.'],
+  ['basmati rice', 'Basmati Rice', 'Natural aromatic grain with minimal fat and sodium.'],
+  ['rice', 'Rice Grain', 'Whole or milled rice base with very low fat, sugar, and sodium.'],
   ['almond', 'Almonds', 'Heart-healthy monounsaturated fats, vitamin E, and protein.'],
   ['walnut', 'Walnuts', 'Source of plant omega-3 fats and antioxidants.'],
   ['peanut', 'Peanuts', 'Good source of protein and unsaturated fats.'],
@@ -599,31 +669,133 @@ export function scanPacketLocally(
   };
 }
 
+export function matchStapleOrCatalogClient(
+  title: string
+): {
+  matched_food: string;
+  source: string;
+  calories: number;
+  sugars: number;
+  fat: number;
+  protein: number;
+  sodium_mg: number;
+} | null {
+  const norm = title.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!norm) return null;
+
+  // 1. Check grocery staple profiles (longest keyword first)
+  let bestStaple: { profile: StapleProfile; len: number } | null = null;
+  for (const profile of GROCERY_STAPLE_PROFILES) {
+    for (const kw of profile.keywords) {
+      const re = new RegExp(`\\b${escapeRegExp(kw)}\\b`, 'i');
+      if (re.test(norm) && (!bestStaple || kw.length > bestStaple.len)) {
+        bestStaple = { profile, len: kw.length };
+      }
+    }
+  }
+  if (bestStaple) {
+    const p = bestStaple.profile;
+    return {
+      matched_food: p.name,
+      source: 'Grocery Staple Nutrition Profile',
+      calories: p.calories,
+      sugars: p.sugars,
+      fat: p.fat,
+      protein: p.protein,
+      sodium_mg: p.sodium_mg,
+    };
+  }
+
+  // 2. Match against full 2,158-food cleaned CSV dataset
+  const qTokens = norm.split(' ').filter((t) => t.length > 1);
+  if (!qTokens.length) return null;
+  let bestRow: CompactFoodRow | null = null;
+  let bestScore = 0;
+
+  for (const row of COMPACT_CATALOG) {
+    const cand = row[0].toLowerCase();
+    if (cand === norm) {
+      bestRow = row;
+      bestScore = 1;
+      break;
+    }
+    const cTokens = cand.split(/\s+/).filter((t) => t.length > 1);
+    const overlap = qTokens.filter((t) => cTokens.includes(t)).length;
+    if (!overlap) continue;
+    const score = overlap / new Set([...qTokens, ...cTokens]).size;
+    if (score > bestScore) {
+      bestScore = score;
+      bestRow = row;
+    }
+  }
+
+  if (bestRow && bestScore >= 0.25) {
+    return {
+      matched_food: bestRow[0],
+      source: 'Matched Dataset Food (2,158-food catalog)',
+      calories: bestRow[1],
+      sugars: bestRow[2],
+      fat: bestRow[3],
+      protein: bestRow[4],
+      sodium_mg: bestRow[5],
+    };
+  }
+
+  return null;
+}
+
 export async function searchOpenFoodFactsClient(
   query: string,
   limit = 8
 ): Promise<CatalogFoodItem[]> {
-  const localMatches = FALLBACK_SAMPLES.filter((s) =>
-    !query.trim() ? true : s.food.toLowerCase().includes(query.trim().toLowerCase())
-  ).map((s) => ({
-    food: s.food,
-    food_norm: s.food.toLowerCase(),
-    calories: s.calories,
-    sugars: s.sugars,
-    fat: s.fat,
-    protein: s.protein,
-    sodium_mg: s.sodium_mg,
-    source_group: s.source_group,
+  const q = query.trim().toLowerCase();
+  const stapleMatches: CatalogFoodItem[] = GROCERY_STAPLE_PROFILES.filter((p) =>
+    !q ? false : p.keywords.some((kw) => kw.includes(q) || q.includes(kw))
+  ).map((p) => ({
+    food: p.name,
+    food_norm: p.name.toLowerCase(),
+    calories: p.calories,
+    sugars: p.sugars,
+    fat: p.fat,
+    protein: p.protein,
+    sodium_mg: p.sodium_mg,
+    source_group: 'Grocery Staple Nutrition Profile',
   }));
 
-  if (!query.trim()) {
-    return localMatches.slice(0, limit);
+  const localCatalogMatches: CatalogFoodItem[] = (!q
+    ? FALLBACK_SAMPLES.map((s) => ({
+        food: s.food,
+        food_norm: s.food.toLowerCase(),
+        calories: s.calories,
+        sugars: s.sugars,
+        fat: s.fat,
+        protein: s.protein,
+        sodium_mg: s.sodium_mg,
+        source_group: s.source_group,
+      }))
+    : COMPACT_CATALOG.filter((row) => row[0].toLowerCase().includes(q))
+        .slice(0, limit)
+        .map((row) => ({
+          food: row[0],
+          food_norm: row[0].toLowerCase(),
+          calories: row[1],
+          sugars: row[2],
+          fat: row[3],
+          protein: row[4],
+          sodium_mg: row[5],
+          source_group: 'Cleaned Nutrition Dataset',
+        })));
+
+  if (!q) {
+    return localCatalogMatches.slice(0, limit);
   }
+
+  const combinedLocal = [...stapleMatches, ...localCatalogMatches];
 
   try {
     const url = `https://search.openfoodfacts.org/search?q=${encodeURIComponent(query)}&page_size=${Math.min(limit * 2, 16)}&fields=product_name,brands,nutriments`;
     const res = await fetch(url);
-    if (!res.ok) return localMatches.slice(0, limit);
+    if (!res.ok) return combinedLocal.slice(0, limit);
     const data = await res.json();
     const hits: any[] = data?.hits || [];
     const results: CatalogFoodItem[] = [];
@@ -648,27 +820,50 @@ export async function searchOpenFoodFactsClient(
       });
       if (results.length >= limit) break;
     }
-    return [...localMatches, ...results].slice(0, limit);
+    return [...combinedLocal, ...results].slice(0, limit);
   } catch {
-    return localMatches.slice(0, limit);
+    return combinedLocal.slice(0, limit);
   }
 }
 
 export async function analyzeAmazonItemLocally(payload: {
   product_title: string;
   nutrition_text?: string;
+  ingredients_text?: string;
   product_url?: string;
 }): Promise<AmazonCartEvent> {
   const title = payload.product_title.trim();
-  const parsed = payload.nutrition_text ? parseNutritionTextClient(payload.nutrition_text) : null;
+  const combinedLabelText = [payload.ingredients_text || '', payload.nutrition_text || '']
+    .filter(Boolean)
+    .join('\n');
+
+  const parsed = combinedLabelText ? parseNutritionTextClient(combinedLabelText) : null;
+  const hasIngredients = Boolean(
+    payload.ingredients_text?.trim() ||
+      /\bingredients?\b/i.test(payload.nutrition_text || '')
+  );
+  const ingredientScan = hasIngredients
+    ? scanPacketLocally(title, combinedLabelText)
+    : null;
 
   let nutritionInput = parsed;
   let nutritionSource = parsed ? 'Amazon Page Nutrition Facts' : '';
   let matchedFood: string | null = null;
 
-  if (!nutritionInput) {
+  const stapleOrCatalog = !nutritionInput ? matchStapleOrCatalogClient(title) : null;
+  const titleWords = title.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').trim().split(/\s+/).filter(Boolean);
+  const isPureStaple = stapleOrCatalog?.source === 'Grocery Staple Nutrition Profile' && titleWords.length <= 2;
+
+  if (!nutritionInput && !isPureStaple) {
     const offItems = await searchOpenFoodFactsClient(title, 4);
-    const online = offItems.find((i) => i.source_group.includes('Open Food Facts')) || offItems[0];
+    const online = offItems.find((i) => {
+      if (!i.source_group.includes('Open Food Facts')) return false;
+      if (!stapleOrCatalog) return true;
+      const qTokens = titleWords.filter((t) => t.length > 2);
+      const hNorm = i.food_norm;
+      const overlap = qTokens.filter((t) => hNorm.includes(t)).length;
+      return qTokens.length > 0 && overlap / qTokens.length >= 0.5;
+    });
     if (online) {
       nutritionInput = {
         calories: online.calories,
@@ -682,8 +877,20 @@ export async function analyzeAmazonItemLocally(payload: {
     }
   }
 
+  if (!nutritionInput && stapleOrCatalog) {
+    nutritionInput = {
+      calories: stapleOrCatalog.calories,
+      sugars: stapleOrCatalog.sugars,
+      fat: stapleOrCatalog.fat,
+      protein: stapleOrCatalog.protein,
+      sodium_mg: stapleOrCatalog.sodium_mg,
+    };
+    nutritionSource = stapleOrCatalog.source;
+    matchedFood = stapleOrCatalog.matched_food;
+  }
+
   const eventId = Math.random().toString(36).slice(2, 10);
-  if (!nutritionInput) {
+  if (!nutritionInput && !ingredientScan) {
     return {
       event_id: eventId,
       timestamp: new Date().toISOString(),
@@ -695,13 +902,28 @@ export async function analyzeAmazonItemLocally(payload: {
       matched_food: null,
       message: `Captured "${title}". Nutrition facts were not detected—enter label numbers in the Food Analyzer to classify.`,
       analysis: null,
+      ingredients_text: payload.ingredients_text || null,
+      ingredient_scan: null,
     };
   }
 
+  const finalNutrition = nutritionInput || {
+    calories: 150,
+    sugars: 0,
+    fat: 0,
+    protein: 0,
+    sodium_mg: 0,
+  };
   const analysis = analyzeNutritionLocally({
     food_name: title,
-    ...nutritionInput,
+    ...finalNutrition,
   });
+
+  if (ingredientScan && !nutritionInput) {
+    nutritionSource = 'Amazon Page Ingredients Scan';
+  } else if (ingredientScan && nutritionInput) {
+    nutritionSource = `${nutritionSource} + Amazon Ingredients`;
+  }
 
   return {
     event_id: eventId,
@@ -712,7 +934,11 @@ export async function analyzeAmazonItemLocally(payload: {
     product_url: payload.product_url || null,
     nutrition_source: nutritionSource,
     matched_food: matchedFood,
-    message: analysis.explanation,
+    message: ingredientScan
+      ? `${analysis.explanation} Scanned ${ingredientScan.ingredients_count} ingredients (${ingredientScan.verdict}).`
+      : analysis.explanation,
     analysis,
+    ingredients_text: payload.ingredients_text || null,
+    ingredient_scan: ingredientScan,
   };
 }

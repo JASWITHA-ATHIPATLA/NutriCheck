@@ -38,6 +38,7 @@ import type {
   EvaluationReport,
   HealthLabel,
   NutritionFormValues,
+  PacketScanResult,
   PredictionResult,
   SampleFood,
 } from './types';
@@ -95,6 +96,8 @@ function NutriCheckShell() {
   const [analyzingGroceryItem, setAnalyzingGroceryItem] = useState<string | null>(null);
 
   const [prediction, setPrediction] = useState<PredictionResult | null>(null);
+  const [activeIngredientScan, setActiveIngredientScan] =
+    useState<PacketScanResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -172,12 +175,19 @@ function NutriCheckShell() {
   function handleIncomingAmazonEvent(ev: AmazonCartEvent, showBanner = true) {
     if (ev.status === 'analyzed' && ev.analysis) {
       applyPredictionToForm(ev.analysis);
+      setActiveIngredientScan(ev.ingredient_scan || null);
       pushToCartWithAlert(ev.analysis, `amz-${ev.event_id}`);
       if (showBanner) {
+        const verdictWord =
+          ev.analysis.classification === 'Healthy'
+            ? 'Good'
+            : ev.analysis.classification === 'Moderate'
+            ? 'Moderate'
+            : 'Not Good';
         setAmazonNotice({
           level: ev.analysis.cart_alert.level,
-          title: `Amazon Add-to-Cart Analyzed: ${ev.analysis.classification} (${ev.analysis.health_score}/100)`,
-          message: `${ev.product_title} — ${ev.analysis.explanation}`,
+          title: `Amazon Add-to-Cart Analyzed: ${verdictWord} (${ev.analysis.health_score}/100)`,
+          message: ev.message || `${ev.product_title} — ${ev.analysis.explanation}`,
           needsNutrition: false,
         });
       }
@@ -185,6 +195,7 @@ function NutriCheckShell() {
     }
 
     setPrediction(null);
+    setActiveIngredientScan(null);
     setFormValues({
       ...EMPTY_FORM,
       food_name: ev.product_title,
@@ -214,6 +225,7 @@ function NutriCheckShell() {
   ) {
     setIsAnalyzing(true);
     setFormError(null);
+    setActiveIngredientScan(null);
     try {
       const response = await fetch('/api/predict', {
         method: 'POST',
@@ -638,12 +650,14 @@ function NutriCheckShell() {
     setFormValues(EMPTY_FORM);
     setSelectedSampleName('');
     setPrediction(null);
+    setActiveIngredientScan(null);
     setFormError(null);
   }
 
   async function handleAnalyzeAmazonText(payload: {
     product_title: string;
     nutrition_text: string;
+    ingredients_text?: string;
     product_url?: string;
   }) {
     setIsSubmittingAmazon(true);
@@ -660,7 +674,10 @@ function NutriCheckShell() {
           }),
         }).catch(() => null);
         if (res?.ok) {
-          ev = (await res.json()) as AmazonCartEvent;
+          const candidate = (await res.json()) as AmazonCartEvent;
+          if (candidate.status === 'analyzed') {
+            ev = candidate;
+          }
         } else if (res && res.status === 422) {
           const errBody = await res.json().catch(() => null);
           throw new Error(errBody?.detail || `Invalid product input (${res.status})`);
@@ -708,6 +725,7 @@ function NutriCheckShell() {
   function handleInspectEventInAnalyzer(ev: AmazonCartEvent) {
     if (ev.analysis) {
       applyPredictionToForm(ev.analysis);
+      setActiveIngredientScan(ev.ingredient_scan || null);
       setActiveAlert({ ...ev.analysis.cart_alert, itemId: `amz-${ev.event_id}` });
       navigate('/analyzer');
       requestAnimationFrame(() => {
@@ -719,6 +737,7 @@ function NutriCheckShell() {
     }
 
     setPrediction(null);
+    setActiveIngredientScan(null);
     setFormValues({
       ...EMPTY_FORM,
       food_name: ev.product_title,
@@ -850,6 +869,7 @@ function NutriCheckShell() {
 
                     <AnalysisResult
                       result={prediction}
+                      ingredientScan={activeIngredientScan}
                       isAnalyzing={isAnalyzing}
                       onAddToCart={(res) => pushToCartWithAlert(res)}
                       onQuickPreset={handleQuickPreset}

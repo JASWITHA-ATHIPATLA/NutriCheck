@@ -5,12 +5,13 @@ import {
   ShieldAlert,
   ShoppingCart,
 } from 'lucide-react';
-import type { HealthLabel, PredictionResult } from '../types';
+import type { HealthLabel, PacketScanResult, PredictionResult } from '../types';
 import { BreakdownPieChart } from './BreakdownPieChart';
 import { NutritionGauge } from './NutritionGauge';
 
 interface AnalysisResultProps {
   result: PredictionResult | null;
+  ingredientScan?: PacketScanResult | null;
   isAnalyzing: boolean;
   onAddToCart: (result: PredictionResult) => void;
   onQuickPreset: (label: HealthLabel) => void;
@@ -37,6 +38,7 @@ function statusPillLabel(status?: 'good' | 'moderate' | 'high'): string {
 
 export function AnalysisResult({
   result,
+  ingredientScan,
   isAnalyzing,
   onAddToCart,
   onQuickPreset,
@@ -170,6 +172,47 @@ export function AnalysisResult({
     },
   ];
 
+  const hasIngredientData = Boolean(
+    ingredientScan &&
+      (ingredientScan.ingredient_findings.length > 0 ||
+        ingredientScan.parsed_ingredients.length > 0)
+  );
+  const ingGood = ingredientScan
+    ? ingredientScan.ingredient_findings.filter((f) => f.rating === 'good').length
+    : 0;
+  const ingMod = ingredientScan
+    ? ingredientScan.ingredient_findings.filter((f) => f.rating === 'moderate').length
+    : 0;
+  const ingBad = ingredientScan
+    ? ingredientScan.ingredient_findings.filter((f) => f.rating === 'high').length
+    : 0;
+  const unflaggedNatural =
+    ingredientScan && ingGood === 0 && ingMod === 0 && ingBad === 0
+      ? ingredientScan.parsed_ingredients.length
+      : 0;
+  const ingTotal = ingGood + ingMod + ingBad + unflaggedNatural;
+
+  const ingredientPieSlices = [
+    {
+      label: 'Good Ingredients',
+      value: ingGood + unflaggedNatural,
+      color: '#16a34a',
+      displayValue: `${ingGood + unflaggedNatural} items`,
+    },
+    {
+      label: 'Caution / Refined',
+      value: ingMod,
+      color: '#d97706',
+      displayValue: `${ingMod} items`,
+    },
+    {
+      label: 'Bad / High Concern',
+      value: ingBad,
+      color: '#dc2626',
+      displayValue: `${ingBad} items`,
+    },
+  ];
+
   return (
     <section className="card" aria-labelledby="analysis-result-heading">
       <div className="result-hero">
@@ -244,6 +287,67 @@ export function AnalysisResult({
           </table>
         </div>
       </div>
+
+      {hasIngredientData && ingredientScan && (
+        <div className="table-section" style={{ borderTop: '1px solid var(--border-subtle)', marginTop: 14 }}>
+          <div className="table-section-title">
+            Amazon Page Ingredients Analysis ({ingredientScan.verdict} · {ingredientScan.score}/100)
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <BreakdownPieChart
+              title="Good vs. Bad Ingredients"
+              subtitle="Distribution of scanned ingredients from the Amazon product page"
+              slices={ingredientPieSlices}
+              centerValue={`${ingTotal}`}
+              centerLabel="flagged"
+              emptyMessage="No flagged additives detected in the ingredient list."
+            />
+          </div>
+
+          {ingredientScan.ingredient_findings.length > 0 && (
+            <div className="data-table-wrap">
+              <table className="data-table nutrition-table">
+                <thead>
+                  <tr>
+                    <th>Ingredient</th>
+                    <th>Classification</th>
+                    <th>Assessment</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ingredientScan.ingredient_findings.map((finding) => (
+                    <tr key={finding.ingredient}>
+                      <td>
+                        <strong>{finding.ingredient}</strong>
+                      </td>
+                      <td>
+                        <span className={`eval-pill is-${finding.rating}`}>
+                          {finding.rating === 'good'
+                            ? 'Good'
+                            : finding.rating === 'moderate'
+                            ? 'Caution'
+                            : 'Bad'}
+                        </span>
+                      </td>
+                      <td className="table-note-cell">{finding.reason}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {ingredientScan.parsed_ingredients.length > 0 && (
+            <p className="card-subtitle" style={{ marginTop: 10 }}>
+              <strong>Scanned Ingredients:</strong>{' '}
+              {ingredientScan.parsed_ingredients.slice(0, 16).join(', ')}
+              {ingredientScan.parsed_ingredients.length > 16
+                ? ` (+${ingredientScan.parsed_ingredients.length - 16} more)`
+                : ''}
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="explanation-box">
         <div className="explanation-heading">Health Analysis Summary</div>
