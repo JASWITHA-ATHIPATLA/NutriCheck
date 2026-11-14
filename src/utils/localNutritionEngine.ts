@@ -158,8 +158,9 @@ export const GROCERY_STAPLE_PROFILES: StapleProfile[] = [
   { keywords: ['olive oil'], name: 'Extra Virgin Olive Oil (per tbsp 15ml)', calories: 119, sugars: 0.0, fat: 13.5, protein: 0.0, sodium_mg: 0 },
   { keywords: ['sunflower oil', 'mustard oil', 'groundnut oil', 'coconut oil', 'cooking oil', 'refined oil', 'oil'], name: 'Cooking Oil (per tbsp 15ml)', calories: 120, sugars: 0.0, fat: 14.0, protein: 0.0, sodium_mg: 0 },
   { keywords: ['peanut butter', 'almond butter'], name: 'Nut / Peanut Butter (per 100g)', calories: 588, sugars: 9.2, fat: 50.0, protein: 25.1, sodium_mg: 420 },
-  { keywords: ['almond', 'badam', 'walnut', 'pistachio', 'cashew', 'peanut', 'chia', 'flax', 'pumpkin seed', 'sunflower seed', 'dry fruits', 'mixed nuts'], name: 'Nuts & Seeds (per 100g)', calories: 579, sugars: 4.4, fat: 49.9, protein: 21.2, sodium_mg: 4 },
-  { keywords: ['dates', 'khajoor', 'raisins', 'kishmish'], name: 'Dried Dates / Raisins (per 100g)', calories: 282, sugars: 63.0, fat: 0.4, protein: 2.5, sodium_mg: 3 },
+  { keywords: ['mixed dry fruits', 'dry fruits', 'dry fruit', 'dryfruits', 'dryfruit', 'panchmewa', 'mixed nuts', 'trail mix', 'nut mix', 'nutmix'], name: 'Mixed Dry Fruits & Nuts (per 100g)', calories: 465, sugars: 14.0, fat: 28.5, protein: 14.2, sodium_mg: 6 },
+  { keywords: ['almonds', 'almond', 'badam', 'walnuts', 'walnut', 'akhrot', 'pistachios', 'pistachio', 'pista', 'cashews', 'cashew', 'kaju', 'peanuts', 'peanut', 'hazelnuts', 'hazelnut', 'pecans', 'pecan', 'macadamia', 'chia seeds', 'chia', 'flaxseeds', 'flax seeds', 'flax', 'pumpkin seeds', 'pumpkin seed', 'sunflower seeds', 'sunflower seed', 'makhana', 'fox nut', 'fox nuts'], name: 'Nuts & Seeds (per 100g)', calories: 579, sugars: 4.4, fat: 49.9, protein: 21.2, sodium_mg: 4 },
+  { keywords: ['dates', 'datiles', 'khajoor', 'raisins', 'raisin', 'kishmish', 'anjeer', 'dried fig', 'dried figs', 'dried apricot', 'dried apricots'], name: 'Dried Dates / Raisins / Figs (per 100g)', calories: 282, sugars: 63.0, fat: 0.4, protein: 2.5, sodium_mg: 3 },
   { keywords: ['honey'], name: 'Honey (per 100g)', calories: 304, sugars: 82.1, fat: 0.0, protein: 0.3, sodium_mg: 4 },
   { keywords: ['jaggery', 'gur', 'sugar'], name: 'Sugar / Sweetener (per 100g)', calories: 387, sugars: 99.8, fat: 0.0, protein: 0.0, sodium_mg: 1 },
   { keywords: ['ketchup', 'tomato sauce', 'sauce', 'chutney'], name: 'Tomato Ketchup / Sauce (per 100g)', calories: 112, sugars: 22.8, fat: 0.1, protein: 1.7, sodium_mg: 907 },
@@ -185,6 +186,20 @@ function round1(val: number): number {
   return Math.round(val * 10) / 10;
 }
 
+function isWholeNutOrSeedClient(name: string, n: { sugars: number; sodium_mg: number }): boolean {
+  const lower = (name || '').toLowerCase();
+  const hasNutSeed = /\b(almonds?|badam|walnuts?|akhrot|pistachios?|pista|cashews?|kaju|peanuts?|hazelnuts?|pecans?|macadamias?|chia|flax(?:seeds?)?|pumpkin seeds?|sunflower seeds?|sesame|mixed nuts?|dry\s*fruits?|dryfruits?|panchmewa|trail mix|nut\s*mix|nutmix|makhana|fox nuts?|olive oil)\b/i.test(lower);
+  const hasJunk = /\b(chocolate|candy|bar|cookie|biscuit|cake|pastry|ice cream|fried|chips|namkeen|bhujia|caramel|sugar coated|syrup|honey roasted|salted|masala|butter|nutella|sauce)\b/i.test(lower);
+  return hasNutSeed && !hasJunk && n.sodium_mg <= 180 && n.sugars <= 30;
+}
+
+function isNaturalDriedFruitClient(name: string, n: { fat: number; sodium_mg: number }): boolean {
+  const lower = (name || '').toLowerCase();
+  const hasDried = /\b(dates?|datiles|khajoor|raisins?|kishmish|figs?|anjeer|prunes?|apricots?)\b/i.test(lower);
+  const hasJunk = /\b(chocolate|candy|syrup|jam|cake|cookie|bar|sugar|juice)\b/i.test(lower);
+  return hasDried && !hasJunk && n.sodium_mg <= 40 && n.fat <= 5;
+}
+
 export function analyzeNutritionLocally(input: {
   food_name: string;
   calories: number;
@@ -205,15 +220,28 @@ export function analyzeNutritionLocally(input: {
   const protein_kcal_pct = clip((protein * 4) / kcal * 100, 0, 100);
   const sodium_per_100kcal = clip((sodium_mg / kcal) * 100, 0, 5000);
 
-  const pen_sugar =
+  const wholeNut = isWholeNutOrSeedClient(input.food_name, { sugars, sodium_mg });
+  const wholeDriedFruit = !wholeNut && isNaturalDriedFruitClient(input.food_name, { fat, sodium_mg });
+
+  let pen_sugar =
     clip((sugar_kcal_pct - 10) * 0.75, 0, 35) + clip((sugars - 20) * 0.4, 0, 10);
-  const pen_fat = clip((fat_kcal_pct - 30) * 0.65, 0, 18);
+  let pen_fat = clip((fat_kcal_pct - 30) * 0.65, 0, 18);
   const pen_sod =
     clip((sodium_per_100kcal - 115) * 0.08, 0, 22) + clip((sodium_mg - 500) * 0.012, 0, 10);
-  const pen_ed = clip((kcal - 260) * 0.035, 0, 12);
+  let pen_ed = clip((kcal - 260) * 0.035, 0, 12);
   const bon_prot = clip(protein_kcal_pct * 0.4, 0, 12);
-  const bon_whole =
+  let bon_whole =
     kcal < 160 && sugar_kcal_pct < 35 && sodium_per_100kcal < 150 ? 5 : 0;
+
+  if (wholeNut) {
+    pen_fat *= 0.2;
+    pen_ed *= 0.25;
+    pen_sugar *= 0.35;
+    bon_whole += 8;
+  } else if (wholeDriedFruit) {
+    pen_sugar *= 0.45;
+    bon_whole += 4;
+  }
 
   const health_score = round1(
     clip(75 - pen_sugar - pen_fat - pen_sod - pen_ed + bon_prot + bon_whole, 0, 100)
@@ -237,7 +265,15 @@ export function analyzeNutritionLocally(input: {
   const concerns: string[] = [];
   const strengths: string[] = [];
 
-  if (sugar_kcal_pct > 25 || sugars > 20) {
+  if (wholeNut || wholeDriedFruit) {
+    flags.push({
+      nutrient: 'Sugar',
+      value_display: `${round1(sugars)} g`,
+      status: sugars > 40 ? 'moderate' : 'good',
+      note: `${round1(sugar_kcal_pct)}% of kcal (natural fruit/nut sugars)`,
+    });
+    if (sugars <= 15) strengths.push('low natural sugar');
+  } else if (sugar_kcal_pct > 25 || sugars > 20) {
     flags.push({
       nutrient: 'Sugar',
       value_display: `${round1(sugars)} g`,
@@ -262,7 +298,15 @@ export function analyzeNutritionLocally(input: {
     if (sugars <= 5) strengths.push('low sugar');
   }
 
-  if (fat_kcal_pct > 45) {
+  if (wholeNut) {
+    flags.push({
+      nutrient: 'Total Fat',
+      value_display: `${round1(fat)} g`,
+      status: 'good',
+      note: `${round1(fat_kcal_pct)}% of kcal (heart-healthy unsaturated fats)`,
+    });
+    strengths.push('heart-healthy unsaturated fats');
+  } else if (fat_kcal_pct > 45) {
     flags.push({
       nutrient: 'Total Fat',
       value_display: `${round1(fat)} g`,
@@ -287,7 +331,7 @@ export function analyzeNutritionLocally(input: {
     strengths.push('controlled fat');
   }
 
-  if (protein_kcal_pct >= 20) {
+  if (protein_kcal_pct >= 20 || (wholeNut && protein >= 12)) {
     flags.push({
       nutrient: 'Protein',
       value_display: `${round1(protein)} g`,
@@ -460,7 +504,12 @@ const BENEFICIAL_INGREDIENTS: [string, string, string][] = [
   ['rice', 'Rice Grain', 'Whole or milled rice base with very low fat, sugar, and sodium.'],
   ['almond', 'Almonds', 'Heart-healthy monounsaturated fats, vitamin E, and protein.'],
   ['walnut', 'Walnuts', 'Source of plant omega-3 fats and antioxidants.'],
+  ['cashew', 'Cashews', 'Source of minerals, plant protein, and unsaturated fats.'],
+  ['pistachio', 'Pistachios', 'Nutrient-dense tree nut with fiber and protein.'],
   ['peanut', 'Peanuts', 'Good source of protein and unsaturated fats.'],
+  ['raisin', 'Raisins', 'Natural dried fruit rich in iron, potassium, and fiber.'],
+  ['date', 'Dates', 'Natural whole fruit sweetener with fiber and minerals.'],
+  ['fig', 'Figs', 'Natural dried fruit high in fiber and calcium.'],
   ['flaxseed', 'Flaxseeds', 'Rich in omega-3 fatty acids and soluble fiber.'],
   ['flax seed', 'Flax Seeds', 'Rich in omega-3 fatty acids and soluble fiber.'],
   ['chia seed', 'Chia Seeds', 'High in dietary fiber, plant protein, and omega-3 fats.'],

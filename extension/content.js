@@ -34,49 +34,119 @@
     return null;
   }
 
-  function extractProductLinkFromCard(clickedEl) {
-    const card = clickedEl.closest('[data-asin]');
-    if (!card) return null;
-    const link = card.querySelector('a[href*="/dp/"], a[href*="/gp/product/"]');
-    if (!link) return null;
-    try {
-      return new URL(link.getAttribute('href'), window.location.origin).href;
-    } catch {
-      return null;
+  function cleanExtractedTitle(raw) {
+    if (!raw) return '';
+    const cleaned = String(raw)
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!cleaned || cleaned.length < 2) return '';
+    if (
+      /^\d+\s*-\s*\d+\s+of\s+(?:over\s+)?[\d,]+\s+results/i.test(cleaned) ||
+      /\bsort by:\s*featured\b/i.test(cleaned) ||
+      /\bprice:\s*low to high\b/i.test(cleaned)
+    ) {
+      return '';
     }
+    return cleaned.slice(0, 260);
+  }
+
+  function findProductCard(clickedEl) {
+    if (!clickedEl || !(clickedEl instanceof Element)) return null;
+    return clickedEl.closest(
+      '[data-asin]:not([data-asin=""]), [data-component-type="s-search-result"], .s-result-item[data-asin]:not([data-asin=""]), li.a-carousel-card'
+    );
+  }
+
+  function extractProductLinkFromCard(clickedEl) {
+    const card = findProductCard(clickedEl);
+    if (!card) return null;
+    const links = card.querySelectorAll('a[href*="/dp/"], a[href*="/gp/product/"]');
+    for (const link of links) {
+      const href = link.getAttribute('href') || '';
+      if (href && !href.startsWith('#')) {
+        try {
+          return new URL(href, window.location.origin).href;
+        } catch {
+          // continue
+        }
+      }
+    }
+    const asin = (card.getAttribute('data-asin') || '').trim();
+    if (/^[A-Z0-9]{10}$/i.test(asin)) {
+      return `${window.location.origin}/dp/${asin}`;
+    }
+    return null;
   }
 
   function extractProductTitleFromDoc(doc, clickedEl) {
     if (clickedEl) {
-      const card = clickedEl.closest('[data-asin]');
+      const card = findProductCard(clickedEl);
       if (card) {
-        const cardTitle = card.querySelector(
-          'h2 a span, h2 span, [data-cy="title-recipe"] span, .a-size-medium, .a-size-base-plus'
-        );
-        if (cardTitle && cardTitle.textContent.trim()) {
-          return cardTitle.textContent.trim();
+        const h2WithAria = card.querySelector('h2[aria-label]');
+        if (h2WithAria) {
+          const t = cleanExtractedTitle(h2WithAria.getAttribute('aria-label'));
+          if (t) return t;
         }
+
+        const cardTitleSelectors = [
+          '[data-cy="title-recipe"] h2 span',
+          '[data-cy="title-recipe"] h2',
+          '[data-cy="title-recipe"] a span',
+          'h2 a span',
+          'a h2 span',
+          'h2 span',
+          '.s-line-clamp-2 span',
+          '.a-size-medium.a-color-base.a-text-normal',
+          '.a-size-base-plus.a-color-base.a-text-normal',
+        ];
+        for (const sel of cardTitleSelectors) {
+          const el = card.querySelector(sel);
+          if (el) {
+            const t = cleanExtractedTitle(el.innerText || el.textContent);
+            if (t) return t;
+          }
+        }
+
+        const cardImg = card.querySelector('img.s-image[alt], img[alt]');
+        if (cardImg) {
+          const alt = cleanExtractedTitle(
+            (cardImg.getAttribute('alt') || '').replace(/^sponsored ad\s*-\s*/i, '')
+          );
+          if (alt && alt.length > 3) return alt;
+        }
+      }
+
+      const btnAria = clickedEl.getAttribute('aria-label') || '';
+      if (btnAria && !/^add to cart$/i.test(btnAria.trim())) {
+        const stripped = cleanExtractedTitle(
+          btnAria.replace(/^add\s+to\s+cart\s*(?:for)?\s*/i, '')
+        );
+        if (stripped && stripped.length > 3) return stripped;
       }
     }
 
-    const pageTitle =
-      doc.querySelector('#productTitle') ||
-      doc.querySelector('#title') ||
-      doc.querySelector('h1');
-    if (pageTitle && pageTitle.textContent.trim()) {
-      return pageTitle.textContent.trim();
+    const pageTitle = doc.querySelector('#productTitle, #title');
+    if (pageTitle) {
+      const t = cleanExtractedTitle(pageTitle.innerText || pageTitle.textContent);
+      if (t) return t;
     }
 
-    return (doc.title || document.title)
-      .replace(/^Amazon\.[^:]+:\s*/i, '')
-      .trim();
+    const docTitle = cleanExtractedTitle(
+      (doc.title || document.title)
+        .replace(/^Amazon\.[^:]+:\s*/i, '')
+        .replace(/\s*:\s*Grocery.*$/i, '')
+    );
+    if (docTitle && !/^amazon\./i.test(docTitle)) return docTitle;
+
+    return '';
   }
 
   function extractBrandAndBarcodeFromDoc(doc) {
     let brand = '';
     const byline = doc.querySelector('#bylineInfo, #brand');
-    if (byline && byline.textContent) {
-      brand = byline.textContent
+    if (byline) {
+      brand = (byline.innerText || byline.textContent || '')
         .replace(/visit the\s+/i, '')
         .replace(/\s+store$/i, '')
         .replace(/^brand:\s*/i, '')
@@ -123,12 +193,12 @@
       '#aplus',
       '#aplus_feature_div',
       '#vital-info',
-      '.a-expander-content',
     ];
 
     for (const sel of candidateSelectors) {
       doc.querySelectorAll(sel).forEach((el) => {
         const text = (el.innerText || el.textContent || '')
+          .replace(/<[^>]*>/g, ' ')
           .replace(/\s+/g, ' ')
           .trim();
         if (!text) return;
@@ -148,7 +218,7 @@
       });
     }
 
-    doc.querySelectorAll('table').forEach((tbl) => {
+    doc.querySelectorAll('#productFactsDesktopExpander table, #productDetails_techSpec_section_1 table, #important-information table, #aplus table').forEach((tbl) => {
       const t = (tbl.innerText || tbl.textContent || '')
         .replace(/\s+/g, ' ')
         .trim();
@@ -161,7 +231,7 @@
       }
     });
 
-    doc.querySelectorAll('img[alt]').forEach((img) => {
+    doc.querySelectorAll('#aplus img[alt], #important-information img[alt]').forEach((img) => {
       const alt = (img.getAttribute('alt') || '').trim();
       if (!alt) return;
       if (NUTRITION_REGEX.test(alt)) nutritionChunks.push(alt.slice(0, 800));
@@ -175,23 +245,27 @@
   }
 
   async function resolveProductDetails(btn) {
+    const isDetailPage = Boolean(document.querySelector('#productTitle'));
     let targetDoc = document;
     let productTitle = extractProductTitleFromDoc(document, btn);
     let productUrl = window.location.href;
 
-    const extractedCurrent = extractIngredientsAndNutritionFromDoc(document);
-    let nutritionText = extractedCurrent.nutritionText;
-    let ingredientsText = extractedCurrent.ingredientsText;
-    let meta = extractBrandAndBarcodeFromDoc(document);
+    let nutritionText = '';
+    let ingredientsText = '';
+    let meta = { brand: '', barcode: '' };
 
-    // If clicked on an Amazon search card without full product HTML, fetch the /dp/ page
-    if (!nutritionText && !ingredientsText) {
+    if (isDetailPage) {
+      const extractedCurrent = extractIngredientsAndNutritionFromDoc(document);
+      nutritionText = extractedCurrent.nutritionText;
+      ingredientsText = extractedCurrent.ingredientsText;
+      meta = extractBrandAndBarcodeFromDoc(document);
+    } else {
       const dpUrl = extractProductLinkFromCard(btn);
       if (dpUrl) {
         productUrl = dpUrl;
         try {
           const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), 2500);
+          const timer = setTimeout(() => ctrl.abort(), 3200);
           const res = await fetch(dpUrl, {
             credentials: 'same-origin',
             signal: ctrl.signal,
@@ -211,7 +285,7 @@
             meta = extractBrandAndBarcodeFromDoc(targetDoc);
           }
         } catch {
-          // Ignore network/timeout errors and proceed with title lookup
+          // Ignore network/timeout errors and use card title + ASIN fallback
         }
       }
     }

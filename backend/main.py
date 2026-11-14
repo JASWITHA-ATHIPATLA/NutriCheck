@@ -363,6 +363,13 @@ def generate_nutrient_flags_and_explanation(
     return flags, explanation, cart_alert
 
 
+def _is_whole_nut_or_seed(name: str, sugars: float, sodium_mg: float) -> bool:
+    lower = (name or "").lower()
+    has_nut = bool(re.search(r"\b(almonds?|badam|walnuts?|akhrot|pistachios?|pista|cashews?|kaju|peanuts?|hazelnuts?|pecans?|macadamias?|chia|flax(?:seeds?)?|pumpkin seeds?|sunflower seeds?|sesame|mixed nuts?|dry\s*fruits?|dryfruits?|panchmewa|trail mix|nut\s*mix|nutmix|makhana|fox nuts?|olive oil)\b", lower))
+    has_junk = bool(re.search(r"\b(chocolate|candy|bar|cookie|biscuit|cake|pastry|ice cream|fried|chips|namkeen|bhujia|caramel|sugar coated|syrup|honey roasted|salted|masala|butter|nutella|sauce)\b", lower))
+    return has_nut and not has_junk and sodium_mg <= 180.0 and sugars <= 30.0
+
+
 def run_ml_prediction(payload: FoodNutritionInput) -> PredictionResponse:
     features_df, nutrition_summary = build_feature_frame(payload)
     model_classes = list(MODEL.classes_)
@@ -384,6 +391,11 @@ def run_ml_prediction(payload: FoodNutritionInput) -> PredictionResponse:
     health_score = round(float(np.clip(health_score, 0.0, 100.0)), 1)
 
     food_name = payload.food_name.strip() or "Custom Food Item"
+    if _is_whole_nut_or_seed(food_name, nutrition_summary["sugars"], nutrition_summary["sodium_mg"]):
+        pred_label = "Healthy"
+        health_score = max(health_score, 80.5)
+        confidence = max(confidence, 82.0)
+
     flags, explanation, cart_alert = generate_nutrient_flags_and_explanation(
         pred_label, health_score, food_name, nutrition_summary
     )
@@ -528,8 +540,9 @@ GROCERY_STAPLE_PROFILES: list[dict[str, Any]] = [
     {"keywords": ["olive oil"], "name": "Extra Virgin Olive Oil (per tbsp 15ml)", "calories": 119.0, "sugars": 0.0, "fat": 13.5, "protein": 0.0, "sodium_mg": 0.0},
     {"keywords": ["sunflower oil", "mustard oil", "groundnut oil", "coconut oil", "cooking oil", "refined oil", "oil"], "name": "Cooking Oil (per tbsp 15ml)", "calories": 120.0, "sugars": 0.0, "fat": 14.0, "protein": 0.0, "sodium_mg": 0.0},
     {"keywords": ["peanut butter", "almond butter"], "name": "Nut / Peanut Butter (per 100g)", "calories": 588.0, "sugars": 9.2, "fat": 50.0, "protein": 25.1, "sodium_mg": 420.0},
-    {"keywords": ["almond", "badam", "walnut", "pistachio", "cashew", "peanut", "chia", "flax", "pumpkin seed", "sunflower seed", "dry fruits", "mixed nuts"], "name": "Nuts & Seeds (per 100g)", "calories": 579.0, "sugars": 4.4, "fat": 49.9, "protein": 21.2, "sodium_mg": 4.0},
-    {"keywords": ["dates", "khajoor", "raisins", "kishmish"], "name": "Dried Dates / Raisins (per 100g)", "calories": 282.0, "sugars": 63.0, "fat": 0.4, "protein": 2.5, "sodium_mg": 3.0},
+    {"keywords": ["mixed dry fruits", "dry fruits", "dry fruit", "dryfruits", "dryfruit", "panchmewa", "mixed nuts", "trail mix", "nut mix", "nutmix"], "name": "Mixed Dry Fruits & Nuts (per 100g)", "calories": 465.0, "sugars": 14.0, "fat": 28.5, "protein": 14.2, "sodium_mg": 6.0},
+    {"keywords": ["almonds", "almond", "badam", "walnuts", "walnut", "akhrot", "pistachios", "pistachio", "pista", "cashews", "cashew", "kaju", "peanuts", "peanut", "hazelnuts", "hazelnut", "pecans", "pecan", "macadamia", "chia seeds", "chia", "flaxseeds", "flax seeds", "flax", "pumpkin seeds", "pumpkin seed", "sunflower seeds", "sunflower seed", "makhana", "fox nut", "fox nuts"], "name": "Nuts & Seeds (per 100g)", "calories": 579.0, "sugars": 4.4, "fat": 49.9, "protein": 21.2, "sodium_mg": 4.0},
+    {"keywords": ["dates", "datiles", "khajoor", "raisins", "raisin", "kishmish", "anjeer", "dried fig", "dried figs", "dried apricot", "dried apricots"], "name": "Dried Dates / Raisins / Figs (per 100g)", "calories": 282.0, "sugars": 63.0, "fat": 0.4, "protein": 2.5, "sodium_mg": 3.0},
     {"keywords": ["honey"], "name": "Honey (per 100g)", "calories": 304.0, "sugars": 82.1, "fat": 0.0, "protein": 0.3, "sodium_mg": 4.0},
     {"keywords": ["jaggery", "gur", "sugar"], "name": "Sugar / Sweetener (per 100g)", "calories": 387.0, "sugars": 99.8, "fat": 0.0, "protein": 0.0, "sodium_mg": 1.0},
     {"keywords": ["ketchup", "tomato sauce", "sauce", "chutney"], "name": "Tomato Ketchup / Sauce (per 100g)", "calories": 112.0, "sugars": 22.8, "fat": 0.1, "protein": 1.7, "sodium_mg": 907.0},
