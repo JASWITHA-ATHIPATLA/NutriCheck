@@ -695,6 +695,10 @@ function buildToastFromResponse({ ok, baseUrl, data, error, productTitle }) {
   };
 }
 
+function isLocalApiHost(url) {
+  return /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(url);
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'HEALTHGUARD_ADD_TO_CART') {
     (async () => {
@@ -711,20 +715,22 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       });
 
       let eventData = null;
-      try {
-        const res = await fetch(`${baseUrl}/api/amazon/add-to-cart`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(message.payload),
-        });
-        if (res.ok) {
-          const candidate = await res.json().catch(() => null);
-          if (candidate && candidate.status === 'analyzed') {
-            eventData = candidate;
+      if (isLocalApiHost(baseUrl)) {
+        try {
+          const res = await fetch(`${baseUrl}/api/amazon/add-to-cart`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(message.payload),
+          });
+          if (res.ok) {
+            const candidate = await res.json().catch(() => null);
+            if (candidate && candidate.status === 'analyzed') {
+              eventData = candidate;
+            }
           }
+        } catch {
+          // Fallback below handles offline local backend and universal staples
         }
-      } catch {
-        // Fallback below handles static Vercel deployments and universal staples
       }
 
       if (!eventData) {

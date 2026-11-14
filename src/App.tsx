@@ -432,6 +432,16 @@ function NutriCheckShell() {
 
       if (unseen.length > 0) {
         handleIncomingAmazonEvent(unseen[0], true);
+      } else {
+        const itemParam = new URLSearchParams(window.location.search).get('item');
+        if (itemParam) {
+          const matched = incoming.find(
+            (ev) => ev?.product_title?.toLowerCase() === itemParam.toLowerCase() && ev.ingredient_scan
+          );
+          if (matched?.ingredient_scan) {
+            setActiveIngredientScan(matched.ingredient_scan);
+          }
+        }
       }
     }
 
