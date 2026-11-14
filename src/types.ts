@@ -121,11 +121,13 @@ export interface AmazonCartEvent {
   event_id: string;
   timestamp: string;
   source: string;
+  status: 'analyzed' | 'needs_nutrition';
   product_title: string;
   product_url: string | null;
   nutrition_source: string;
   matched_food: string | null;
-  analysis: PredictionResult;
+  message: string | null;
+  analysis: PredictionResult | null;
 }
 
 export interface CatalogFoodItem {
@@ -139,4 +141,26 @@ export interface CatalogFoodItem {
   source_group: string;
 }
 
+export interface IngredientFinding {
+  ingredient: string;
+  rating: 'good' | 'moderate' | 'high';
+  reason: string;
+}
 
+export interface ScanReason {
+  type: 'good' | 'warning' | 'danger';
+  text: string;
+}
+
+export interface PacketScanResult {
+  product_name: string;
+  verdict: 'Good' | 'Moderate' | 'Not Good';
+  score: number;
+  nutrition_found: boolean;
+  ingredients_count: number;
+  parsed_ingredients: string[];
+  ingredient_findings: IngredientFinding[];
+  reasons: ScanReason[];
+  summary: string;
+  nutrition_analysis: PredictionResult | null;
+}

@@ -1,0 +1,482 @@
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  AlertTriangle,
+  Camera,
+  Loader2,
+  ScanLine,
+  ShieldAlert,
+  ThumbsUp,
+  Upload,
+  X,
+} from 'lucide-react';
+import Tesseract from 'tesseract.js';
+import { NutritionGauge } from '../components/NutritionGauge';
+import type { PacketScanResult } from '../types';
+
+const SAMPLE_PACKETS = [
+  {
+    name: 'Wholegrain Rolled Oats',
+    text:
+      'Ingredients: 100% Wholegrain Rolled Oats.\n' +
+      'Nutrition Facts (per 100g): Calories 375 kcal, Total Fat 7g, Sugars 1g, Protein 13g, Sodium 5mg',
+  },
+  {
+    name: 'Masala Instant Noodles',
+    text:
+      'Ingredients: Refined Wheat Flour (Maida), Palm Oil, Iodized Salt, Sugar, Maltodextrin, MSG (E621), TBHQ.\n' +
+      'Nutrition Facts (per 100g): Energy 427 kcal, Fat 15.7g, Sugars 1.2g, Protein 8g, Salt 2.9g',
+  },
+  {
+    name: 'Cola Soft Drink',
+    text:
+      'Ingredients: Carbonated Water, High Fructose Corn Syrup, Caramel Color, Phosphoric Acid, Caffeine, Sodium Benzoate.\n' +
+      'Nutrition Facts: Calories 140 kcal, Sugars 39g, Total Fat 0g, Protein 0g, Sodium 45mg',
+  },
+];
+
+export function ScanPacketPage() {
+  const [productName, setProductName] = useState('');
+  const [rawText, setRawText] = useState('');
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const [ocrProgress, setOcrProgress] = useState<number | null>(null);
+  const [ocrStatusText, setOcrStatusText] = useState<string | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [result, setResult] = useState<PacketScanResult | null>(null);
+
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+      }
+      if (imagePreviewUrl) {
+        URL.revokeObjectURL(imagePreviewUrl);
+      }
+    };
+  }, [imagePreviewUrl]);
+
+  async function analyzeText(nameToUse: string, textToUse: string) {
+    setIsScanning(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch('/api/scan-packet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          product_name: nameToUse.trim() || 'Scanned Food Packet',
+          raw_text: textToUse.trim(),
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.detail || `Server returned status ${res.status}`);
+      }
+      setResult(data as PacketScanResult);
+    } catch (err) {
+      setErrorMessage(
+        err instanceof Error ? err.message : 'Unable to analyze packet text.'
+      );
+    } finally {
+      setIsScanning(false);
+    }
+  }
+
+  async function runOcrOnImageSource(source: File | Blob, labelName: string) {
+    setErrorMessage(null);
+    setOcrProgress(0);
+    setOcrStatusText('Reading text from packet image...');
+    try {
+      const workerResult = await Tesseract.recognize(source, 'eng', {
+        logger: (m) => {
+          if (m.status === 'recognizing text' && typeof m.progress === 'number') {
+            setOcrProgress(Math.round(m.progress * 100));
+          }
+        },
+      });
+      const extracted = (workerResult?.data?.text || '').trim();
+      if (!extracted || extracted.length < 4) {
+        setErrorMessage(
+          'Could not read clear text from that photo. Try a sharper, well-lit photo of the Ingredients box or paste the text below.'
+        );
+        return;
+      }
+      setRawText(extracted);
+      const inferredName = productName.trim() || labelName;
+      if (!productName.trim()) {
+        setProductName(inferredName);
+      }
+      await analyzeText(inferredName, extracted);
+    } catch (err) {
+      setErrorMessage(
+        err instanceof Error
+          ? `OCR failed: ${err.message}`
+          : 'Failed to scan image text.'
+      );
+    } finally {
+      setOcrProgress(null);
+      setOcrStatusText(null);
+    }
+  }
+
+  function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+    setImagePreviewUrl(URL.createObjectURL(file));
+    const cleanFileName = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
+    void runOcrOnImageSource(file, cleanFileName || 'Scanned Food Packet');
+    event.target.value = '';
+  }
+
+  async function handleStartCamera() {
+    setErrorMessage(null);
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setErrorMessage(
+        'Live camera access is unavailable in this browser. Use Upload Packet Photo instead.'
+      );
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' },
+      });
+      streamRef.current = stream;
+      setCameraOpen(true);
+      requestAnimationFrame(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      });
+    } catch {
+      setErrorMessage(
+        'Camera permission was denied or unavailable. Use Upload Packet Photo instead.'
+      );
+    }
+  }
+
+  function handleStopCamera() {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    setCameraOpen(false);
+  }
+
+  function handleCaptureSnapshot() {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth || !video.videoHeight) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+      setImagePreviewUrl(URL.createObjectURL(blob));
+      handleStopCamera();
+      void runOcrOnImageSource(blob, 'Camera Packet Capture');
+    }, 'image/jpeg', 0.92);
+  }
+
+  function handleFormSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!rawText.trim()) {
+      setErrorMessage('Upload a packet photo or enter/paste ingredients text first.');
+      return;
+    }
+    void analyzeText(productName || 'Scanned Food Packet', rawText);
+  }
+
+  function handleSampleClick(sample: (typeof SAMPLE_PACKETS)[number]) {
+    setProductName(sample.name);
+    setRawText(sample.text);
+    setImagePreviewUrl(null);
+    void analyzeText(sample.name, sample.text);
+  }
+
+  const gaugeTone = !result
+    ? 'moderate'
+    : result.verdict === 'Good'
+    ? 'good'
+    : result.verdict === 'Moderate'
+    ? 'moderate'
+    : 'bad';
+
+  return (
+    <div className="page-shell">
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Scan Packet Ingredients</h1>
+          <p className="page-subtitle">
+            Upload a photo of any food packet&apos;s back label, snap with your camera,
+            or paste the ingredients list to see if it is Good, Moderate, or Not Good.
+          </p>
+        </div>
+      </div>
+
+      <div className="analyzer-grid">
+        <section className="card" aria-labelledby="scan-input-heading">
+          <div className="card-header">
+            <div>
+              <h2 id="scan-input-heading" className="card-title">
+                Packet Photo &amp; Label Reader
+              </h2>
+              <p className="card-subtitle">
+                Extracts ingredients and nutrition values directly in your browser.
+              </p>
+            </div>
+          </div>
+
+          <div className="scan-upload-actions">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handleFileChange}
+              className="sr-only"
+              aria-label="Upload packet ingredients photo"
+            />
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={ocrProgress !== null}
+            >
+              <Upload size={16} />
+              <span>Upload Packet Photo</span>
+            </button>
+
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={cameraOpen ? handleStopCamera : handleStartCamera}
+              disabled={ocrProgress !== null}
+            >
+              <Camera size={16} />
+              <span>{cameraOpen ? 'Close Camera' : 'Use Camera'}</span>
+            </button>
+          </div>
+
+          {cameraOpen && (
+            <div className="camera-box">
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="camera-preview"
+              />
+              <div className="camera-actions">
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={handleCaptureSnapshot}
+                >
+                  <ScanLine size={16} />
+                  <span>Capture &amp; Scan Packet</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={handleStopCamera}
+                >
+                  <X size={16} />
+                  <span>Cancel</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {ocrProgress !== null && (
+            <div className="ocr-progress-box" role="status" aria-live="polite">
+              <Loader2 size={16} className="spin-icon" />
+              <span>
+                {ocrStatusText} ({ocrProgress}%)
+              </span>
+            </div>
+          )}
+
+          {imagePreviewUrl && (
+            <div className="scan-preview-frame">
+              <img
+                src={imagePreviewUrl}
+                alt="Uploaded food packet label preview"
+                className="scan-preview-img"
+              />
+            </div>
+          )}
+
+          <div className="sample-box" style={{ marginTop: '16px' }}>
+            <span className="sample-label">Try a Sample Packet Label</span>
+            <div className="quick-presets">
+              {SAMPLE_PACKETS.map((sample) => (
+                <button
+                  key={sample.name}
+                  type="button"
+                  className="preset-btn"
+                  onClick={() => handleSampleClick(sample)}
+                >
+                  {sample.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <form className="form-stack" onSubmit={handleFormSubmit}>
+            <div className="field">
+              <label htmlFor="scan-product-name" className="field-label">
+                <span>Product Name</span>
+                <span className="field-unit">Optional</span>
+              </label>
+              <input
+                id="scan-product-name"
+                type="text"
+                className="field-input"
+                placeholder="e.g., Wholegrain Oats or Masala Noodles"
+                value={productName}
+                onChange={(e) => setProductName(e.target.value)}
+              />
+            </div>
+
+            <div className="field">
+              <label htmlFor="scan-raw-text" className="field-label">
+                <span>Scanned Ingredients &amp; Nutrition Text</span>
+                <span className="field-unit">Editable</span>
+              </label>
+              <textarea
+                id="scan-raw-text"
+                className="field-input field-textarea"
+                style={{ minHeight: '132px' }}
+                placeholder="Upload a packet photo above or paste text here (e.g., Ingredients: Wholegrain Oats, Sugar, Palm Oil...)"
+                value={rawText}
+                onChange={(e) => setRawText(e.target.value)}
+              />
+            </div>
+
+            {errorMessage && (
+              <div className="error-banner" role="alert">
+                <AlertTriangle size={16} />
+                <span>{errorMessage}</span>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              className="btn-primary"
+              disabled={isScanning || ocrProgress !== null}
+            >
+              <ScanLine size={16} />
+              <span>{isScanning ? 'Analyzing Packet...' : 'Analyze Ingredients'}</span>
+            </button>
+          </form>
+        </section>
+
+        <div className="result-column">
+          {!result && !isScanning ? (
+            <section className="card empty-state">
+              <div className="empty-icon" aria-hidden="true">
+                <ScanLine size={22} />
+              </div>
+              <h2 className="empty-title">Upload or Scan a Packet Label</h2>
+              <p className="empty-desc">
+                NutriCheck inspects every listed ingredient and any detected calories,
+                sugar, fat, protein, and sodium numbers to give you a clear Good,
+                Moderate, or Not Good verdict.
+              </p>
+            </section>
+          ) : isScanning && !result ? (
+            <section className="card empty-state" aria-busy="true">
+              <h2 className="empty-title">Analyzing Packet Ingredients...</h2>
+              <p className="empty-desc">
+                Checking ingredient quality and running nutrient profiling rules.
+              </p>
+            </section>
+          ) : result ? (
+            <section className="card" aria-labelledby="scan-result-heading">
+              <div className="result-hero">
+                <div>
+                  <h2 id="scan-result-heading" className="result-food-name">
+                    {result.product_name}
+                  </h2>
+                  <p className="result-meta-line">
+                    {result.ingredients_count} ingredients parsed ·{' '}
+                    {result.nutrition_found
+                      ? 'Nutrition table + ML model included'
+                      : 'Ingredient profile analysis'}
+                  </p>
+                </div>
+
+                <div
+                  className={`status-badge ${
+                    result.verdict === 'Good'
+                      ? 'is-healthy'
+                      : result.verdict === 'Moderate'
+                      ? 'is-moderate'
+                      : 'is-unhealthy'
+                  }`}
+                >
+                  {result.verdict === 'Good' ? (
+                    <ThumbsUp size={17} />
+                  ) : result.verdict === 'Moderate' ? (
+                    <AlertTriangle size={17} />
+                  ) : (
+                    <ShieldAlert size={17} />
+                  )}
+                  <span>{result.verdict}</span>
+                </div>
+              </div>
+
+              <div className="score-section score-gauge-row">
+                <NutritionGauge
+                  score={result.score}
+                  label={result.verdict}
+                  tone={gaugeTone}
+                  title="Nutrition score"
+                />
+
+                <div className="score-meta-col">
+                  <div className="explanation-heading">Verdict Summary</div>
+                  <p className="explanation-text">{result.summary}</p>
+                </div>
+              </div>
+
+              <div className="scan-reasons-list">
+                {result.reasons.map((r, idx) => (
+                  <div key={idx} className="scan-reason-row">
+                    <span className={`reason-icon is-${r.type}`} aria-hidden="true">
+                      {r.type === 'good' ? (
+                        <ThumbsUp size={15} />
+                      ) : r.type === 'warning' ? (
+                        <AlertTriangle size={15} />
+                      ) : (
+                        <ShieldAlert size={15} />
+                      )}
+                    </span>
+                    <span className="reason-text">{r.text}</span>
+                  </div>
+                ))}
+              </div>
+
+              {result.parsed_ingredients.length > 0 && (
+                <div className="parsed-ingredients-box">
+                  <div className="explanation-heading">Extracted Ingredients</div>
+                  <p className="card-subtitle" style={{ color: '#374151', marginTop: '4px' }}>
+                    {result.parsed_ingredients.join(' · ')}
+                  </p>
+                </div>
+              )}
+            </section>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}

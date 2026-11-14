@@ -1,12 +1,28 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowRight, Sparkles } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ShieldAlert,
+} from 'lucide-react';
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from 'react-router-dom';
 import { AmazonConnectView } from './components/AmazonConnectView';
 import { AnalysisResult } from './components/AnalysisResult';
 import { CartPanel } from './components/CartPanel';
 import { CatalogGroceryDemo } from './components/CatalogGroceryDemo';
+import { Footer } from './components/Footer';
 import { ModelMetricsView } from './components/ModelMetricsView';
 import { NutritionForm } from './components/NutritionForm';
-import { type ActiveTab, TopBar } from './components/TopBar';
+import { TopBar } from './components/TopBar';
+import { AboutPage } from './pages/AboutPage';
+import { HomePage } from './pages/HomePage';
+import { ScanPacketPage } from './pages/ScanPacketPage';
 import type {
   AmazonCartEvent,
   CartAlert,
@@ -28,8 +44,18 @@ const EMPTY_FORM: NutritionFormValues = {
   sodium_mg: '',
 };
 
-export default function App() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('analyzer');
+function ScrollToTop() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+  return null;
+}
+
+function NutriCheckShell() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
   const [formValues, setFormValues] = useState<NutritionFormValues>(EMPTY_FORM);
   const [samples, setSamples] = useState<SampleFood[]>([]);
   const [selectedSampleName, setSelectedSampleName] = useState('');
@@ -52,6 +78,12 @@ export default function App() {
   const [amazonEvents, setAmazonEvents] = useState<AmazonCartEvent[]>([]);
   const [isSubmittingAmazon, setIsSubmittingAmazon] = useState(false);
   const [amazonError, setAmazonError] = useState<string | null>(null);
+  const [amazonNotice, setAmazonNotice] = useState<{
+    level: 'success' | 'warning' | 'danger' | 'info';
+    title: string;
+    message: string;
+    needsNutrition?: boolean;
+  } | null>(null);
   const seenEventIdsRef = useRef<Set<string>>(new Set());
   const initializedEventsRef = useRef(false);
 
@@ -87,6 +119,38 @@ export default function App() {
       protein: String(res.nutrition.protein),
       sodium_mg: String(res.nutrition.sodium_mg),
     });
+  }
+
+  function handleIncomingAmazonEvent(ev: AmazonCartEvent, showBanner = true) {
+    if (ev.status === 'analyzed' && ev.analysis) {
+      applyPredictionToForm(ev.analysis);
+      pushToCartWithAlert(ev.analysis, `amz-${ev.event_id}`);
+      if (showBanner) {
+        setAmazonNotice({
+          level: ev.analysis.cart_alert.level,
+          title: `Amazon Add-to-Cart Analyzed: ${ev.analysis.classification} (${ev.analysis.health_score}/100)`,
+          message: `${ev.product_title} — ${ev.analysis.explanation}`,
+          needsNutrition: false,
+        });
+      }
+      return;
+    }
+
+    setPrediction(null);
+    setFormValues({
+      ...EMPTY_FORM,
+      food_name: ev.product_title,
+    });
+    if (showBanner) {
+      setAmazonNotice({
+        level: 'warning',
+        title: `Amazon Item Captured: ${ev.product_title}`,
+        message:
+          ev.message ||
+          'Nutrition label numbers were not found on the Amazon page. Enter nutrition values below or paste label text to classify.',
+        needsNutrition: true,
+      });
+    }
   }
 
   async function runPrediction(
@@ -131,6 +195,17 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
 
+    const params = new URLSearchParams(window.location.search);
+    const itemName = params.get('item') || params.get('food');
+    const calParam = params.get('calories');
+    const sugParam = params.get('sugars');
+    const fatParam = params.get('fat');
+    const proParam = params.get('protein');
+    const sodParam = params.get('sodium_mg');
+    const hasCalorieParams = Boolean(
+      itemName && calParam && sugParam && fatParam && proParam && sodParam
+    );
+
     async function loadInitialData() {
       try {
         const [samplesRes, metricsRes, eventsRes, foodsRes] = await Promise.all([
@@ -151,16 +226,66 @@ export default function App() {
           setMetricsError('Unable to load model evaluation report from API.');
         }
 
+        let loadedEvents: AmazonCartEvent[] = [];
         if (!cancelled && eventsRes.ok) {
-          const evData: AmazonCartEvent[] = await eventsRes.json();
-          evData.forEach((ev) => seenEventIdsRef.current.add(ev.event_id));
+          loadedEvents = await eventsRes.json();
+          loadedEvents.forEach((ev) => seenEventIdsRef.current.add(ev.event_id));
           initializedEventsRef.current = true;
-          setAmazonEvents(evData);
+          setAmazonEvents(loadedEvents);
+
+          const analyzedItems: CartItem[] = loadedEvents
+            .filter((ev) => ev.status === 'analyzed' && ev.analysis !== null)
+            .map((ev) => {
+              const a = ev.analysis!;
+              return {
+                id: `amz-${ev.event_id}`,
+                food_name: a.food_name,
+                classification: a.classification,
+                health_score: a.health_score,
+                calories: a.nutrition.calories,
+                sugars: a.nutrition.sugars,
+                fat: a.nutrition.fat,
+                protein: a.nutrition.protein,
+                sodium_mg: a.nutrition.sodium_mg,
+                cart_alert: a.cart_alert,
+              };
+            });
+          if (analyzedItems.length > 0) {
+            setCartItems((prev) => {
+              const existingIds = new Set(prev.map((p) => p.id));
+              return [
+                ...prev,
+                ...analyzedItems.filter((item) => !existingIds.has(item.id)),
+              ];
+            });
+          }
+
+          if (!hasCalorieParams && !itemName && loadedEvents.length > 0) {
+            handleIncomingAmazonEvent(loadedEvents[0], false);
+          }
         }
 
         if (!cancelled && foodsRes.ok) {
           const foodData: CatalogFoodItem[] = await foodsRes.json();
           setCatalogItems(foodData);
+        }
+
+        if (!cancelled && itemName && !hasCalorieParams) {
+          const matchingExisting = loadedEvents.find(
+            (ev) => ev.product_title.toLowerCase() === itemName.toLowerCase()
+          );
+          if (matchingExisting) {
+            handleIncomingAmazonEvent(matchingExisting, true);
+            if (matchingExisting.status === 'needs_nutrition') {
+              navigate('/amazon');
+            }
+          } else {
+            navigate('/amazon');
+            void handleAnalyzeAmazonText({
+              product_title: itemName,
+              nutrition_text: params.get('nutrition') || '',
+            });
+          }
         }
       } catch {
         if (!cancelled) {
@@ -173,15 +298,7 @@ export default function App() {
 
     loadInitialData();
 
-    const params = new URLSearchParams(window.location.search);
-    const itemName = params.get('item') || params.get('food');
-    const calParam = params.get('calories');
-    const sugParam = params.get('sugars');
-    const fatParam = params.get('fat');
-    const proParam = params.get('protein');
-    const sodParam = params.get('sodium_mg');
-
-    if (itemName && calParam && sugParam && fatParam && proParam && sodParam) {
+    if (hasCalorieParams && itemName) {
       const payload = {
         food_name: itemName,
         calories: Number(calParam),
@@ -201,12 +318,6 @@ export default function App() {
         });
         void runPrediction(payload, true);
       }
-    } else if (itemName) {
-      setActiveTab('amazon');
-      void handleAnalyzeAmazonText({
-        product_title: itemName,
-        nutrition_text: params.get('nutrition') || '',
-      });
     }
 
     return () => {
@@ -214,7 +325,7 @@ export default function App() {
     };
   }, []);
 
-  // Live search across the 2,158 cleaned CSV foods
+  // Live search across local dataset + Open Food Facts
   useEffect(() => {
     const controller = new AbortController();
     const handle = window.setTimeout(async () => {
@@ -230,7 +341,7 @@ export default function App() {
       } catch {
         // Ignore abort errors
       }
-    }, 150);
+    }, 260);
 
     return () => {
       controller.abort();
@@ -238,7 +349,7 @@ export default function App() {
     };
   }, [catalogQuery]);
 
-  // Poll for live Amazon extension Add-to-Cart events every 3s
+  // Poll for live Amazon extension Add-to-Cart events every 2s
   useEffect(() => {
     const timer = window.setInterval(async () => {
       try {
@@ -258,14 +369,12 @@ export default function App() {
         );
         if (unseen.length > 0) {
           unseen.forEach((ev) => seenEventIdsRef.current.add(ev.event_id));
-          const newest = unseen[0];
-          applyPredictionToForm(newest.analysis);
-          pushToCartWithAlert(newest.analysis, `amz-${newest.event_id}`);
+          handleIncomingAmazonEvent(unseen[0], true);
         }
       } catch {
         // Ignore transient polling hiccups
       }
-    }, 3000);
+    }, 2000);
 
     return () => window.clearInterval(timer);
   }, []);
@@ -437,8 +546,7 @@ export default function App() {
       const ev = data as AmazonCartEvent;
       seenEventIdsRef.current.add(ev.event_id);
       setAmazonEvents((prev) => [ev, ...prev.filter((p) => p.event_id !== ev.event_id)]);
-      applyPredictionToForm(ev.analysis);
-      pushToCartWithAlert(ev.analysis, `amz-${ev.event_id}`);
+      handleIncomingAmazonEvent(ev, true);
     } catch (err) {
       setAmazonError(
         err instanceof Error ? err.message : 'Unable to analyze Amazon item.'
@@ -461,9 +569,29 @@ export default function App() {
   }
 
   function handleInspectEventInAnalyzer(ev: AmazonCartEvent) {
-    applyPredictionToForm(ev.analysis);
-    setActiveAlert({ ...ev.analysis.cart_alert, itemId: `amz-${ev.event_id}` });
-    setActiveTab('analyzer');
+    if (ev.analysis) {
+      applyPredictionToForm(ev.analysis);
+      setActiveAlert({ ...ev.analysis.cart_alert, itemId: `amz-${ev.event_id}` });
+      navigate('/analyzer');
+      requestAnimationFrame(() => {
+        document
+          .getElementById('live-analysis-anchor')
+          ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      });
+      return;
+    }
+
+    setPrediction(null);
+    setFormValues({
+      ...EMPTY_FORM,
+      food_name: ev.product_title,
+    });
+    navigate('/analyzer');
+    requestAnimationFrame(() => {
+      document
+        .getElementById('manual-analyzer-section')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   }
 
   function handleRemoveCartItem(id: string) {
@@ -473,191 +601,185 @@ export default function App() {
     }
   }
 
-  function handleJumpToCart() {
-    setActiveTab('analyzer');
-    requestAnimationFrame(() => {
-      document
-        .getElementById('demo-cart-section')
-        ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    });
-  }
-
-  const bestMetric = report?.model_comparison.find(
-    (m) => m.model === report.best_model
-  );
+  const showLiveNotice = amazonNotice && location.pathname !== '/';
 
   return (
     <div className="app-shell">
-      <TopBar
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        cartCount={cartItems.length}
-        amazonCount={amazonEvents.length}
-        onJumpToCart={handleJumpToCart}
-      />
+      <ScrollToTop />
+      <TopBar />
 
-      {activeTab === 'analyzer' && (
-        <section className="hero-banner" aria-label="HealthGuard Overview">
-          <div className="hero-inner">
-            <div>
-              <div className="hero-eyebrow">
-                <Sparkles size={15} />
-                <span>WHO / FDA Nutrient Profiling · Scikit-learn ML</span>
-              </div>
-              <h1 className="hero-title">
-                Welcome to
-                <span className="hero-title-gradient">HealthGuard</span>
-              </h1>
-              <p className="hero-desc">
-                Click Add to Cart on any grocery item—or connect Amazon via the
-                browser extension—to automatically analyze calories, sugar, fat,
-                protein, and sodium with instant Healthy, Moderate, or Unhealthy
-                alerts.
-              </p>
-              <div className="hero-cta-row">
-                <button
-                  type="button"
-                  className="hero-btn-primary"
-                  onClick={() =>
-                    document
-                      .getElementById('grocery-cart-demo')
-                      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                  }
-                >
-                  <span>Try Add-to-Cart Analyzer</span>
-                  <ArrowRight size={16} />
-                </button>
-                <button
-                  type="button"
-                  className="hero-btn-secondary"
-                  onClick={() =>
-                    document
-                      .getElementById('manual-analyzer-section')
-                      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                  }
-                >
-                  <span>Enter Nutrition Manually</span>
-                </button>
+      {showLiveNotice && amazonNotice && (
+        <div className="main-container" style={{ paddingBottom: 0 }}>
+          <div
+            className={`amazon-live-banner level-${amazonNotice.level}`}
+            role="status"
+            aria-live="polite"
+          >
+            <div className="cart-alert-body">
+              {amazonNotice.level === 'success' ? (
+                <CheckCircle2 size={20} />
+              ) : amazonNotice.level === 'danger' ? (
+                <ShieldAlert size={20} />
+              ) : (
+                <AlertTriangle size={20} />
+              )}
+              <div>
+                <div className="cart-alert-title">{amazonNotice.title}</div>
+                <p className="cart-alert-msg">{amazonNotice.message}</p>
               </div>
             </div>
-
-            <div className="hero-stat-card">
-              <div className="hero-stat-heading">
-                Verified Model Evaluation
-              </div>
-              <div className="hero-stat-value">
-                {bestMetric
-                  ? `${(bestMetric.accuracy * 100).toFixed(2)}% Accuracy`
-                  : 'Random Forest'}
-              </div>
-              <div className="hero-stat-sub">
-                {report
-                  ? `${report.best_model} · ${report.cleaning_summary.cleaned_rows.toLocaleString()} cleaned foods`
-                  : 'Trained on cleaned nutrition CSVs'}
-              </div>
-              <div className="hero-tier-row">
-                <span className="hero-tier-item">
-                  <span className="dot dot-healthy" aria-hidden="true" />
-                  Healthy
-                </span>
-                <span className="hero-tier-item">
-                  <span className="dot dot-moderate" aria-hidden="true" />
-                  Moderate
-                </span>
-                <span className="hero-tier-item">
-                  <span className="dot dot-unhealthy" aria-hidden="true" />
-                  Unhealthy
-                </span>
-              </div>
+            <div className="cart-alert-actions">
+              {amazonNotice.needsNutrition && (
+                <button
+                  type="button"
+                  className="alert-dismiss-btn"
+                  onClick={() => navigate('/analyzer')}
+                >
+                  Enter Nutrition
+                </button>
+              )}
+              {location.pathname !== '/amazon' && (
+                <button
+                  type="button"
+                  className="alert-dismiss-btn"
+                  onClick={() => navigate('/amazon')}
+                >
+                  Open Amazon Feed
+                </button>
+              )}
+              <button
+                type="button"
+                className="alert-dismiss-btn"
+                onClick={() => setAmazonNotice(null)}
+              >
+                Dismiss
+              </button>
             </div>
           </div>
-        </section>
+        </div>
       )}
 
-      <main className="main-container">
-        {activeTab === 'analyzer' ? (
-          <>
-            <CatalogGroceryDemo
-              items={catalogItems}
-              searchQuery={catalogQuery}
-              analyzingFoodName={analyzingGroceryItem}
-              onSearchChange={setCatalogQuery}
-              onAddToCartClick={handleCatalogAddToCart}
-            />
+      <main className="app-main">
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/scan" element={<ScanPacketPage />} />
+          <Route
+            path="/analyzer"
+            element={
+              <div className="page-shell">
+                <div className="page-header">
+                  <div>
+                    <h1 className="page-title">Food Nutrition Analyzer &amp; Cart</h1>
+                    <p className="page-subtitle">
+                      Search packaged grocery items online or enter label numbers to
+                      check health score, nutrient flags, and cart alerts.
+                    </p>
+                  </div>
+                </div>
 
-            <div id="manual-analyzer-section" className="analyzer-grid">
-              <NutritionForm
-                values={formValues}
-                samples={samples}
-                selectedSampleName={selectedSampleName}
-                isAnalyzing={isAnalyzing}
-                errorMessage={formError}
-                onChange={handleFieldChange}
-                onSelectSample={handleSelectSample}
-                onQuickPreset={handleQuickPreset}
-                onSubmit={handleSubmit}
-                onReset={handleReset}
-              />
-
-              <div id="live-analysis-anchor" className="result-column">
-                <CartPanel
-                  activeAlert={activeAlert}
-                  cartItems={cartItems}
-                  onDismissAlert={() => setActiveAlert(null)}
-                  onRemoveItem={handleRemoveCartItem}
-                  onClearCart={() => {
-                    setCartItems([]);
-                    setActiveAlert(null);
-                  }}
+                <CatalogGroceryDemo
+                  items={catalogItems}
+                  searchQuery={catalogQuery}
+                  analyzingFoodName={analyzingGroceryItem}
+                  onSearchChange={setCatalogQuery}
+                  onAddToCartClick={handleCatalogAddToCart}
                 />
 
-                <AnalysisResult
-                  result={prediction}
-                  isAnalyzing={isAnalyzing}
-                  onAddToCart={(res) => pushToCartWithAlert(res)}
-                  onQuickPreset={handleQuickPreset}
+                <div id="manual-analyzer-section" className="analyzer-grid">
+                  <NutritionForm
+                    values={formValues}
+                    samples={samples}
+                    selectedSampleName={selectedSampleName}
+                    isAnalyzing={isAnalyzing}
+                    errorMessage={formError}
+                    onChange={handleFieldChange}
+                    onSelectSample={handleSelectSample}
+                    onQuickPreset={handleQuickPreset}
+                    onSubmit={handleSubmit}
+                    onReset={handleReset}
+                  />
+
+                  <div id="live-analysis-anchor" className="result-column">
+                    <CartPanel
+                      activeAlert={activeAlert}
+                      cartItems={cartItems}
+                      onDismissAlert={() => setActiveAlert(null)}
+                      onRemoveItem={handleRemoveCartItem}
+                      onClearCart={() => {
+                        setCartItems([]);
+                        setActiveAlert(null);
+                      }}
+                    />
+
+                    <AnalysisResult
+                      result={prediction}
+                      isAnalyzing={isAnalyzing}
+                      onAddToCart={(res) => pushToCartWithAlert(res)}
+                      onQuickPreset={handleQuickPreset}
+                    />
+                  </div>
+                </div>
+              </div>
+            }
+          />
+          <Route
+            path="/amazon"
+            element={
+              <div className="page-shell">
+                <div className="page-header">
+                  <div>
+                    <h1 className="page-title">Amazon Add-to-Cart Integration</h1>
+                    <p className="page-subtitle">
+                      Intercept Amazon browser Add to Cart clicks via the Chrome
+                      extension or analyze a copied Amazon grocery title.
+                    </p>
+                  </div>
+                </div>
+                <AmazonConnectView
+                  events={amazonEvents}
+                  isSubmitting={isSubmittingAmazon}
+                  submitError={amazonError}
+                  onAnalyzeAmazonText={handleAnalyzeAmazonText}
+                  onInspectEventInAnalyzer={handleInspectEventInAnalyzer}
+                  onDeleteEvent={handleDeleteAmazonEvent}
+                  onClearEvents={handleClearAmazonEvents}
                 />
               </div>
-            </div>
-          </>
-        ) : activeTab === 'amazon' ? (
-          <>
-            <div className="page-header">
-              <div>
-                <h1 className="page-title">Amazon Add-to-Cart Integration</h1>
-                <p className="page-subtitle">
-                  Intercept Amazon browser Add to Cart clicks via the Chrome
-                  extension or paste a product from the Amazon mobile app.
-                </p>
+            }
+          />
+          <Route
+            path="/models"
+            element={
+              <div className="page-shell">
+                <div className="page-header">
+                  <div>
+                    <h1 className="page-title">
+                      Dataset Cleaning, EDA &amp; Model Comparison
+                    </h1>
+                    <p className="page-subtitle">
+                      Verified Scikit-learn training pipeline across 5 cleaned nutrition
+                      datasets.
+                    </p>
+                  </div>
+                </div>
+                <ModelMetricsView report={report} error={metricsError} />
               </div>
-            </div>
-            <AmazonConnectView
-              events={amazonEvents}
-              isSubmitting={isSubmittingAmazon}
-              submitError={amazonError}
-              onAnalyzeAmazonText={handleAnalyzeAmazonText}
-              onInspectEventInAnalyzer={handleInspectEventInAnalyzer}
-              onDeleteEvent={handleDeleteAmazonEvent}
-              onClearEvents={handleClearAmazonEvents}
-            />
-          </>
-        ) : (
-          <>
-            <div className="page-header">
-              <div>
-                <h1 className="page-title">
-                  Dataset Cleaning, EDA &amp; Model Comparison
-                </h1>
-                <p className="page-subtitle">
-                  Verified Scikit-learn training pipeline across 5 cleaned
-                  nutrition datasets.
-                </p>
-              </div>
-            </div>
-            <ModelMetricsView report={report} error={metricsError} />
-          </>
-        )}
+            }
+          />
+          <Route path="/about" element={<AboutPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
       </main>
+
+      <Footer />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <NutriCheckShell />
+    </BrowserRouter>
   );
 }

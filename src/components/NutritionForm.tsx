@@ -64,7 +64,6 @@ export function NutritionForm({
             className="preset-btn"
             onClick={() => onQuickPreset('Healthy')}
           >
-            <span className="dot dot-healthy" aria-hidden="true" />
             Healthy Sample
           </button>
           <button
@@ -72,7 +71,6 @@ export function NutritionForm({
             className="preset-btn"
             onClick={() => onQuickPreset('Moderate')}
           >
-            <span className="dot dot-moderate" aria-hidden="true" />
             Moderate Sample
           </button>
           <button
@@ -80,7 +78,6 @@ export function NutritionForm({
             className="preset-btn"
             onClick={() => onQuickPreset('Unhealthy')}
           >
-            <span className="dot dot-unhealthy" aria-hidden="true" />
             Unhealthy Sample
           </button>
         </div>

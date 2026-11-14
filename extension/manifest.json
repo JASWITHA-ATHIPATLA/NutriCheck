@@ -1,15 +1,15 @@
 {
   "manifest_version": 3,
-  "name": "HealthGuard – Amazon Food Health Analyzer",
+  "name": "NutriCheck – Amazon Food Health Analyzer",
   "version": "1.0.0",
-  "description": "Detects Add to Cart clicks on Amazon food items and sends nutrition data to your HealthGuard ML analyzer for instant Healthy/Moderate/Unhealthy alerts.",
+  "description": "Detects Add to Cart clicks on Amazon food items and sends nutrition data to your NutriCheck ML analyzer for instant Good/Moderate/Not Good alerts.",
   "permissions": ["storage"],
   "host_permissions": [
-    "https://www.amazon.com/*",
-    "https://www.amazon.in/*",
-    "https://www.amazon.co.uk/*",
-    "https://www.amazon.ca/*",
-    "https://www.amazon.de/*",
+    "https://*.amazon.com/*",
+    "https://*.amazon.in/*",
+    "https://*.amazon.co.uk/*",
+    "https://*.amazon.ca/*",
+    "https://*.amazon.de/*",
     "http://localhost:3000/*",
     "http://127.0.0.1:3000/*",
     "https://*.run.app/*"
@@ -20,11 +20,11 @@
   "content_scripts": [
     {
       "matches": [
-        "https://www.amazon.com/*",
-        "https://www.amazon.in/*",
-        "https://www.amazon.co.uk/*",
-        "https://www.amazon.ca/*",
-        "https://www.amazon.de/*"
+        "https://*.amazon.com/*",
+        "https://*.amazon.in/*",
+        "https://*.amazon.co.uk/*",
+        "https://*.amazon.ca/*",
+        "https://*.amazon.de/*"
       ],
       "js": ["content.js"],
       "run_at": "document_idle"

@@ -25,12 +25,12 @@ export function CatalogGroceryDemo({
       <div className="grocery-header">
         <div>
           <h2 id="grocery-demo-heading" className="card-title">
-            Instant Add-to-Cart Food Analyzer (2,158 Dataset Foods)
+            Instant Add-to-Cart Food Analyzer
           </h2>
           <p className="card-subtitle">
-            Click <strong>Add to Cart</strong> on any food product—HealthGuard
-            automatically detects the click, runs the ML nutrition analyzer, and
-            fires an instant Healthy, Moderate, or Unhealthy alert.
+            Search any whole food (2,158 cleaned foods) or live packaged grocery brand
+            worldwide and click <strong>Add to Cart</strong> for an instant NutriCheck
+            verdict.
           </p>
         </div>
 
@@ -39,24 +39,25 @@ export function CatalogGroceryDemo({
           <input
             type="search"
             className="field-input grocery-search-input"
-            placeholder="Search foods (e.g., pizza, broccoli, soda, salmon)..."
+            placeholder="Search any packed food (e.g., maggi, oreo, lays, nutella, pizza)..."
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            aria-label="Search dataset foods"
+            aria-label="Search dataset and packaged foods"
           />
         </div>
       </div>
 
       {items.length === 0 ? (
         <p className="card-subtitle" style={{ padding: '16px 0' }}>
-          No matching foods found in the cleaned dataset for &ldquo;{searchQuery}&rdquo;.
+          No matching foods found for &ldquo;{searchQuery}&rdquo;. Try another brand or
+          enter nutrition values manually below.
         </p>
       ) : (
         <div className="grocery-grid">
           {items.map((item) => {
             const isLoading = analyzingFoodName === item.food;
             return (
-              <div key={item.food_norm} className="grocery-card">
+              <div key={`${item.food_norm}-${item.source_group}`} className="grocery-card">
                 <div className="grocery-card-body">
                   <div className="grocery-card-title">{item.food}</div>
                   <div className="grocery-card-meta">

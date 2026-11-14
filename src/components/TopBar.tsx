@@ -1,69 +1,67 @@
-import { ShieldCheck, ShoppingCart } from 'lucide-react';
+import { Leaf, ScanLine } from 'lucide-react';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
 
-export type ActiveTab = 'analyzer' | 'amazon' | 'metrics';
+export function TopBar() {
+  const navigate = useNavigate();
 
-interface TopBarProps {
-  activeTab: ActiveTab;
-  onTabChange: (tab: ActiveTab) => void;
-  cartCount: number;
-  amazonCount: number;
-  onJumpToCart: () => void;
-}
-
-export function TopBar({
-  activeTab,
-  onTabChange,
-  cartCount,
-  amazonCount,
-  onJumpToCart,
-}: TopBarProps) {
   return (
     <header className="topbar">
       <div className="topbar-inner">
-        <div className="brand">
-          <div className="brand-mark" aria-hidden="true">
-            <ShieldCheck size={19} strokeWidth={2.2} />
-          </div>
-          <div>
-            <div className="brand-title">HealthGuard</div>
-            <div className="brand-sub">Food Health Analyzer</div>
-          </div>
-        </div>
+        <Link to="/" className="brand" aria-label="NutriCheck Home">
+          <span className="brand-mark" aria-hidden="true">
+            <Leaf size={17} strokeWidth={2.4} />
+          </span>
+          <span className="brand-title">NutriCheck</span>
+        </Link>
 
         <nav className="nav-links" aria-label="Primary navigation">
-          <button
-            type="button"
-            className={`nav-tab ${activeTab === 'analyzer' ? 'is-active' : ''}`}
-            onClick={() => onTabChange('analyzer')}
+          <NavLink
+            to="/"
+            end
+            className={({ isActive }) => `nav-tab ${isActive ? 'is-active' : ''}`}
           >
-            Analyzer &amp; Cart
-          </button>
-          <button
-            type="button"
-            className={`nav-tab ${activeTab === 'amazon' ? 'is-active' : ''}`}
-            onClick={() => onTabChange('amazon')}
+            Home
+          </NavLink>
+          <NavLink
+            to="/scan"
+            className={({ isActive }) => `nav-tab ${isActive ? 'is-active' : ''}`}
           >
-            Amazon Connect{amazonCount > 0 ? ` (${amazonCount})` : ''}
-          </button>
-          <button
-            type="button"
-            className={`nav-tab ${activeTab === 'metrics' ? 'is-active' : ''}`}
-            onClick={() => onTabChange('metrics')}
+            Scan Packet
+          </NavLink>
+          <NavLink
+            to="/analyzer"
+            className={({ isActive }) => `nav-tab ${isActive ? 'is-active' : ''}`}
+          >
+            Food Analyzer
+          </NavLink>
+          <NavLink
+            to="/amazon"
+            className={({ isActive }) => `nav-tab ${isActive ? 'is-active' : ''}`}
+          >
+            Amazon Connect
+          </NavLink>
+          <NavLink
+            to="/models"
+            className={({ isActive }) => `nav-tab ${isActive ? 'is-active' : ''}`}
           >
             Models &amp; Data
-          </button>
+          </NavLink>
+          <NavLink
+            to="/about"
+            className={({ isActive }) => `nav-tab ${isActive ? 'is-active' : ''}`}
+          >
+            About
+          </NavLink>
         </nav>
 
         <div className="topbar-actions">
           <button
             type="button"
-            className="cart-counter-btn"
-            onClick={onJumpToCart}
-            aria-label={`Demo Cart with ${cartCount} items`}
+            className="topbar-cta"
+            onClick={() => navigate('/scan')}
           >
-            <ShoppingCart size={16} />
-            <span>Demo Cart</span>
-            <span className="cart-count-num">{cartCount}</span>
+            <ScanLine size={15} />
+            <span>Scan Packet</span>
           </button>
         </div>
       </div>

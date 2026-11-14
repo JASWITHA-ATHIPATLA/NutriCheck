@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
+import json
 from pathlib import Path
 import re
 from typing import Any, Literal
+import urllib.parse
+import urllib.request
 import uuid
 
 import joblib
@@ -38,9 +41,9 @@ FOOD_CATALOG: list[dict[str, Any]] = BUNDLE.get("food_catalog", [])
 CART_EVENTS: list[dict[str, Any]] = []
 
 app = FastAPI(
-    title="HealthGuard – Food Health Analyzer API",
-    version="1.1.0",
-    description="Predicts food health classification (Healthy, Moderate, Unhealthy) from nutrition values using a Scikit-learn model saved with Joblib.",
+    title="NutriCheck – Food & Packet Nutrition Analyzer API",
+    version="1.2.0",
+    description="Predicts food health classification (Good/Moderate/Not Good) from nutrition values and packet ingredients using Scikit-learn and WHO/FDA nutrient rules.",
 )
 
 app.add_middleware(
@@ -65,6 +68,8 @@ class AmazonAddToCartInput(BaseModel):
     product_title: str = Field(..., min_length=2, max_length=300)
     product_url: str | None = Field(default=None, max_length=1000)
     nutrition_text: str | None = Field(default=None, max_length=8000)
+    brand: str | None = Field(default=None, max_length=120)
+    barcode: str | None = Field(default=None, max_length=40)
     calories: float | None = Field(default=None, ge=0, le=10000)
     sugars: float | None = Field(default=None, ge=0, le=1000)
     fat: float | None = Field(default=None, ge=0, le=1000)
@@ -103,11 +108,13 @@ class AmazonCartEvent(BaseModel):
     event_id: str
     timestamp: str
     source: str
+    status: Literal["analyzed", "needs_nutrition"] = "analyzed"
     product_title: str
     product_url: str | None
     nutrition_source: str
     matched_food: str | None
-    analysis: PredictionResponse
+    message: str | None = None
+    analysis: PredictionResponse | None = None
 
 
 def build_feature_frame(payload: FoodNutritionInput) -> tuple[pd.DataFrame, dict[str, float]]:
@@ -372,10 +379,10 @@ def parse_nutrition_text(text: str) -> dict[str, float] | None:
     """Extract calories, sugars, fat, protein, and sodium (mg) from nutrition label text."""
     if not text or not text.strip():
         return None
-    normalized = " ".join(text.replace("\n", " ").split())
+    normalized = " ".join(text.replace("\n", " ").replace("\t", " ").split())
 
     cal_match = re.search(
-        r"(?:calories|energy)\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*(?:kcal|cal)?",
+        r"(?:calories|energy(?:\s*\(\s*kcal\s*\))?)\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*(?:kcal|cal)?",
         normalized,
         re.IGNORECASE,
     )
@@ -387,19 +394,21 @@ def parse_nutrition_text(text: str) -> dict[str, float] | None:
         m = re.search(pattern, normalized, re.IGNORECASE)
         return float(m.group(1)) if m else None
 
-    sugars = extract_grams(r"(?:total\s+)?sugars?\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*g")
-    fat = extract_grams(r"(?:total\s+)?fat\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*g")
-    protein = extract_grams(r"protein\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*g")
+    sugars = extract_grams(
+        r"(?:total\s+sugars?|of\s+which\s+sugars?|added\s+sugars?|sugars?)\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b"
+    )
+    fat = extract_grams(r"(?:total\s+)?fat\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b")
+    protein = extract_grams(r"protein\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b")
 
     sodium_mg: float | None = None
     sod_mg_match = re.search(
-        r"sodium\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*mg", normalized, re.IGNORECASE
+        r"sodium\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*mg\b", normalized, re.IGNORECASE
     )
     sod_g_match = re.search(
-        r"sodium\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*g\b", normalized, re.IGNORECASE
+        r"sodium\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b", normalized, re.IGNORECASE
     )
     salt_g_match = re.search(
-        r"salt\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*g\b", normalized, re.IGNORECASE
+        r"salt\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b", normalized, re.IGNORECASE
     )
     if sod_mg_match:
         sodium_mg = float(sod_mg_match.group(1))
@@ -422,37 +431,72 @@ def parse_nutrition_text(text: str) -> dict[str, float] | None:
 
 
 STOP_WORDS = {
-    "pack", "oz", "fl", "ml", "g", "kg", "lb", "lbs", "count", "ct", "bag",
-    "box", "bottle", "can", "jar", "organic", "fresh", "natural", "amazon",
-    "brand", "size", "family", "value", "snack", "food", "with", "and", "the",
-    "for", "in", "of", "original", "classic", "new",
+    "pack", "oz", "fl", "ml", "g", "gm", "gms", "gram", "grams", "kg", "kgs", "lb", "lbs",
+    "ltr", "litre", "litres", "liter", "liters", "count", "ct", "pcs", "piece", "pieces",
+    "bag", "box", "bottle", "can", "jar", "pouch", "tin", "refill", "combo", "offer",
+    "organic", "fresh", "natural", "amazon", "brand", "size", "family", "value", "snack",
+    "food", "with", "and", "the", "for", "in", "of", "original", "classic", "new", "buy",
+    "get", "free", "save", "saver", "best", "seller", "bestseller", "super", "mini",
+    "jumbo", "mega", "tasty", "delicious", "flavour", "flavor", "flavoured", "flavored",
+    "india", "made", "weight", "may", "vary", "rs", "mrp", "vegetarian", "ready", "minute",
+    "minutes", "min", "mins", "instant", "each", "total", "assorted", "multipack",
 }
 
+OFF_SEARCH_CACHE: dict[str, list[dict[str, Any]]] = {}
+OFF_PRODUCT_CACHE: dict[str, dict[str, Any] | None] = {}
 
-def match_catalog_food(product_title: str) -> dict[str, Any] | None:
+
+def _stem_token(token: str) -> str:
+    if token.endswith("ies") and len(token) > 4:
+        return token[:-3] + "y"
+    if token.endswith("s") and not token.endswith("ss") and len(token) > 3:
+        return token[:-1]
+    return token
+
+
+def _clean_tokens(text: str) -> list[str]:
+    # Strip weight+unit combos like 500g, 1.5kg, 200ml, 12oz, rs.20
+    stripped = re.sub(
+        r"\b\d+(?:\.\d+)?\s*(?:g|gm|gms|kg|kgs|ml|l|ltr|litre|litres|oz|lb|lbs|pcs|ct|rs)\b",
+        " ",
+        text.lower(),
+    )
+    cleaned = re.sub(r"[^a-z0-9\s]", " ", stripped)
+    return [
+        t
+        for t in cleaned.split()
+        if len(t) > 1 and t not in STOP_WORDS and not t.isdigit()
+    ]
+
+
+def match_catalog_food(product_title: str, min_score: float = 0.44) -> dict[str, Any] | None:
     """Find best food match from the cleaned 2,158-food CSV catalog."""
-    cleaned = re.sub(r"[^a-z0-9\s]", " ", product_title.lower())
-    tokens = [t for t in cleaned.split() if len(t) > 2 and t not in STOP_WORDS and not t.isdigit()]
+    tokens = _clean_tokens(product_title)
     if not tokens:
         return None
     query = " ".join(tokens)
+    q_set = set(tokens)
+    q_stems = {_stem_token(t) for t in tokens}
 
     best_score = 0.0
     best_entry: dict[str, Any] | None = None
-    q_set = set(tokens)
 
     for entry in FOOD_CATALOG:
         cand = entry["food_norm"]
-        c_tokens = [t for t in cand.split() if len(t) > 2]
+        c_tokens = [t for t in cand.split() if len(t) > 1]
         if not c_tokens:
             continue
         c_set = set(c_tokens)
+        c_stems = {_stem_token(t) for t in c_tokens}
+
         overlap = len(q_set & c_set)
-        if overlap == 0:
+        stem_overlap = len(q_stems & c_stems)
+        eff_overlap = max(overlap, stem_overlap)
+        if eff_overlap == 0:
             continue
 
-        jaccard = overlap / len(q_set | c_set)
-        containment = overlap / len(c_set)
+        jaccard = eff_overlap / len(q_stems | c_stems)
+        containment = eff_overlap / len(c_stems)
         seq = SequenceMatcher(None, query, cand).ratio()
         score = 0.45 * containment + 0.30 * jaccard + 0.25 * seq
 
@@ -463,9 +507,226 @@ def match_catalog_food(product_title: str) -> dict[str, Any] | None:
             best_score = score
             best_entry = entry
 
-    if best_score < 0.42:
+    if best_score < min_score:
         return None
     return best_entry
+
+
+def _to_float(val: Any) -> float | None:
+    try:
+        if val is None or val == "":
+            return None
+        f = float(val)
+        return f if np.isfinite(f) and f >= 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def extract_off_nutrition(nutriments: dict[str, Any] | None) -> dict[str, float] | None:
+    """Extract normalized per-100g nutrition from an Open Food Facts nutriments payload."""
+    if not isinstance(nutriments, dict) or not nutriments:
+        return None
+
+    kcal = _to_float(nutriments.get("energy-kcal_100g"))
+    if kcal is None:
+        kcal = _to_float(nutriments.get("energy-kcal"))
+    if kcal is None:
+        kj = _to_float(nutriments.get("energy_100g"))
+        if kj is not None and kj > 0:
+            kcal = kj / 4.184
+    if kcal is None or kcal < 1.0 or kcal > 950.0:
+        return None
+
+    sugars = _to_float(nutriments.get("sugars_100g"))
+    if sugars is None:
+        sugars = _to_float(nutriments.get("sugars"))
+
+    fat = _to_float(nutriments.get("fat_100g"))
+    if fat is None:
+        fat = _to_float(nutriments.get("fat"))
+
+    protein = _to_float(nutriments.get("proteins_100g"))
+    if protein is None:
+        protein = _to_float(nutriments.get("proteins"))
+
+    sodium_g = _to_float(nutriments.get("sodium_100g"))
+    if sodium_g is None:
+        sodium_g = _to_float(nutriments.get("sodium"))
+    salt_g = _to_float(nutriments.get("salt_100g"))
+    if salt_g is None:
+        salt_g = _to_float(nutriments.get("salt"))
+
+    sodium_mg: float | None = None
+    if sodium_g is not None:
+        sodium_mg = sodium_g * 1000.0
+    elif salt_g is not None:
+        sodium_mg = salt_g * 393.4
+
+    present_count = sum(x is not None for x in (sugars, fat, protein, sodium_mg))
+    if present_count < 2:
+        return None
+
+    return {
+        "calories": round(min(kcal, 950.0), 1),
+        "sugars": round(min(sugars or 0.0, 100.0), 1),
+        "fat": round(min(fat or 0.0, 100.0), 1),
+        "protein": round(min(protein or 0.0, 100.0), 1),
+        "sodium_mg": round(min(sodium_mg or 0.0, 10000.0), 1),
+        "completeness": present_count,
+    }
+
+
+def _off_display_name(product: dict[str, Any]) -> str:
+    name = str(product.get("product_name") or "").strip()
+    brands_raw = product.get("brands")
+    if isinstance(brands_raw, list):
+        brand = ", ".join(str(b).strip() for b in brands_raw if str(b).strip())
+    else:
+        brand = str(brands_raw or "").strip()
+    if brand and name and brand.lower() not in name.lower():
+        return f"{brand} {name}"[:140]
+    return (name or brand or "Packaged Food Item")[:140]
+
+
+def lookup_openfoodfacts_barcode(barcode: str) -> dict[str, Any] | None:
+    code = re.sub(r"[^0-9]", "", barcode or "")
+    if len(code) < 8:
+        return None
+    if code in OFF_PRODUCT_CACHE:
+        return OFF_PRODUCT_CACHE[code]
+
+    url = f"https://world.openfoodfacts.org/api/v2/product/{code}.json?fields=product_name,brands,nutriments,code"
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "HealthGuard-Nutrition-Analyzer/1.2"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=4.5) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        prod = payload.get("product")
+        if not isinstance(prod, dict):
+            OFF_PRODUCT_CACHE[code] = None
+            return None
+        parsed = extract_off_nutrition(prod.get("nutriments"))
+        if parsed is None:
+            OFF_PRODUCT_CACHE[code] = None
+            return None
+        display = _off_display_name(prod)
+        entry = {
+            "food": display,
+            "food_norm": display.lower(),
+            "calories": parsed["calories"],
+            "sugars": parsed["sugars"],
+            "fat": parsed["fat"],
+            "protein": parsed["protein"],
+            "sodium_mg": parsed["sodium_mg"],
+            "source_group": "Open Food Facts (Barcode Match)",
+        }
+        OFF_PRODUCT_CACHE[code] = entry
+        return entry
+    except Exception:
+        return None
+
+
+def search_openfoodfacts(query: str, limit: int = 8) -> list[dict[str, Any]]:
+    q_clean = " ".join(_clean_tokens(query)) or query.strip().lower()
+    if len(q_clean) < 2:
+        return []
+    cache_key = f"{q_clean}|{limit}"
+    if cache_key in OFF_SEARCH_CACHE:
+        return OFF_SEARCH_CACHE[cache_key]
+
+    url = "https://search.openfoodfacts.org/search?" + urllib.parse.urlencode(
+        {
+            "q": q_clean,
+            "page_size": max(24, limit * 3),
+            "fields": "product_name,brands,nutriments,code",
+        }
+    )
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "HealthGuard-Nutrition-Analyzer/1.2"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=4.5) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        return []
+
+    hits = payload.get("hits") or []
+    q_stems = {_stem_token(t) for t in q_clean.split()}
+    scored: list[tuple[float, dict[str, Any]]] = []
+    seen_names: set[str] = set()
+
+    for hit in hits:
+        if not isinstance(hit, dict):
+            continue
+        parsed = extract_off_nutrition(hit.get("nutriments"))
+        if parsed is None:
+            continue
+        display = _off_display_name(hit)
+        norm = display.lower()
+        if norm in seen_names:
+            continue
+        seen_names.add(norm)
+
+        h_stems = {_stem_token(t) for t in _clean_tokens(display)}
+        q_recall = len(q_stems & h_stems) / max(len(q_stems), 1)
+        h_precision = len(q_stems & h_stems) / max(len(h_stems), 1)
+        completeness_score = parsed["completeness"] / 4.0
+        rank_score = 0.55 * q_recall + 0.25 * h_precision + 0.20 * completeness_score
+        scored.append(
+            (
+                rank_score,
+                {
+                    "food": display,
+                    "food_norm": norm,
+                    "calories": parsed["calories"],
+                    "sugars": parsed["sugars"],
+                    "fat": parsed["fat"],
+                    "protein": parsed["protein"],
+                    "sodium_mg": parsed["sodium_mg"],
+                    "source_group": "Open Food Facts (Live Packaged Food DB)",
+                },
+            )
+        )
+
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    results = [item for _, item in scored[:limit]]
+
+    if len(OFF_SEARCH_CACHE) >= 200:
+        OFF_SEARCH_CACHE.clear()
+    OFF_SEARCH_CACHE[cache_key] = results
+    return results
+
+
+def build_progressive_queries(title: str, brand: str | None = None) -> list[str]:
+    base_part = re.split(r"[|\(\[\-–—]", title)[0].strip() or title
+    tokens = _clean_tokens(base_part)
+    if not tokens:
+        tokens = _clean_tokens(title)
+
+    queries: list[str] = []
+    if tokens:
+        queries.append(" ".join(tokens[:5]))
+    if brand:
+        b_tokens = _clean_tokens(brand)
+        if b_tokens and tokens:
+            combined = " ".join(dict.fromkeys(b_tokens[:2] + tokens[:3]))
+            queries.append(combined)
+    if len(tokens) >= 3:
+        queries.append(" ".join(tokens[:3]))
+    if len(tokens) >= 2:
+        queries.append(" ".join(tokens[:2]))
+        queries.append(" ".join(tokens[-2:]))
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for q in queries:
+        if q and q not in seen:
+            seen.add(q)
+            deduped.append(q)
+    return deduped
 
 
 @app.get("/api/health")
@@ -518,8 +779,33 @@ def search_catalog_foods(q: str = "", limit: int = 12) -> list[dict[str, Any]]:
                     break
         return featured
 
-    matches = [f for f in FOOD_CATALOG if query in f["food_norm"]]
-    return matches[:limit]
+    # 1. Exact substring matches from cleaned 2,158-food dataset
+    local_matches = [f for f in FOOD_CATALOG if query in f["food_norm"]]
+    seen_norms = {f["food_norm"] for f in local_matches}
+
+    # 2. Stemmed token matches in local dataset if substring matches are sparse
+    if len(local_matches) < limit:
+        q_stems = {_stem_token(t) for t in _clean_tokens(query)}
+        if q_stems:
+            for f in FOOD_CATALOG:
+                if f["food_norm"] in seen_norms:
+                    continue
+                c_stems = {_stem_token(t) for t in f["food_norm"].split()}
+                if q_stems.issubset(c_stems):
+                    local_matches.append(f)
+                    seen_norms.add(f["food_norm"])
+                    if len(local_matches) >= limit:
+                        break
+
+    # 3. Live Open Food Facts packaged food search when local dataset has fewer matches
+    if len(local_matches) < limit and len(query) >= 2:
+        off_matches = search_openfoodfacts(query, limit=limit - len(local_matches))
+        for item in off_matches:
+            if item["food_norm"] not in seen_norms:
+                local_matches.append(item)
+                seen_norms.add(item["food_norm"])
+
+    return local_matches[:limit]
 
 
 @app.post("/api/predict", response_model=PredictionResponse)
@@ -547,6 +833,8 @@ def analyze_amazon_add_to_cart(payload: AmazonAddToCartInput) -> AmazonCartEvent
         )
     )
 
+    nutrition_input: FoodNutritionInput | None = None
+
     if has_explicit_numbers:
         nutrition_source = "Structured Nutrition Inputs"
         nutrition_input = FoodNutritionInput(
@@ -569,36 +857,97 @@ def analyze_amazon_add_to_cart(payload: AmazonAddToCartInput) -> AmazonCartEvent
                 protein=parsed["protein"],
                 sodium_mg=parsed["sodium_mg"],
             )
-        else:
-            match = match_catalog_food(title)
-            if match is None:
-                raise HTTPException(
-                    status_code=422,
-                    detail=(
-                        f"No nutrition numbers found on page and '{title}' did not match a food item "
-                        "in the cleaned 2,158-food dataset. Paste the nutrition facts text or enter values manually."
-                    ),
-                )
-            nutrition_source = f"Matched Dataset Food ({match['source_group']})"
-            matched_food = str(match["food"])
+
+    if nutrition_input is None and payload.barcode:
+        barcode_match = lookup_openfoodfacts_barcode(payload.barcode)
+        if barcode_match is not None:
+            nutrition_source = "Open Food Facts (Verified Barcode Match)"
+            matched_food = str(barcode_match["food"])
             nutrition_input = FoodNutritionInput(
                 food_name=title,
-                calories=float(match["calories"]),
-                sugars=float(match["sugars"]),
-                fat=float(match["fat"]),
-                protein=float(match["protein"]),
-                sodium_mg=float(match["sodium_mg"]),
+                calories=float(barcode_match["calories"]),
+                sugars=float(barcode_match["sugars"]),
+                fat=float(barcode_match["fat"]),
+                protein=float(barcode_match["protein"]),
+                sodium_mg=float(barcode_match["sodium_mg"]),
             )
+
+    if nutrition_input is None:
+        exact_local = match_catalog_food(title, min_score=0.95)
+        if exact_local is not None:
+            nutrition_source = f"Matched Dataset Food ({exact_local['source_group']})"
+            matched_food = str(exact_local["food"])
+            nutrition_input = FoodNutritionInput(
+                food_name=title,
+                calories=float(exact_local["calories"]),
+                sugars=float(exact_local["sugars"]),
+                fat=float(exact_local["fat"]),
+                protein=float(exact_local["protein"]),
+                sodium_mg=float(exact_local["sodium_mg"]),
+            )
+
+    if nutrition_input is None:
+        for q_try in build_progressive_queries(title, payload.brand):
+            off_hits = search_openfoodfacts(q_try, limit=3)
+            if off_hits:
+                best_off = off_hits[0]
+                nutrition_source = "Open Food Facts (Live Packaged Food DB)"
+                matched_food = str(best_off["food"])
+                nutrition_input = FoodNutritionInput(
+                    food_name=title,
+                    calories=float(best_off["calories"]),
+                    sugars=float(best_off["sugars"]),
+                    fat=float(best_off["fat"]),
+                    protein=float(best_off["protein"]),
+                    sodium_mg=float(best_off["sodium_mg"]),
+                )
+                break
+
+    if nutrition_input is None:
+        fallback_local = match_catalog_food(title, min_score=0.34)
+        if fallback_local is not None:
+            nutrition_source = f"Matched Dataset Category ({fallback_local['source_group']})"
+            matched_food = str(fallback_local["food"])
+            nutrition_input = FoodNutritionInput(
+                food_name=title,
+                calories=float(fallback_local["calories"]),
+                sugars=float(fallback_local["sugars"]),
+                fat=float(fallback_local["fat"]),
+                protein=float(fallback_local["protein"]),
+                sodium_mg=float(fallback_local["sodium_mg"]),
+            )
+
+    if nutrition_input is None:
+        event = AmazonCartEvent(
+            event_id=str(uuid.uuid4())[:8],
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            source=payload.source,
+            status="needs_nutrition",
+            product_title=title,
+            product_url=payload.product_url,
+            nutrition_source="Nutrition Label Not Found on Page",
+            matched_food=None,
+            message=(
+                f"Detected '{title}' from Amazon Add to Cart, but nutrition facts were not in the page HTML "
+                "and no packaged-food match was found. Enter nutrition values or paste label text to classify."
+            ),
+            analysis=None,
+        )
+        CART_EVENTS.insert(0, event.model_dump())
+        del CART_EVENTS[30:]
+        return event
 
     analysis = run_ml_prediction(nutrition_input)
     event = AmazonCartEvent(
         event_id=str(uuid.uuid4())[:8],
         timestamp=datetime.now(timezone.utc).isoformat(),
         source=payload.source,
+        status="analyzed",
         product_title=title,
         product_url=payload.product_url,
         nutrition_source=nutrition_source,
         matched_food=matched_food,
+        message=analysis.explanation,
         analysis=analysis,
     )
 
@@ -623,3 +972,307 @@ def delete_amazon_cart_event(event_id: str) -> dict[str, str]:
 def clear_amazon_cart_events() -> dict[str, str]:
     CART_EVENTS.clear()
     return {"status": "cleared"}
+
+
+class PacketScanInput(BaseModel):
+    product_name: str = Field(default="Scanned Food Packet", max_length=200)
+    raw_text: str = Field(..., min_length=3, max_length=12000)
+
+
+class IngredientFinding(BaseModel):
+    ingredient: str
+    rating: Literal["good", "moderate", "high"]
+    reason: str
+
+
+class ScanReason(BaseModel):
+    type: Literal["good", "warning", "danger"]
+    text: str
+
+
+class PacketScanResponse(BaseModel):
+    product_name: str
+    verdict: Literal["Good", "Moderate", "Not Good"]
+    score: float
+    nutrition_found: bool
+    ingredients_count: int
+    parsed_ingredients: list[str]
+    ingredient_findings: list[IngredientFinding]
+    reasons: list[ScanReason]
+    summary: str
+    nutrition_analysis: PredictionResponse | None = None
+
+
+BENEFICIAL_INGREDIENTS: list[tuple[str, str, str]] = [
+    ("wholegrain", "Whole Grain", "Unrefined whole-grain fiber supports steady energy and digestion."),
+    ("whole grain", "Whole Grain", "Unrefined whole-grain fiber supports steady energy and digestion."),
+    ("whole wheat", "Whole Wheat", "Contains bran and germ fiber instead of stripped white flour."),
+    ("rolled oats", "Rolled Oats", "Rich in soluble beta-glucan fiber and plant protein."),
+    ("oats", "Oats", "Whole-grain oat base supplies complex carbohydrates and dietary fiber."),
+    ("quinoa", "Quinoa", "Complete plant protein and high mineral/fiber density."),
+    ("millet", "Millet", "Nutrient-dense whole grain rich in iron, magnesium, and fiber."),
+    ("ragi", "Ragi (Finger Millet)", "Whole millet grain high in calcium and dietary fiber."),
+    ("jowar", "Jowar (Sorghum)", "High-fiber whole grain with slow glycemic release."),
+    ("bajra", "Bajra (Pearl Millet)", "Unrefined millet rich in fiber and micronutrients."),
+    ("brown rice", "Brown Rice", "Retains bran fiber and B vitamins compared with white rice."),
+    ("almond", "Almonds", "Heart-healthy monounsaturated fats, vitamin E, and protein."),
+    ("walnut", "Walnuts", "Source of plant omega-3 fats and antioxidants."),
+    ("pistachio", "Pistachios", "Nutrient-dense tree nuts providing protein and fiber."),
+    ("peanut", "Peanuts", "Good source of protein and unsaturated fats."),
+    ("flaxseed", "Flaxseeds", "Rich in omega-3 fatty acids and soluble fiber."),
+    ("flax seed", "Flax Seeds", "Rich in omega-3 fatty acids and soluble fiber."),
+    ("chia seed", "Chia Seeds", "High in dietary fiber, plant protein, and omega-3 fats."),
+    ("chia", "Chia Seeds", "High in dietary fiber, plant protein, and omega-3 fats."),
+    ("pumpkin seed", "Pumpkin Seeds", "Rich in magnesium, zinc, and plant protein."),
+    ("sunflower seed", "Sunflower Seeds", "Source of vitamin E and unsaturated fats."),
+    ("chickpea", "Chickpeas", "Legume protein and fiber help keep blood sugar steady."),
+    ("lentil", "Lentils", "High-fiber plant protein with low glycemic impact."),
+    ("olive oil", "Olive Oil", "Monounsaturated healthy fat with natural polyphenols."),
+    ("whey protein", "Whey Protein", "Concentrated high-quality protein boost."),
+    ("soy protein", "Soy Protein", "Complete plant-based protein source."),
+    ("skim milk", "Skim Milk", "Low-fat dairy protein and calcium."),
+    ("yogurt", "Yogurt", "Provides protein, calcium, and fermented dairy nutrients."),
+    ("spinach", "Spinach", "Leafy green micronutrients and dietary fiber."),
+    ("broccoli", "Broccoli", "Cruciferous vegetable rich in fiber and vitamin C."),
+    ("tomato", "Tomatoes", "Natural vegetable base rich in lycopene and potassium."),
+    ("turmeric", "Turmeric", "Natural spice with curcumin antioxidants."),
+    ("ginger", "Ginger", "Natural root spice with digestive and antioxidant benefits."),
+    ("garlic", "Garlic", "Natural culinary aromatic with beneficial organosulfur compounds."),
+    ("dietary fiber", "Dietary Fiber", "Supports gut health and reduces glycemic spikes."),
+    ("inulin", "Inulin Prebiotic Fiber", "Prebiotic soluble fiber supporting digestive health."),
+]
+
+CAUTION_INGREDIENTS: list[tuple[str, str, str]] = [
+    ("refined wheat flour", "Refined Wheat Flour (Maida)", "Stripped of bran and fiber; digests rapidly into blood sugar."),
+    ("maida", "Refined Flour (Maida)", "Highly refined starch low in dietary fiber."),
+    ("enriched wheat flour", "Enriched Wheat Flour", "Refined flour with synthetic vitamins added back."),
+    ("white flour", "White Flour", "Refined starch with minimal fiber."),
+    ("palm oil", "Palm Oil", "High in saturated palmitic fat compared with olive or mustard oil."),
+    ("palmolein", "Palmolein Oil", "Refined palm oil high in saturated fatty acids."),
+    ("vegetable oil", "Unspecified Vegetable Oil", "Refined cooking oil blend, often palm or soybean."),
+    ("invert syrup", "Invert Sugar Syrup", "Concentrated free sugar that increases glycemic load."),
+    ("sugar", "Added Sugar", "Increases empty calories and free-sugar intake."),
+    ("maltodextrin", "Maltodextrin", "Fast-digesting processed starch with a high glycemic index."),
+    ("dextrose", "Dextrose", "Simple refined glucose sugar."),
+    ("modified starch", "Modified Food Starch", "Industrially processed thickener with low nutritional value."),
+    ("corn starch", "Corn Starch", "Refined starch thickener lacking fiber."),
+    ("artificial flavor", "Artificial Flavoring", "Synthetic flavoring compound indicating ultra-processed formulation."),
+    ("artificial flavour", "Artificial Flavouring", "Synthetic flavouring additive indicating ultra-processed formulation."),
+    ("emulsifier", "Industrial Emulsifier", "Texturizing additive common in ultra-processed packaged foods."),
+    ("caramel color", "Caramel Color", "Added coloring agent used in colas and sauces."),
+    ("caramel colour", "Caramel Colour", "Added coloring agent used in packaged snacks and drinks."),
+    ("iodized salt", "Added Salt", "Contributes directly to daily sodium intake."),
+    ("sea salt", "Added Sea Salt", "Contributes directly to daily sodium intake."),
+    ("salt", "Added Salt", "Increases sodium density; monitor daily intake."),
+]
+
+CONCERN_INGREDIENTS: list[tuple[str, str, str]] = [
+    ("high fructose corn syrup", "High-Fructose Corn Syrup", "Strongly linked to excess free-sugar intake and metabolic strain."),
+    ("high-fructose corn syrup", "High-Fructose Corn Syrup", "Strongly linked to excess free-sugar intake and metabolic strain."),
+    ("hfcs", "High-Fructose Corn Syrup (HFCS)", "Concentrated industrial sweetener."),
+    ("liquid glucose", "Liquid Glucose", "Rapidly absorbed refined syrup driving sharp sugar spikes."),
+    ("corn syrup", "Corn Syrup", "Refined liquid sugar syrup."),
+    ("partially hydrogenated", "Partially Hydrogenated Oil", "Source of artificial trans fats harmful to heart health."),
+    ("hydrogenated vegetable oil", "Hydrogenated Vegetable Oil", "Processed fat that can introduce trans or saturated fats."),
+    ("vanaspati", "Vanaspati / Hydrogenated Fat", "Hydrogenated fat high in saturated and trans fatty acids."),
+    ("aspartame", "Aspartame", "Artificial non-nutritive sweetener (E951)."),
+    ("acesulfame", "Acesulfame Potassium", "Synthetic high-intensity sweetener (E950)."),
+    ("sucralose", "Sucralose", "Artificial chlorinated sweetener (E955)."),
+    ("saccharin", "Saccharin", "Synthetic artificial sweetener (E954)."),
+    ("sodium benzoate", "Sodium Benzoate (E211)", "Synthetic chemical preservative used in acidic drinks and sauces."),
+    ("e211", "Sodium Benzoate (E211)", "Synthetic preservative."),
+    ("tbhq", "TBHQ (E319)", "Synthetic petroleum-derived antioxidant preservative in fried snacks."),
+    ("e319", "TBHQ (E319)", "Synthetic preservative."),
+    ("bha", "BHA (E320)", "Synthetic preservative additive."),
+    ("bht", "BHT (E321)", "Synthetic preservative additive."),
+    ("sodium nitrite", "Sodium Nitrite (E250)", "Curing preservative flagged for processed meats."),
+    ("monosodium glutamate", "MSG (E621)", "Flavor enhancer associated with high-sodium ultra-processed snacks."),
+    ("msg", "MSG (E621)", "Flavor enhancer in ultra-processed savory snacks."),
+    ("e621", "MSG (E621)", "Flavor enhancer additive."),
+    ("tartrazine", "Tartrazine (Yellow 5 / E102)", "Synthetic azo food dye."),
+    ("e102", "Tartrazine (E102)", "Synthetic yellow food dye."),
+    ("sunset yellow", "Sunset Yellow (E110)", "Synthetic azo food dye."),
+    ("e110", "Sunset Yellow (E110)", "Synthetic orange food dye."),
+    ("allura red", "Allura Red (Red 40 / E129)", "Synthetic red food dye."),
+    ("red 40", "Red 40 Dye", "Synthetic food coloring."),
+    ("brilliant blue", "Brilliant Blue (E133)", "Synthetic blue food dye."),
+]
+
+
+def _extract_ingredients_segment(raw_text: str) -> list[str]:
+    text = raw_text.strip()
+    m = re.search(
+        r"ingredients?\s*[:\-]?\s*(.+?)(?:\bnutrition|\ballergen|\bstorage|\bmanufactured|\bpacked by|\bbest before|\bnet weight|$)",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    segment = m.group(1) if m else text
+    # Split by comma or semicolon cleanly while respecting newlines
+    parts = re.split(r"[,;\n•]+", segment)
+    cleaned: list[str] = []
+    for p in parts:
+        item = re.sub(r"\s+", " ", p).strip(" .:-()")
+        if 2 <= len(item) <= 90 and not re.fullmatch(r"[\d.\s%gmkcal]+", item, re.I):
+            cleaned.append(item)
+    return cleaned[:40]
+
+
+@app.post("/api/scan-packet", response_model=PacketScanResponse)
+def scan_packet_ingredients(payload: PacketScanInput) -> PacketScanResponse:
+    raw = payload.raw_text.strip()
+    if len(raw) < 3:
+        raise HTTPException(
+            status_code=422,
+            detail="No readable text found. Upload a clearer photo of the packet or paste the ingredients / nutrition text.",
+        )
+
+    parsed_nutrition = parse_nutrition_text(raw)
+    nutrition_analysis: PredictionResponse | None = None
+    if parsed_nutrition is not None:
+        nutrition_analysis = run_ml_prediction(
+            FoodNutritionInput(
+                food_name=payload.product_name.strip() or "Scanned Food Packet",
+                calories=parsed_nutrition["calories"],
+                sugars=parsed_nutrition["sugars"],
+                fat=parsed_nutrition["fat"],
+                protein=parsed_nutrition["protein"],
+                sodium_mg=parsed_nutrition["sodium_mg"],
+            )
+        )
+
+    parsed_ingredients = _extract_ingredients_segment(raw)
+    masked_raw = raw.lower()
+    findings: list[IngredientFinding] = []
+    seen_labels: set[str] = set()
+
+    ing_score = 72.0
+    good_hits = 0
+    mod_hits = 0
+    high_hits = 0
+
+    for kw, label, reason in sorted(CONCERN_INGREDIENTS, key=lambda item: len(item[0]), reverse=True):
+        pattern = re.compile(rf"\b{re.escape(kw)}s?\b")
+        if pattern.search(masked_raw):
+            masked_raw = pattern.sub(" ", masked_raw)
+            if label not in seen_labels:
+                seen_labels.add(label)
+                findings.append(IngredientFinding(ingredient=label, rating="high", reason=reason))
+                high_hits += 1
+                ing_score -= 16.0
+
+    for kw, label, reason in sorted(CAUTION_INGREDIENTS, key=lambda item: len(item[0]), reverse=True):
+        pattern = re.compile(rf"\b{re.escape(kw)}s?\b")
+        if pattern.search(masked_raw):
+            masked_raw = pattern.sub(" ", masked_raw)
+            if label not in seen_labels:
+                seen_labels.add(label)
+                is_top_ingredient = any(kw in p.lower() for p in parsed_ingredients[:2])
+                findings.append(
+                    IngredientFinding(
+                        ingredient=label,
+                        rating="moderate",
+                        reason=(
+                            f"Listed near the top of the packet ({reason})"
+                            if is_top_ingredient
+                            else reason
+                        ),
+                    )
+                )
+                mod_hits += 1
+                ing_score -= 10.0 if is_top_ingredient else 6.0
+
+    for kw, label, reason in sorted(BENEFICIAL_INGREDIENTS, key=lambda item: len(item[0]), reverse=True):
+        pattern = re.compile(rf"\b{re.escape(kw)}s?\b")
+        if pattern.search(masked_raw):
+            masked_raw = pattern.sub(" ", masked_raw)
+            if label not in seen_labels:
+                seen_labels.add(label)
+                findings.append(IngredientFinding(ingredient=label, rating="good", reason=reason))
+                good_hits += 1
+                ing_score += 7.0 if good_hits <= 3 else 3.0
+
+    if not findings and nutrition_analysis is None and len(parsed_ingredients) < 2:
+        raise HTTPException(
+            status_code=422,
+            detail="Could not identify nutrition facts or food ingredients in that text. Try cropping closer to the Ingredients or Nutrition Facts box.",
+        )
+
+    ing_score = round(float(np.clip(ing_score, 8.0, 98.0)), 1)
+
+    if nutrition_analysis is not None and findings:
+        combined_score = round(0.55 * nutrition_analysis.health_score + 0.45 * ing_score, 1)
+    elif nutrition_analysis is not None:
+        combined_score = round(nutrition_analysis.health_score, 1)
+    else:
+        combined_score = ing_score
+
+    if combined_score >= 68.0:
+        verdict: Literal["Good", "Moderate", "Not Good"] = "Good"
+    elif combined_score >= 44.0:
+        verdict = "Moderate"
+    else:
+        verdict = "Not Good"
+
+    reasons: list[ScanReason] = []
+    for f in findings:
+        rtype: Literal["good", "warning", "danger"] = (
+            "good" if f.rating == "good" else "warning" if f.rating == "moderate" else "danger"
+        )
+        reasons.append(ScanReason(type=rtype, text=f"{f.ingredient}: {f.reason}"))
+
+    if nutrition_analysis is not None:
+        for flag in nutrition_analysis.nutrient_flags:
+            if flag.status == "good":
+                reasons.append(
+                    ScanReason(type="good", text=f"{flag.nutrient} ({flag.value_display}): {flag.note}")
+                )
+            elif flag.status == "moderate":
+                reasons.append(
+                    ScanReason(type="warning", text=f"{flag.nutrient} ({flag.value_display}): {flag.note}")
+                )
+            else:
+                prefix = "Low" if flag.nutrient.lower() == "protein" else "High"
+                reasons.append(
+                    ScanReason(type="danger", text=f"{prefix} {flag.nutrient} ({flag.value_display}): {flag.note}")
+                )
+
+    if not reasons:
+        reasons.append(
+            ScanReason(
+                type="warning",
+                text=f"Parsed {len(parsed_ingredients)} ingredient entries without flagged additives; review nutrition facts for sugar and sodium per serving.",
+            )
+        )
+
+    # Sort positive highlights near top when verdict is Good, or warnings first when Not Good
+    if verdict == "Good":
+        reasons.sort(key=lambda r: 0 if r.type == "good" else 1 if r.type == "warning" else 2)
+    else:
+        reasons.sort(key=lambda r: 0 if r.type == "danger" else 1 if r.type == "warning" else 2)
+
+    if verdict == "Good":
+        summary = (
+            f"{payload.product_name} scores {combined_score}/100 (Good) — whole-food ingredients and balanced nutrient profile with low additive concern."
+        )
+    elif verdict == "Moderate":
+        summary = (
+            f"{payload.product_name} scores {combined_score}/100 (Moderate) — contains refined ingredients or moderate sugar/fat/sodium; enjoy occasionally in controlled portions."
+        )
+    else:
+        summary = (
+            f"{payload.product_name} scores {combined_score}/100 (Not Good) — flagged for added sugars, refined/hydrogenated fats, high sodium, or synthetic additives."
+        )
+
+    return PacketScanResponse(
+        product_name=payload.product_name.strip() or "Scanned Food Packet",
+        verdict=verdict,
+        score=combined_score,
+        nutrition_found=nutrition_analysis is not None,
+        ingredients_count=len(parsed_ingredients),
+        parsed_ingredients=parsed_ingredients,
+        ingredient_findings=findings,
+        reasons=reasons[:8],
+        summary=summary,
+        nutrition_analysis=nutrition_analysis,
+    )
+

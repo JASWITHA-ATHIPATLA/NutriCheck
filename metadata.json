@@ -1,6 +1,6 @@
 {
-  "name": "HealthGuard – Food Health Analyzer",
-  "description": "Nutrition-based food health classification and cart alert analyzer powered by Scikit-learn, FastAPI, and React.",
-  "requestFramePermissions": [],
+  "name": "NutriCheck – Food & Packet Ingredient Analyzer",
+  "description": "Scan food packet ingredients, analyze nutrition labels with Scikit-learn ML, and detect online Amazon grocery additions in real time.",
+  "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

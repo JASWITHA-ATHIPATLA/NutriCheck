@@ -1,11 +1,12 @@
 import {
   AlertTriangle,
   CheckCircle2,
+  ScanLine,
   ShieldAlert,
   ShoppingCart,
-  Sparkles,
 } from 'lucide-react';
 import type { HealthLabel, PredictionResult } from '../types';
+import { NutritionGauge } from './NutritionGauge';
 
 interface AnalysisResultProps {
   result: PredictionResult | null;
@@ -36,13 +37,13 @@ export function AnalysisResult({
     return (
       <section className="card empty-state" aria-label="Health analysis output">
         <div className="empty-icon" aria-hidden="true">
-          <Sparkles size={22} />
+          <ScanLine size={22} />
         </div>
         <h2 className="empty-title">Ready to Analyze Nutrition</h2>
         <p className="empty-desc">
-          Enter calories, sugar, fat, protein, and sodium on the left—or load a
-          sample food below—to compute a Scikit-learn health classification,
-          health score, and instant cart alert.
+          Select any food above, enter nutrition values on the left, or load a
+          dataset sample below to inspect its NutriCheck health score and
+          classification.
         </p>
         <div className="form-actions" style={{ justifyContent: 'center' }}>
           <button
@@ -50,7 +51,6 @@ export function AnalysisResult({
             className="btn-secondary"
             onClick={() => onQuickPreset('Healthy')}
           >
-            <span className="dot dot-healthy" aria-hidden="true" />
             Try Broccoli Sample
           </button>
           <button
@@ -58,7 +58,6 @@ export function AnalysisResult({
             className="btn-secondary"
             onClick={() => onQuickPreset('Unhealthy')}
           >
-            <span className="dot dot-unhealthy" aria-hidden="true" />
             Try Soda Sample
           </button>
         </div>
@@ -81,6 +80,18 @@ export function AnalysisResult({
   if (!result) return null;
 
   const statusCls = getStatusClass(result.classification);
+  const gaugeTone =
+    result.classification === 'Healthy'
+      ? 'good'
+      : result.classification === 'Moderate'
+      ? 'moderate'
+      : 'bad';
+  const verdictText =
+    result.classification === 'Healthy'
+      ? 'Good'
+      : result.classification === 'Moderate'
+      ? 'Moderate'
+      : 'Not Good';
   const flagMap = new Map(result.nutrient_flags.map((f) => [f.nutrient, f]));
 
   return (
@@ -102,35 +113,30 @@ export function AnalysisResult({
         </div>
       </div>
 
-      <div className="score-section">
-        <div className="score-row">
-          <span className="score-label">Health Score</span>
-          <div className="score-value">
-            {result.health_score}
-            <span className="score-denom"> / 100</span>
+      <div className="score-section score-gauge-row">
+        <NutritionGauge
+          score={result.health_score}
+          label={verdictText}
+          tone={gaugeTone}
+          title="Nutrition score"
+        />
+
+        <div className="score-meta-col">
+          <div className="score-meta-title">ML Class Probabilities</div>
+          <div className="prob-bars">
+            <div className="prob-bar-item">
+              <span>Healthy</span>
+              <span className="tabular">{result.probabilities.Healthy}%</span>
+            </div>
+            <div className="prob-bar-item">
+              <span>Moderate</span>
+              <span className="tabular">{result.probabilities.Moderate}%</span>
+            </div>
+            <div className="prob-bar-item">
+              <span>Unhealthy</span>
+              <span className="tabular">{result.probabilities.Unhealthy}%</span>
+            </div>
           </div>
-        </div>
-
-        <div className="score-track" role="progressbar" aria-valuenow={result.health_score} aria-valuemin={0} aria-valuemax={100}>
-          <div
-            className={`score-fill ${statusCls}`}
-            style={{ width: `${Math.min(100, Math.max(0, result.health_score))}%` }}
-          />
-        </div>
-
-        <div className="prob-strip">
-          <span>
-            Class Probabilities — Healthy:{' '}
-            <strong className="tabular">{result.probabilities.Healthy}%</strong>
-          </span>
-          <span>
-            Moderate:{' '}
-            <strong className="tabular">{result.probabilities.Moderate}%</strong>
-          </span>
-          <span>
-            Unhealthy:{' '}
-            <strong className="tabular">{result.probabilities.Unhealthy}%</strong>
-          </span>
         </div>
       </div>
 
@@ -140,7 +146,7 @@ export function AnalysisResult({
             <span>Calories</span>
           </div>
           <div className="nutrient-cell-value">{result.nutrition.calories} kcal</div>
-          <div className="nutrient-cell-note">Per serving</div>
+          <div className="nutrient-cell-note">Per 100g / serving</div>
         </div>
 
         <div className="nutrient-cell">
@@ -210,7 +216,7 @@ export function AnalysisResult({
       </div>
 
       <div className="explanation-box">
-        <div className="explanation-heading">Health Analysis Explanation</div>
+        <div className="explanation-heading">Health Analysis Summary</div>
         <p className="explanation-text">{result.explanation}</p>
       </div>
 
@@ -224,7 +230,7 @@ export function AnalysisResult({
           <span>Add to Cart (Demo)</span>
         </button>
         <span className="footer-hint">
-          Triggers an instant health alert based on the product classification.
+          Triggers an instant health alert in your NutriCheck cart.
         </span>
       </div>
     </section>

@@ -72,7 +72,7 @@ export function AmazonConnectView({
                 Real-time interception on Amazon grocery &amp; food product pages.
               </p>
             </div>
-            <Puzzle size={20} color="#6d28d9" />
+            <Puzzle size={20} color="#059669" />
           </div>
 
           <div className="info-callout">
@@ -95,7 +95,7 @@ export function AmazonConnectView({
               <code>extension/</code> folder in this project.
             </li>
             <li>
-              Open the <strong>HealthGuard</strong> extension icon and paste your
+              Open the <strong>NutriCheck</strong> extension icon and paste your
               active dashboard URL below:
             </li>
           </ol>
@@ -151,7 +151,7 @@ export function AmazonConnectView({
               <textarea
                 id="amz-nutrition"
                 className="field-input field-textarea"
-                placeholder="e.g., Calories 160, Total Fat 6g, Sugars 12g, Protein 2g, Sodium 190mg (leave blank to match against the 2,158-food dataset)"
+                placeholder="e.g., Calories 160, Total Fat 6g, Sugars 12g, Protein 2g, Sodium 190mg (leave blank to auto-lookup across Open Food Facts & the 2,158-food dataset)"
                 value={nutritionText}
                 onChange={(e) => setNutritionText(e.target.value)}
               />
@@ -224,12 +224,13 @@ export function AmazonConnectView({
           <div className="event-card-list">
             {events.map((ev) => {
               const a = ev.analysis;
-              const badgeCls =
-                a.classification === 'Healthy'
-                  ? 'is-healthy'
-                  : a.classification === 'Moderate'
-                  ? 'is-moderate'
-                  : 'is-unhealthy';
+              const badgeCls = !a
+                ? 'is-pending'
+                : a.classification === 'Healthy'
+                ? 'is-healthy'
+                : a.classification === 'Moderate'
+                ? 'is-moderate'
+                : 'is-unhealthy';
 
               return (
                 <article key={ev.event_id} className="event-item">
@@ -238,28 +239,35 @@ export function AmazonConnectView({
                       <div className="event-item-title">{ev.product_title}</div>
                       <div className="event-item-meta">
                         Source: {ev.nutrition_source}
-                        {ev.matched_food ? ` (${ev.matched_food})` : ''} ·{' '}
-                        <span className="tabular">{a.nutrition.calories}</span>{' '}
-                        kcal ·{' '}
-                        <span className="tabular">{a.nutrition.sugars}g</span>{' '}
-                        sugar ·{' '}
-                        <span className="tabular">
-                          {Math.round(a.nutrition.sodium_mg)}mg
-                        </span>{' '}
-                        sodium
+                        {ev.matched_food ? ` (${ev.matched_food})` : ''}
+                        {a ? (
+                          <>
+                            {' '}
+                            · <span className="tabular">{a.nutrition.calories}</span> kcal ·{' '}
+                            <span className="tabular">{a.nutrition.sugars}g</span> sugar ·{' '}
+                            <span className="tabular">
+                              {Math.round(a.nutrition.sodium_mg)}mg
+                            </span>{' '}
+                            sodium
+                          </>
+                        ) : null}
                       </div>
                     </div>
 
                     <div className={`status-badge ${badgeCls}`}>
-                      <span>
-                        {a.classification} ·{' '}
-                        <span className="tabular">{a.health_score}</span>
-                      </span>
+                      {a ? (
+                        <span>
+                          {a.classification} ·{' '}
+                          <span className="tabular">{a.health_score}</span>
+                        </span>
+                      ) : (
+                        <span>Needs Nutrition</span>
+                      )}
                     </div>
                   </div>
 
                   <p className="card-subtitle" style={{ color: '#374151' }}>
-                    {a.explanation}
+                    {a ? a.explanation : ev.message}
                   </p>
 
                   <div className="event-item-actions">
@@ -269,8 +277,26 @@ export function AmazonConnectView({
                       style={{ padding: '6px 10px', fontSize: '12.5px' }}
                       onClick={() => onInspectEventInAnalyzer(ev)}
                     >
-                      Open Full Breakdown
+                      {a ? 'Open Full Breakdown' : 'Enter Nutrition Values'}
                     </button>
+
+                    {!a && (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        style={{ padding: '6px 10px', fontSize: '12.5px' }}
+                        onClick={() => {
+                          setProductTitle(ev.product_title);
+                          setProductUrl(ev.product_url || '');
+                          setNutritionText('');
+                          document
+                            .getElementById('amz-nutrition')
+                            ?.focus();
+                        }}
+                      >
+                        Paste Label Here
+                      </button>
+                    )}
 
                     {ev.product_url && (
                       <a
