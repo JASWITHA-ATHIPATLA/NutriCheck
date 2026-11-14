@@ -75,6 +75,12 @@ const GROCERY_STAPLES: {
   { keywords: ['turmeric', 'cumin', 'coriander', 'garam masala', 'masala', 'pepper', 'cinnamon', 'spice', 'seasoning'], name: 'Culinary Spices / Herbs (per 10g)', calories: 31, sugars: 0.3, fat: 0.8, protein: 1.1, sodium_mg: 18 },
   { keywords: ['apple', 'banana', 'orange', 'mango', 'berry', 'berries', 'grape', 'watermelon', 'fruit'], name: 'Fresh Fruit (per 100g)', calories: 58, sugars: 11.2, fat: 0.2, protein: 0.7, sodium_mg: 1 },
   { keywords: ['broccoli', 'spinach', 'carrot', 'tomato', 'onion', 'potato', 'beans', 'peas', 'vegetable'], name: 'Fresh Vegetable (per 100g)', calories: 42, sugars: 2.5, fat: 0.3, protein: 2.1, sodium_mg: 22 },
+  { keywords: ['soya chunks', 'soybean', 'soybeans', 'nutrela', 'soya granules'], name: 'Soya Chunks / Plant Protein (per 100g)', calories: 345, sugars: 2.0, fat: 0.5, protein: 52.0, sodium_mg: 12 },
+  { keywords: ['coconut water', 'tender coconut'], name: 'Unsweetened Coconut Water (per 250ml)', calories: 46, sugars: 6.5, fat: 0.2, protein: 1.8, sodium_mg: 105 },
+  { keywords: ['bournvita', 'horlicks', 'complan', 'boost', 'milo', 'malt drink'], name: 'Malted Milk Health Drink Mix (per 100g)', calories: 396, sugars: 32.0, fat: 2.8, protein: 11.0, sodium_mg: 240 },
+  { keywords: ['rooh afza', 'sharbat', 'squash'], name: 'Flavored Sugar Syrup / Sharbat (per 100ml)', calories: 280, sugars: 70.0, fat: 0.0, protein: 0.0, sodium_mg: 15 },
+  { keywords: ['pickle', 'achar', 'achaar', 'papad'], name: 'Pickles / Papad (per 100g)', calories: 220, sugars: 2.0, fat: 11.0, protein: 4.5, sodium_mg: 2400 },
+  { keywords: ['soan papdi', 'laddu', 'laddoo', 'rasgulla', 'gulab jamun', 'halwa', 'barfi', 'peda'], name: 'Indian Packaged Sweets (per 100g)', calories: 430, sugars: 46.0, fat: 18.0, protein: 4.5, sodium_mg: 45 },
   { keywords: ['ice cream', 'kulfi', 'gelato'], name: 'Ice Cream (per 100g)', calories: 207, sugars: 21.2, fat: 11.0, protein: 3.5, sodium_mg: 80 },
 ];
 

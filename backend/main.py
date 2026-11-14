@@ -556,8 +556,14 @@ GROCERY_STAPLE_PROFILES: list[dict[str, Any]] = [
     {"keywords": ["salt", "rock salt", "sea salt"], "name": "Culinary Salt (per 5g)", "calories": 0.0, "sugars": 0.0, "fat": 0.0, "protein": 0.0, "sodium_mg": 1938.0},
     {"keywords": ["apple", "banana", "orange", "mango", "berry", "berries", "grape", "watermelon", "fruit"], "name": "Fresh Fruit (per 100g)", "calories": 58.0, "sugars": 11.2, "fat": 0.2, "protein": 0.7, "sodium_mg": 1.0},
     {"keywords": ["broccoli", "spinach", "carrot", "tomato", "onion", "potato", "beans", "peas", "vegetable"], "name": "Fresh Vegetable (per 100g)", "calories": 42.0, "sugars": 2.5, "fat": 0.3, "protein": 2.1, "sodium_mg": 22.0},
+    {"keywords": ["poha", "suji", "rava", "sooji", "semolina", "dalia", "broken wheat", "vermicelli", "seviyan"], "name": "Wholesome Grain / Poha / Dalia / Suji (per 100g)", "calories": 356.0, "sugars": 1.0, "fat": 1.2, "protein": 9.8, "sodium_mg": 6.0},
+    {"keywords": ["soya chunks", "soybean", "soybeans", "nutrela", "soya granules"], "name": "Soya Chunks / Plant Protein (per 100g)", "calories": 345.0, "sugars": 2.0, "fat": 0.5, "protein": 52.0, "sodium_mg": 12.0},
+    {"keywords": ["coconut water", "tender coconut"], "name": "Unsweetened Coconut Water (per 250ml)", "calories": 46.0, "sugars": 6.5, "fat": 0.2, "protein": 1.8, "sodium_mg": 105.0},
+    {"keywords": ["bournvita", "horlicks", "complan", "boost", "milo", "malt drink"], "name": "Malted Milk Health Drink Mix (per 100g)", "calories": 396.0, "sugars": 32.0, "fat": 2.8, "protein": 11.0, "sodium_mg": 240.0},
+    {"keywords": ["rooh afza", "sharbat", "squash"], "name": "Flavored Sugar Syrup / Sharbat (per 100ml)", "calories": 280.0, "sugars": 70.0, "fat": 0.0, "protein": 0.0, "sodium_mg": 15.0},
+    {"keywords": ["soan papdi", "laddu", "laddoo", "rasgulla", "gulab jamun", "halwa", "barfi", "peda"], "name": "Indian Packaged Sweets (per 100g)", "calories": 430.0, "sugars": 46.0, "fat": 18.0, "protein": 4.5, "sodium_mg": 45.0},
     {"keywords": ["ice cream", "kulfi", "gelato"], "name": "Ice Cream (per 100g)", "calories": 207.0, "sugars": 21.2, "fat": 11.0, "protein": 3.5, "sodium_mg": 80.0},
-    {"keywords": ["pickle", "achar", "papad"], "name": "Pickles / Papad (per 100g)", "calories": 220.0, "sugars": 2.0, "fat": 11.0, "protein": 4.5, "sodium_mg": 2400.0},
+    {"keywords": ["pickle", "achar", "achaar", "papad"], "name": "Pickles / Papad (per 100g)", "calories": 220.0, "sugars": 2.0, "fat": 11.0, "protein": 4.5, "sodium_mg": 2400.0},
 ]
 
 

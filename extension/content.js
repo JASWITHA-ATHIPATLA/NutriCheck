@@ -15,6 +15,10 @@
 
   function isAddToCartElement(target) {
     if (!target || !(target instanceof Element)) return null;
+    if (target.closest('#ewc-content, #sc-subtotal-box, #gutterCartViewForm')) {
+      return null;
+    }
+
     const direct = target.closest(ADD_TO_CART_SELECTORS);
     if (direct) return direct;
 
@@ -34,13 +38,22 @@
     return null;
   }
 
+  const UI_CHROME_TITLE_RE =
+    /^(?:subtotal|cart subtotal|your cart|shopping cart|proceed to (?:buy|checkout)|order summary|buy now|add to cart|added to cart|go to cart|see options|see all buying options|quick look|sponsored|sponsored ad|ad|best seller|amazon'?s choice|overall pick|limited time deal|deal of the day|delivery|free delivery|results|price|filters?|sort by|featured|loading\.*|amazon(?:\.[a-z.]+)?)$/i;
+
   function cleanExtractedTitle(raw) {
     if (!raw) return '';
     const cleaned = String(raw)
       .replace(/<[^>]*>/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
-    if (!cleaned || cleaned.length < 2) return '';
+    if (!cleaned || cleaned.length < 3) return '';
+    if (UI_CHROME_TITLE_RE.test(cleaned)) return '';
+    if (/^subtotal\b/i.test(cleaned) || /\bcart subtotal\b/i.test(cleaned)) return '';
+    if (/^[₹$€£]\s*[\d,.]+(?:\s*\([^)]+\))?$/.test(cleaned)) return '';
+    if (/^\d+(?:\.\d+)?\s+out of\s+5\s+stars?$/i.test(cleaned)) return '';
+    if (/^\(?[\d,]+(?:\s*ratings?)?\)?$/.test(cleaned)) return '';
+    if (/^\d+(?:\.\d+)?\s*(?:g|gm|gms|kg|ml|l|ltr|oz|lb|pcs|count|pack)$/i.test(cleaned)) return '';
     if (
       /^\d+\s*-\s*\d+\s+of\s+(?:over\s+)?[\d,]+\s+results/i.test(cleaned) ||
       /\bsort by:\s*featured\b/i.test(cleaned) ||
@@ -53,91 +66,171 @@
 
   function findProductCard(clickedEl) {
     if (!clickedEl || !(clickedEl instanceof Element)) return null;
-    return clickedEl.closest(
-      '[data-asin]:not([data-asin=""]), [data-component-type="s-search-result"], .s-result-item[data-asin]:not([data-asin=""]), li.a-carousel-card'
+    const directCard = clickedEl.closest(
+      '[data-component-type="s-search-result"], .s-result-item[data-asin]:not([data-asin=""]), [data-asin]:not([data-asin=""]), [data-csa-c-asin]:not([data-csa-c-asin=""]), li.a-carousel-card, .sc-list-item, .octopus-pc-item, [data-testid*="product-card"], [class*="ProductGridItem"]'
     );
-  }
+    if (directCard) return directCard;
 
-  function extractProductLinkFromCard(clickedEl) {
-    const card = findProductCard(clickedEl);
-    if (!card) return null;
-    const links = card.querySelectorAll('a[href*="/dp/"], a[href*="/gp/product/"]');
-    for (const link of links) {
-      const href = link.getAttribute('href') || '';
-      if (href && !href.startsWith('#')) {
-        try {
-          return new URL(href, window.location.origin).href;
-        } catch {
-          // continue
-        }
+    // Fallback for Fresh / storefront tiles without data-asin on ancestor
+    let node = clickedEl.parentElement;
+    for (let depth = 0; depth < 8 && node; depth += 1) {
+      if (
+        node === document.body ||
+        node === document.documentElement ||
+        node.id === 'a-page' ||
+        node.id === 'search' ||
+        node.id === 'dp' ||
+        node.id === 'ppd'
+      ) {
+        break;
       }
-    }
-    const asin = (card.getAttribute('data-asin') || '').trim();
-    if (/^[A-Z0-9]{10}$/i.test(asin)) {
-      return `${window.location.origin}/dp/${asin}`;
+      const hasDpLink = node.querySelector('a[href*="/dp/"], a[href*="/gp/product/"]');
+      const hasAsinInput = node.querySelector('input[name="asin"], input[name="ASIN"]');
+      const rect = node.getBoundingClientRect();
+      if ((hasDpLink || hasAsinInput) && rect.width > 80 && rect.width < 900) {
+        return node;
+      }
+      node = node.parentElement;
     }
     return null;
   }
 
-  function extractProductTitleFromDoc(doc, clickedEl) {
-    if (clickedEl) {
-      const card = findProductCard(clickedEl);
-      if (card) {
-        const h2WithAria = card.querySelector('h2[aria-label]');
-        if (h2WithAria) {
-          const t = cleanExtractedTitle(h2WithAria.getAttribute('aria-label'));
-          if (t) return t;
-        }
+  function extractAsinFromElement(el) {
+    if (!el || !(el instanceof Element)) return '';
+    const attrs = [
+      el.getAttribute('data-asin'),
+      el.getAttribute('data-csa-c-asin'),
+      el.getAttribute('data-csa-c-item-id'),
+    ];
+    for (const val of attrs) {
+      if (!val) continue;
+      const m = val.match(/\b(B[0-9A-Z]{9}|[0-9]{10})\b/);
+      if (m) return m[1];
+    }
+    const asinInput = el.querySelector('input[name="asin"], input[name="ASIN"]');
+    if (asinInput && /^[A-Z0-9]{10}$/i.test((asinInput.value || '').trim())) {
+      return asinInput.value.trim();
+    }
+    return '';
+  }
 
-        const cardTitleSelectors = [
-          '[data-cy="title-recipe"] h2 span',
-          '[data-cy="title-recipe"] h2',
-          '[data-cy="title-recipe"] a span',
-          'h2 a span',
-          'a h2 span',
-          'h2 span',
-          '.s-line-clamp-2 span',
-          '.a-size-medium.a-color-base.a-text-normal',
-          '.a-size-base-plus.a-color-base.a-text-normal',
-        ];
-        for (const sel of cardTitleSelectors) {
-          const el = card.querySelector(sel);
-          if (el) {
-            const t = cleanExtractedTitle(el.innerText || el.textContent);
-            if (t) return t;
+  function extractProductLinkFromCard(card, clickedEl) {
+    const scope = card || clickedEl?.closest('form, .a-section, li, div');
+    if (scope) {
+      const links = scope.querySelectorAll('a[href*="/dp/"], a[href*="/gp/product/"]');
+      for (const link of links) {
+        const href = link.getAttribute('href') || '';
+        if (href && !href.startsWith('#')) {
+          try {
+            return new URL(href, window.location.origin).href;
+          } catch {
+            // continue
           }
         }
-
-        const cardImg = card.querySelector('img.s-image[alt], img[alt]');
-        if (cardImg) {
-          const alt = cleanExtractedTitle(
-            (cardImg.getAttribute('alt') || '').replace(/^sponsored ad\s*-\s*/i, '')
-          );
-          if (alt && alt.length > 3) return alt;
-        }
       }
+      const asin = extractAsinFromElement(scope) || extractAsinFromElement(clickedEl);
+      if (asin) {
+        return `${window.location.origin}/dp/${asin}`;
+      }
+    }
+    const btnFormAsin = extractAsinFromElement(clickedEl?.closest('form'));
+    if (btnFormAsin) {
+      return `${window.location.origin}/dp/${btnFormAsin}`;
+    }
+    return null;
+  }
 
+  function pickBestTitleFromCard(card, clickedEl) {
+    if (!card) return '';
+
+    const candidates = [];
+    const pushCandidate = (raw, bonus = 0) => {
+      const t = cleanExtractedTitle(raw);
+      if (!t) return;
+      candidates.push({ text: t, score: Math.min(t.length, 120) + bonus });
+    };
+
+    card.querySelectorAll('h2[aria-label]').forEach((el) => {
+      pushCandidate(el.getAttribute('aria-label'), 40);
+    });
+
+    const selectors = [
+      '[data-cy="title-recipe"] h2 span',
+      '[data-cy="title-recipe"] h2',
+      '[data-cy="title-recipe"] a span',
+      'h2 a span',
+      'a h2 span',
+      'h2 span',
+      'h2',
+      'h3 a span',
+      'h3 span',
+      '.a-truncate-full',
+      '.s-line-clamp-2 span',
+      '.a-size-medium.a-color-base.a-text-normal',
+      '.a-size-base-plus.a-color-base.a-text-normal',
+      'a[href*="/dp/"][title]',
+      'a[href*="/dp/"] span',
+      'a[href*="/dp/"]',
+    ];
+    for (let i = 0; i < selectors.length; i += 1) {
+      const bonus = Math.max(0, 30 - i * 2);
+      card.querySelectorAll(selectors[i]).forEach((el) => {
+        if (selectors[i].endsWith('[title]')) {
+          pushCandidate(el.getAttribute('title'), bonus);
+        } else {
+          pushCandidate(el.textContent || el.innerText, bonus);
+        }
+      });
+    }
+
+    card.querySelectorAll('img.s-image[alt], img[alt]').forEach((img) => {
+      const alt = (img.getAttribute('alt') || '').replace(/^sponsored ad\s*-\s*/i, '');
+      pushCandidate(alt, 5);
+    });
+
+    if (clickedEl) {
+      const btnAria = clickedEl.getAttribute('aria-label') || '';
+      if (btnAria && !/^add to cart$/i.test(btnAria.trim())) {
+        pushCandidate(btnAria.replace(/^add\s+to\s+cart\s*(?:for)?\s*/i, ''), 20);
+      }
+    }
+
+    if (!candidates.length) return '';
+    candidates.sort((a, b) => b.score - a.score);
+    return candidates[0].text;
+  }
+
+  function extractProductTitleFromDoc(doc, card, clickedEl) {
+    if (card) {
+      const cardTitle = pickBestTitleFromCard(card, clickedEl);
+      if (cardTitle) return cardTitle;
+    }
+
+    if (clickedEl) {
       const btnAria = clickedEl.getAttribute('aria-label') || '';
       if (btnAria && !/^add to cart$/i.test(btnAria.trim())) {
         const stripped = cleanExtractedTitle(
           btnAria.replace(/^add\s+to\s+cart\s*(?:for)?\s*/i, '')
         );
-        if (stripped && stripped.length > 3) return stripped;
+        if (stripped) return stripped;
       }
     }
 
-    const pageTitle = doc.querySelector('#productTitle, #title');
+    // Only match actual Amazon product detail title containers (NEVER bare #title which matches side-cart Subtotal!)
+    const pageTitle = doc.querySelector(
+      '#productTitle, #titleSection #title, #centerCol #title, h1#title'
+    );
     if (pageTitle) {
-      const t = cleanExtractedTitle(pageTitle.innerText || pageTitle.textContent);
+      const t = cleanExtractedTitle(pageTitle.textContent || pageTitle.innerText);
       if (t) return t;
     }
 
     const docTitle = cleanExtractedTitle(
-      (doc.title || document.title)
+      (doc.title || '')
         .replace(/^Amazon\.[^:]+:\s*/i, '')
-        .replace(/\s*:\s*Grocery.*$/i, '')
+        .replace(/\s*:\s*(?:Grocery|Amazon\.[^:]+).*$/i, '')
     );
-    if (docTitle && !/^amazon\./i.test(docTitle)) return docTitle;
+    if (docTitle) return docTitle;
 
     return '';
   }
@@ -244,49 +337,60 @@
     };
   }
 
-  async function resolveProductDetails(btn) {
-    const isDetailPage = Boolean(document.querySelector('#productTitle'));
-    let targetDoc = document;
-    let productTitle = extractProductTitleFromDoc(document, btn);
-    let productUrl = window.location.href;
+  function captureClickSnapshot(btn) {
+    const card = findProductCard(btn);
+    const inMainBuyBox = Boolean(
+      btn.closest('#ppd, #centerCol, #buybox, #desktop_buybox, #addToCart, #exports_desktop_qualifiedBuybox')
+    );
+    const isMainDetailPage = Boolean(document.querySelector('#productTitle')) && (!card || inMainBuyBox);
+    const initialTitle = extractProductTitleFromDoc(
+      document,
+      isMainDetailPage ? null : card,
+      btn
+    );
+    const dpUrl = isMainDetailPage ? window.location.href : extractProductLinkFromCard(card, btn);
+    return {
+      isMainDetailPage,
+      initialTitle,
+      dpUrl,
+    };
+  }
 
+  async function resolveProductDetails(snapshot) {
+    let productTitle = snapshot.initialTitle;
+    let productUrl = snapshot.dpUrl || window.location.href;
     let nutritionText = '';
     let ingredientsText = '';
     let meta = { brand: '', barcode: '' };
 
-    if (isDetailPage) {
+    if (snapshot.isMainDetailPage) {
       const extractedCurrent = extractIngredientsAndNutritionFromDoc(document);
       nutritionText = extractedCurrent.nutritionText;
       ingredientsText = extractedCurrent.ingredientsText;
       meta = extractBrandAndBarcodeFromDoc(document);
-    } else {
-      const dpUrl = extractProductLinkFromCard(btn);
-      if (dpUrl) {
-        productUrl = dpUrl;
-        try {
-          const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), 3200);
-          const res = await fetch(dpUrl, {
-            credentials: 'same-origin',
-            signal: ctrl.signal,
-          });
-          clearTimeout(timer);
-          if (res.ok) {
-            const html = await res.text();
-            const parsedDoc = new DOMParser().parseFromString(html, 'text/html');
-            targetDoc = parsedDoc;
-            const fetchedTitle = extractProductTitleFromDoc(targetDoc, null);
-            if (fetchedTitle && fetchedTitle.length > 2) {
-              productTitle = fetchedTitle;
-            }
-            const fetchedData = extractIngredientsAndNutritionFromDoc(targetDoc);
-            nutritionText = fetchedData.nutritionText;
-            ingredientsText = fetchedData.ingredientsText;
-            meta = extractBrandAndBarcodeFromDoc(targetDoc);
+    } else if (snapshot.dpUrl) {
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 3500);
+        const res = await fetch(snapshot.dpUrl, {
+          credentials: 'same-origin',
+          signal: ctrl.signal,
+        });
+        clearTimeout(timer);
+        if (res.ok) {
+          const html = await res.text();
+          const parsedDoc = new DOMParser().parseFromString(html, 'text/html');
+          const fetchedTitle = extractProductTitleFromDoc(parsedDoc, null, null);
+          if (fetchedTitle && fetchedTitle.length >= (productTitle || '').length * 0.6) {
+            productTitle = fetchedTitle;
           }
-        } catch {
-          // Ignore network/timeout errors and use card title + ASIN fallback
+          const fetchedData = extractIngredientsAndNutritionFromDoc(parsedDoc);
+          nutritionText = fetchedData.nutritionText;
+          ingredientsText = fetchedData.ingredientsText;
+          meta = extractBrandAndBarcodeFromDoc(parsedDoc);
         }
+      } catch {
+        // Ignore network/timeout errors and use synchronous card title + ASIN fallback
       }
     }
 
@@ -432,9 +536,11 @@
     (event) => {
       const btn = isAddToCartElement(event.target);
       if (!btn) return;
+      const snapshot = captureClickSnapshot(btn);
+      if (!snapshot.initialTitle && !snapshot.dpUrl) return;
 
       void (async () => {
-        const details = await resolveProductDetails(btn);
+        const details = await resolveProductDetails(snapshot);
         if (!details.productTitle) return;
 
         chrome.runtime.sendMessage(
