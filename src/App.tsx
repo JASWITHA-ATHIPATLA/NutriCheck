@@ -23,6 +23,13 @@ import { TopBar } from './components/TopBar';
 import { AboutPage } from './pages/AboutPage';
 import { HomePage } from './pages/HomePage';
 import { ScanPacketPage } from './pages/ScanPacketPage';
+import {
+  FALLBACK_REPORT,
+  FALLBACK_SAMPLES,
+  analyzeAmazonItemLocally,
+  analyzeNutritionLocally,
+  searchOpenFoodFactsClient,
+} from './utils/localNutritionEngine';
 import type {
   AmazonCartEvent,
   CartAlert,
@@ -34,6 +41,27 @@ import type {
   PredictionResult,
   SampleFood,
 } from './types';
+
+const AMAZON_STORAGE_KEY = 'nutricheck_amazon_events_v1';
+
+function readStoredAmazonEvents(): AmazonCartEvent[] {
+  try {
+    const raw = window.localStorage.getItem(AMAZON_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredAmazonEvents(events: AmazonCartEvent[]) {
+  try {
+    window.localStorage.setItem(AMAZON_STORAGE_KEY, JSON.stringify(events.slice(0, 30)));
+  } catch {
+    // ignore quota errors
+  }
+}
 
 const EMPTY_FORM: NutritionFormValues = {
   food_name: '',
@@ -57,9 +85,9 @@ function NutriCheckShell() {
   const location = useLocation();
 
   const [formValues, setFormValues] = useState<NutritionFormValues>(EMPTY_FORM);
-  const [samples, setSamples] = useState<SampleFood[]>([]);
+  const [samples, setSamples] = useState<SampleFood[]>(FALLBACK_SAMPLES);
   const [selectedSampleName, setSelectedSampleName] = useState('');
-  const [report, setReport] = useState<EvaluationReport | null>(null);
+  const [report, setReport] = useState<EvaluationReport | null>(FALLBACK_REPORT);
   const [metricsError, setMetricsError] = useState<string | null>(null);
 
   const [catalogItems, setCatalogItems] = useState<CatalogFoodItem[]>([]);
@@ -75,7 +103,9 @@ function NutriCheckShell() {
     (CartAlert & { itemId?: string }) | null
   >(null);
 
-  const [amazonEvents, setAmazonEvents] = useState<AmazonCartEvent[]>([]);
+  const [amazonEvents, setAmazonEvents] = useState<AmazonCartEvent[]>(() =>
+    typeof window !== 'undefined' ? readStoredAmazonEvents() : []
+  );
   const [isSubmittingAmazon, setIsSubmittingAmazon] = useState(false);
   const [amazonError, setAmazonError] = useState<string | null>(null);
   const [amazonNotice, setAmazonNotice] = useState<{
@@ -86,6 +116,24 @@ function NutriCheckShell() {
   } | null>(null);
   const seenEventIdsRef = useRef<Set<string>>(new Set());
   const initializedEventsRef = useRef(false);
+  const backendAvailableRef = useRef<boolean>(true);
+
+  function mergeAmazonEvents(incoming: AmazonCartEvent[]) {
+    if (!incoming.length) return;
+    setAmazonEvents((prev) => {
+      const byId = new Map<string, AmazonCartEvent>();
+      for (const ev of [...incoming, ...prev]) {
+        if (ev?.event_id && !byId.has(ev.event_id)) {
+          byId.set(ev.event_id, ev);
+        }
+      }
+      const merged = Array.from(byId.values())
+        .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''))
+        .slice(0, 30);
+      writeStoredAmazonEvents(merged);
+      return merged;
+    });
+  }
 
   function pushToCartWithAlert(res: PredictionResult, customId?: string) {
     const id = customId || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -173,20 +221,38 @@ function NutriCheckShell() {
         body: JSON.stringify(payload),
       });
 
-      if (!response.ok) {
-        const errBody = await response.json().catch(() => null);
-        throw new Error(errBody?.detail || `API returned status ${response.status}`);
+      if (response.ok) {
+        const data: PredictionResult = await response.json();
+        setPrediction(data);
+        if (autoAddAlert) {
+          pushToCartWithAlert(data);
+        }
+        return;
       }
 
-      const data: PredictionResult = await response.json();
-      setPrediction(data);
+      if (response.status === 422) {
+        const errBody = await response.json().catch(() => null);
+        throw new Error(errBody?.detail || `Invalid nutrition input (${response.status})`);
+      }
+
+      // Static Vercel fallback when Python backend is not hosted
+      const localRes = analyzeNutritionLocally(payload);
+      setPrediction(localRes);
       if (autoAddAlert) {
-        pushToCartWithAlert(data);
+        pushToCartWithAlert(localRes);
       }
     } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : 'Failed to analyze nutrition values.';
-      setFormError(msg);
+      if (err instanceof TypeError || (err instanceof Error && /failed to fetch|network/i.test(err.message))) {
+        const localRes = analyzeNutritionLocally(payload);
+        setPrediction(localRes);
+        if (autoAddAlert) {
+          pushToCartWithAlert(localRes);
+        }
+      } else {
+        setFormError(
+          err instanceof Error ? err.message : 'Failed to analyze nutrition values.'
+        );
+      }
     } finally {
       setIsAnalyzing(false);
     }
@@ -206,68 +272,82 @@ function NutriCheckShell() {
       itemName && calParam && sugParam && fatParam && proParam && sodParam
     );
 
+    const initialStored = readStoredAmazonEvents();
+    initialStored.forEach((ev) => seenEventIdsRef.current.add(ev.event_id));
+
     async function loadInitialData() {
       try {
         const [samplesRes, metricsRes, eventsRes, foodsRes] = await Promise.all([
-          fetch('/api/samples'),
-          fetch('/api/metrics'),
-          fetch('/api/amazon/cart-events'),
-          fetch('/api/foods?limit=8'),
+          fetch('/api/samples').catch(() => null),
+          fetch('/api/metrics').catch(() => null),
+          fetch('/api/amazon/cart-events').catch(() => null),
+          fetch('/api/foods?limit=8').catch(() => null),
         ]);
 
-        if (!cancelled && samplesRes.ok) {
+        const apiOnline = Boolean(samplesRes && samplesRes.ok);
+        backendAvailableRef.current = apiOnline;
+
+        if (!cancelled && samplesRes?.ok) {
           const sampleData: SampleFood[] = await samplesRes.json();
           setSamples(sampleData);
         }
-        if (!cancelled && metricsRes.ok) {
+
+        if (!cancelled && metricsRes?.ok) {
           const metricsData: EvaluationReport = await metricsRes.json();
           setReport(metricsData);
+          setMetricsError(null);
         } else if (!cancelled) {
-          setMetricsError('Unable to load model evaluation report from API.');
+          setReport(FALLBACK_REPORT);
+          setMetricsError(null);
         }
 
-        let loadedEvents: AmazonCartEvent[] = [];
-        if (!cancelled && eventsRes.ok) {
-          loadedEvents = await eventsRes.json();
-          loadedEvents.forEach((ev) => seenEventIdsRef.current.add(ev.event_id));
-          initializedEventsRef.current = true;
-          setAmazonEvents(loadedEvents);
-
-          const analyzedItems: CartItem[] = loadedEvents
-            .filter((ev) => ev.status === 'analyzed' && ev.analysis !== null)
-            .map((ev) => {
-              const a = ev.analysis!;
-              return {
-                id: `amz-${ev.event_id}`,
-                food_name: a.food_name,
-                classification: a.classification,
-                health_score: a.health_score,
-                calories: a.nutrition.calories,
-                sugars: a.nutrition.sugars,
-                fat: a.nutrition.fat,
-                protein: a.nutrition.protein,
-                sodium_mg: a.nutrition.sodium_mg,
-                cart_alert: a.cart_alert,
-              };
-            });
-          if (analyzedItems.length > 0) {
-            setCartItems((prev) => {
-              const existingIds = new Set(prev.map((p) => p.id));
-              return [
-                ...prev,
-                ...analyzedItems.filter((item) => !existingIds.has(item.id)),
-              ];
-            });
-          }
-
-          if (!hasCalorieParams && !itemName && loadedEvents.length > 0) {
-            handleIncomingAmazonEvent(loadedEvents[0], false);
-          }
+        let loadedEvents: AmazonCartEvent[] = [...initialStored];
+        if (!cancelled && eventsRes?.ok) {
+          const apiEvents: AmazonCartEvent[] = await eventsRes.json();
+          mergeAmazonEvents(apiEvents);
+          loadedEvents = apiEvents.length > 0 ? apiEvents : initialStored;
         }
 
-        if (!cancelled && foodsRes.ok) {
+        loadedEvents.forEach((ev) => seenEventIdsRef.current.add(ev.event_id));
+        initializedEventsRef.current = true;
+
+        const analyzedItems: CartItem[] = loadedEvents
+          .filter((ev) => ev.status === 'analyzed' && ev.analysis !== null)
+          .map((ev) => {
+            const a = ev.analysis!;
+            return {
+              id: `amz-${ev.event_id}`,
+              food_name: a.food_name,
+              classification: a.classification,
+              health_score: a.health_score,
+              calories: a.nutrition.calories,
+              sugars: a.nutrition.sugars,
+              fat: a.nutrition.fat,
+              protein: a.nutrition.protein,
+              sodium_mg: a.nutrition.sodium_mg,
+              cart_alert: a.cart_alert,
+            };
+          });
+        if (!cancelled && analyzedItems.length > 0) {
+          setCartItems((prev) => {
+            const existingIds = new Set(prev.map((p) => p.id));
+            return [
+              ...prev,
+              ...analyzedItems.filter((item) => !existingIds.has(item.id)),
+            ];
+          });
+        }
+
+        if (!cancelled && !hasCalorieParams && !itemName && loadedEvents.length > 0) {
+          handleIncomingAmazonEvent(loadedEvents[0], false);
+        }
+
+        if (!cancelled && foodsRes?.ok) {
           const foodData: CatalogFoodItem[] = await foodsRes.json();
           setCatalogItems(foodData);
+        } else if (!cancelled) {
+          const clientFoods = await searchOpenFoodFactsClient('', 8);
+          setCatalogItems(clientFoods);
         }
 
         if (!cancelled && itemName && !hasCalorieParams) {
@@ -289,9 +369,8 @@ function NutriCheckShell() {
         }
       } catch {
         if (!cancelled) {
-          setMetricsError(
-            'Could not reach the FastAPI backend. Ensure uvicorn is running on port 8001.'
-          );
+          backendAvailableRef.current = false;
+          setReport(FALLBACK_REPORT);
         }
       }
     }
@@ -325,21 +404,54 @@ function NutriCheckShell() {
     };
   }, []);
 
+  // Listen to real-time Chrome Extension tab bridge sync (works on Vercel & localhost!)
+  useEffect(() => {
+    function handleBridgeMessage(event: MessageEvent) {
+      if (event.origin !== window.location.origin) return;
+      const msg = event.data;
+      if (!msg || msg.type !== 'NUTRICHECK_AMAZON_SYNC' || !Array.isArray(msg.events)) return;
+
+      const incoming = msg.events as AmazonCartEvent[];
+      if (incoming.length === 0) return;
+
+      const unseen = incoming.filter((ev) => ev?.event_id && !seenEventIdsRef.current.has(ev.event_id));
+      incoming.forEach((ev) => ev?.event_id && seenEventIdsRef.current.add(ev.event_id));
+      mergeAmazonEvents(incoming);
+
+      if (unseen.length > 0) {
+        handleIncomingAmazonEvent(unseen[0], true);
+      }
+    }
+
+    window.addEventListener('message', handleBridgeMessage);
+    window.postMessage({ type: 'NUTRICHECK_REQUEST_SYNC' }, window.location.origin);
+    return () => window.removeEventListener('message', handleBridgeMessage);
+  }, []);
+
   // Live search across local dataset + Open Food Facts
   useEffect(() => {
     const controller = new AbortController();
     const handle = window.setTimeout(async () => {
       try {
-        const res = await fetch(
-          `/api/foods?q=${encodeURIComponent(catalogQuery)}&limit=8`,
-          { signal: controller.signal }
-        );
-        if (res.ok) {
-          const list: CatalogFoodItem[] = await res.json();
-          setCatalogItems(list);
+        if (backendAvailableRef.current) {
+          const res = await fetch(
+            `/api/foods?q=${encodeURIComponent(catalogQuery)}&limit=8`,
+            { signal: controller.signal }
+          );
+          if (res.ok) {
+            const list: CatalogFoodItem[] = await res.json();
+            setCatalogItems(list);
+            return;
+          }
+          backendAvailableRef.current = false;
         }
+        const clientList = await searchOpenFoodFactsClient(catalogQuery, 8);
+        setCatalogItems(clientList);
       } catch {
-        // Ignore abort errors
+        if (!controller.signal.aborted) {
+          const clientList = await searchOpenFoodFactsClient(catalogQuery, 8);
+          setCatalogItems(clientList);
+        }
       }
     }, 260);
 
@@ -349,14 +461,20 @@ function NutriCheckShell() {
     };
   }, [catalogQuery]);
 
-  // Poll for live Amazon extension Add-to-Cart events every 2s
+  // Poll backend for live Amazon extension Add-to-Cart events when Python backend is running
   useEffect(() => {
     const timer = window.setInterval(async () => {
+      if (!backendAvailableRef.current) return;
       try {
         const res = await fetch('/api/amazon/cart-events');
-        if (!res.ok) return;
+        if (!res.ok) {
+          if (res.status === 404 || res.status === 405) {
+            backendAvailableRef.current = false;
+          }
+          return;
+        }
         const latest: AmazonCartEvent[] = await res.json();
-        setAmazonEvents(latest);
+        mergeAmazonEvents(latest);
 
         if (!initializedEventsRef.current) {
           latest.forEach((ev) => seenEventIdsRef.current.add(ev.event_id));
@@ -531,21 +649,30 @@ function NutriCheckShell() {
     setIsSubmittingAmazon(true);
     setAmazonError(null);
     try {
-      const res = await fetch('/api/amazon/add-to-cart', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...payload,
-          source: 'amazon_web_intake',
-        }),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        throw new Error(data?.detail || `API returned status ${res.status}`);
+      let ev: AmazonCartEvent | null = null;
+      if (backendAvailableRef.current) {
+        const res = await fetch('/api/amazon/add-to-cart', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...payload,
+            source: 'amazon_web_intake',
+          }),
+        }).catch(() => null);
+        if (res?.ok) {
+          ev = (await res.json()) as AmazonCartEvent;
+        } else if (res && res.status === 422) {
+          const errBody = await res.json().catch(() => null);
+          throw new Error(errBody?.detail || `Invalid product input (${res.status})`);
+        }
       }
-      const ev = data as AmazonCartEvent;
+
+      if (!ev) {
+        ev = await analyzeAmazonItemLocally(payload);
+      }
+
       seenEventIdsRef.current.add(ev.event_id);
-      setAmazonEvents((prev) => [ev, ...prev.filter((p) => p.event_id !== ev.event_id)]);
+      mergeAmazonEvents([ev]);
       handleIncomingAmazonEvent(ev, true);
     } catch (err) {
       setAmazonError(
@@ -557,7 +684,15 @@ function NutriCheckShell() {
   }
 
   async function handleDeleteAmazonEvent(eventId: string) {
-    setAmazonEvents((prev) => prev.filter((e) => e.event_id !== eventId));
+    setAmazonEvents((prev) => {
+      const next = prev.filter((e) => e.event_id !== eventId);
+      writeStoredAmazonEvents(next);
+      return next;
+    });
+    window.postMessage(
+      { type: 'NUTRICHECK_DELETE_AMAZON_EVENT', eventId },
+      window.location.origin
+    );
     await fetch(`/api/amazon/cart-events/${eventId}`, { method: 'DELETE' }).catch(
       () => {}
     );
@@ -565,6 +700,8 @@ function NutriCheckShell() {
 
   async function handleClearAmazonEvents() {
     setAmazonEvents([]);
+    writeStoredAmazonEvents([]);
+    window.postMessage({ type: 'NUTRICHECK_CLEAR_AMAZON_EVENTS' }, window.location.origin);
     await fetch('/api/amazon/cart-events', { method: 'DELETE' }).catch(() => {});
   }
 

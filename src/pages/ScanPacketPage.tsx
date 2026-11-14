@@ -10,7 +10,9 @@ import {
   X,
 } from 'lucide-react';
 import Tesseract from 'tesseract.js';
+import { BreakdownPieChart } from '../components/BreakdownPieChart';
 import { NutritionGauge } from '../components/NutritionGauge';
+import { scanPacketLocally } from '../utils/localNutritionEngine';
 import type { PacketScanResult } from '../types';
 
 const SAMPLE_PACKETS = [
@@ -63,24 +65,37 @@ export function ScanPacketPage() {
   async function analyzeText(nameToUse: string, textToUse: string) {
     setIsScanning(true);
     setErrorMessage(null);
+    const cleanName = nameToUse.trim() || 'Scanned Food Packet';
+    const cleanText = textToUse.trim();
     try {
       const res = await fetch('/api/scan-packet', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          product_name: nameToUse.trim() || 'Scanned Food Packet',
-          raw_text: textToUse.trim(),
+          product_name: cleanName,
+          raw_text: cleanText,
         }),
       });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        throw new Error(data?.detail || `Server returned status ${res.status}`);
+      if (res.ok) {
+        const data = (await res.json()) as PacketScanResult;
+        setResult(data);
+        return;
       }
-      setResult(data as PacketScanResult);
+      if (res.status === 422) {
+        const errBody = await res.json().catch(() => null);
+        throw new Error(errBody?.detail || 'Please provide clearer ingredients or nutrition label text.');
+      }
+      // Static deployments (e.g. Vercel without Python API) fall back to local analyzer
+      const localResult = scanPacketLocally(cleanName, cleanText);
+      setResult(localResult);
     } catch (err) {
-      setErrorMessage(
-        err instanceof Error ? err.message : 'Unable to analyze packet text.'
-      );
+      if (err instanceof TypeError || (err instanceof Error && /failed to fetch|network/i.test(err.message))) {
+        setResult(scanPacketLocally(cleanName, cleanText));
+      } else {
+        setErrorMessage(
+          err instanceof Error ? err.message : 'Unable to analyze packet text.'
+        );
+      }
     } finally {
       setIsScanning(false);
     }
@@ -399,82 +414,195 @@ export function ScanPacketPage() {
                 Checking ingredient quality and running nutrient profiling rules.
               </p>
             </section>
-          ) : result ? (
-            <section className="card" aria-labelledby="scan-result-heading">
-              <div className="result-hero">
-                <div>
-                  <h2 id="scan-result-heading" className="result-food-name">
-                    {result.product_name}
-                  </h2>
-                  <p className="result-meta-line">
-                    {result.ingredients_count} ingredients parsed ·{' '}
-                    {result.nutrition_found
-                      ? 'Nutrition table + ML model included'
-                      : 'Ingredient profile analysis'}
-                  </p>
+          ) : result ? (() => {
+            const goodCount = result.ingredient_findings.filter((f) => f.rating === 'good').length;
+            const modCount = result.ingredient_findings.filter((f) => f.rating === 'moderate').length;
+            const badCount = result.ingredient_findings.filter((f) => f.rating === 'high').length;
+            const flaggedTotal = goodCount + modCount + badCount;
+            const neutralCount = Math.max(0, result.ingredients_count - flaggedTotal);
+
+            const ingredientSlices = [
+              { label: 'Good Ingredients', value: goodCount, color: '#16a34a', displayValue: `${goodCount}` },
+              { label: 'Moderate / Caution', value: modCount, color: '#d97706', displayValue: `${modCount}` },
+              { label: 'Bad Ingredients', value: badCount, color: '#dc2626', displayValue: `${badCount}` },
+              { label: 'Base / Neutral', value: neutralCount, color: '#94a3b8', displayValue: `${neutralCount}` },
+            ];
+
+            const nut = result.nutrition_analysis;
+            const flagMap = new Map((nut?.nutrient_flags || []).map((f) => [f.nutrient, f]));
+            const nutRows = nut
+              ? [
+                  { name: 'Calories', value: `${nut.nutrition.calories} kcal`, share: 'Per serving / 100g', status: undefined },
+                  { name: 'Sugars', value: `${nut.nutrition.sugars} g`, share: `${nut.nutrition.sugar_kcal_pct}% of kcal`, status: flagMap.get('Sugar')?.status },
+                  { name: 'Total Fat', value: `${nut.nutrition.fat} g`, share: `${nut.nutrition.fat_kcal_pct}% of kcal`, status: flagMap.get('Total Fat')?.status },
+                  { name: 'Protein', value: `${nut.nutrition.protein} g`, share: `${nut.nutrition.protein_kcal_pct}% of kcal`, status: flagMap.get('Protein')?.status },
+                  { name: 'Sodium', value: `${Math.round(nut.nutrition.sodium_mg)} mg`, share: `${Math.round(nut.nutrition.sodium_per_100kcal)} mg / 100 kcal`, status: flagMap.get('Sodium')?.status },
+                ]
+              : [];
+
+            return (
+              <section className="card" aria-labelledby="scan-result-heading">
+                <div className="result-hero">
+                  <div>
+                    <h2 id="scan-result-heading" className="result-food-name">
+                      {result.product_name}
+                    </h2>
+                    <p className="result-meta-line">
+                      {result.ingredients_count} ingredients parsed ·{' '}
+                      {result.nutrition_found
+                        ? 'Nutrition table + ML model included'
+                        : 'Ingredient profile analysis'}
+                    </p>
+                  </div>
+
+                  <div
+                    className={`status-badge ${
+                      result.verdict === 'Good'
+                        ? 'is-healthy'
+                        : result.verdict === 'Moderate'
+                        ? 'is-moderate'
+                        : 'is-unhealthy'
+                    }`}
+                  >
+                    {result.verdict === 'Good' ? (
+                      <ThumbsUp size={17} />
+                    ) : result.verdict === 'Moderate' ? (
+                      <AlertTriangle size={17} />
+                    ) : (
+                      <ShieldAlert size={17} />
+                    )}
+                    <span>{result.verdict}</span>
+                  </div>
                 </div>
 
-                <div
-                  className={`status-badge ${
-                    result.verdict === 'Good'
-                      ? 'is-healthy'
-                      : result.verdict === 'Moderate'
-                      ? 'is-moderate'
-                      : 'is-unhealthy'
-                  }`}
-                >
-                  {result.verdict === 'Good' ? (
-                    <ThumbsUp size={17} />
-                  ) : result.verdict === 'Moderate' ? (
-                    <AlertTriangle size={17} />
-                  ) : (
-                    <ShieldAlert size={17} />
-                  )}
-                  <span>{result.verdict}</span>
+                <div className="score-visual-grid">
+                  <div className="gauge-panel">
+                    <NutritionGauge
+                      score={result.score}
+                      label={result.verdict}
+                      tone={gaugeTone}
+                      title="Nutrition score"
+                    />
+                  </div>
+
+                  <BreakdownPieChart
+                    title="Good vs Bad Ingredients"
+                    subtitle="Ingredient quality breakdown detected on this packet"
+                    slices={ingredientSlices}
+                    centerValue={`${flaggedTotal || result.ingredients_count}`}
+                    centerLabel={flaggedTotal ? 'flagged' : 'items'}
+                    emptyMessage="Paste an ingredients list to view good vs bad ingredient shares."
+                  />
                 </div>
-              </div>
 
-              <div className="score-section score-gauge-row">
-                <NutritionGauge
-                  score={result.score}
-                  label={result.verdict}
-                  tone={gaugeTone}
-                  title="Nutrition score"
-                />
-
-                <div className="score-meta-col">
+                <div className="explanation-box">
                   <div className="explanation-heading">Verdict Summary</div>
                   <p className="explanation-text">{result.summary}</p>
                 </div>
-              </div>
 
-              <div className="scan-reasons-list">
-                {result.reasons.map((r, idx) => (
-                  <div key={idx} className="scan-reason-row">
-                    <span className={`reason-icon is-${r.type}`} aria-hidden="true">
-                      {r.type === 'good' ? (
-                        <ThumbsUp size={15} />
-                      ) : r.type === 'warning' ? (
-                        <AlertTriangle size={15} />
-                      ) : (
-                        <ShieldAlert size={15} />
-                      )}
-                    </span>
-                    <span className="reason-text">{r.text}</span>
+                {nutRows.length > 0 && (
+                  <div className="table-section">
+                    <div className="table-section-title">Detected Nutrition Facts Table</div>
+                    <div className="data-table-wrap">
+                      <table className="data-table nutrition-table">
+                        <thead>
+                          <tr>
+                            <th>Nutrient</th>
+                            <th className="num">Quantity</th>
+                            <th className="num">Energy / Ratio</th>
+                            <th>Evaluation</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {nutRows.map((row) => (
+                            <tr key={row.name}>
+                              <td><strong>{row.name}</strong></td>
+                              <td className="num">{row.value}</td>
+                              <td className="num">{row.share}</td>
+                              <td>
+                                <span className={`eval-pill ${row.status ? `is-${row.status}` : 'is-neutral'}`}>
+                                  {row.status === 'good'
+                                    ? 'Good'
+                                    : row.status === 'moderate'
+                                    ? 'Moderate'
+                                    : row.status === 'high'
+                                    ? 'High Concern'
+                                    : 'Measured'}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                ))}
-              </div>
+                )}
 
-              {result.parsed_ingredients.length > 0 && (
-                <div className="parsed-ingredients-box">
-                  <div className="explanation-heading">Extracted Ingredients</div>
-                  <p className="card-subtitle" style={{ color: '#374151', marginTop: '4px' }}>
-                    {result.parsed_ingredients.join(' · ')}
-                  </p>
-                </div>
-              )}
-            </section>
-          ) : null}
+                {result.ingredient_findings.length > 0 ? (
+                  <div className="table-section">
+                    <div className="table-section-title">Good &amp; Bad Ingredients Breakdown</div>
+                    <div className="data-table-wrap">
+                      <table className="data-table nutrition-table">
+                        <thead>
+                          <tr>
+                            <th>Ingredient</th>
+                            <th>Category</th>
+                            <th>Health Note</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[...result.ingredient_findings]
+                            .sort((a, b) => {
+                              const ord = result.verdict === 'Good'
+                                ? { good: 0, moderate: 1, high: 2 }
+                                : { high: 0, moderate: 1, good: 2 };
+                              return ord[a.rating] - ord[b.rating];
+                            })
+                            .map((f, idx) => (
+                              <tr key={`${f.ingredient}-${idx}`}>
+                                <td><strong>{f.ingredient}</strong></td>
+                                <td>
+                                  <span className={`eval-pill is-${f.rating}`}>
+                                    {f.rating === 'good' ? 'Good' : f.rating === 'moderate' ? 'Moderate' : 'Bad'}
+                                  </span>
+                                </td>
+                                <td className="table-note-cell">{f.reason}</td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="scan-reasons-list">
+                    {result.reasons.map((r, idx) => (
+                      <div key={idx} className="scan-reason-row">
+                        <span className={`reason-icon is-${r.type}`} aria-hidden="true">
+                          {r.type === 'good' ? (
+                            <ThumbsUp size={15} />
+                          ) : r.type === 'warning' ? (
+                            <AlertTriangle size={15} />
+                          ) : (
+                            <ShieldAlert size={15} />
+                          )}
+                        </span>
+                        <span className="reason-text">{r.text}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {result.parsed_ingredients.length > 0 && (
+                  <div className="parsed-ingredients-box">
+                    <div className="explanation-heading">Extracted Packet Ingredients</div>
+                    <p className="card-subtitle" style={{ color: '#374151', marginTop: '4px' }}>
+                      {result.parsed_ingredients.join(' · ')}
+                    </p>
+                  </div>
+                )}
+              </section>
+            );
+          })() : null}
         </div>
       </div>
     </div>

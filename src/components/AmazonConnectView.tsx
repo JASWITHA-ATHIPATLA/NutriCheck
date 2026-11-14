@@ -76,27 +76,30 @@ export function AmazonConnectView({
           </div>
 
           <div className="info-callout">
-            <strong>How it works with Amazon:</strong> Mobile OS sandboxing
-            prevents any website from reading clicks inside the native Amazon
-            mobile app directly. On <strong>Amazon in Chrome or Edge</strong>,
-            the included Manifest V3 extension (<code>extension/</code>) hooks
-            every <strong>Add to Cart</strong> button click, extracts the
-            clicked item&apos;s title and nutrition text, and sends it straight to
-            this dashboard.
+            <strong>Works with both Localhost &amp; Vercel:</strong> Load the{' '}
+            <code>extension/</code> folder in Chrome/Edge and paste your live
+            website URL (such as <code>https://your-app.vercel.app</code> or{' '}
+            <code>http://localhost:3000</code>) into the extension popup. When
+            you click <strong>Add to Cart</strong> on Amazon, the extension
+            analyzes the food immediately and syncs it straight into this
+            website tab automatically.
           </div>
 
           <ol className="rule-list" style={{ marginBottom: '16px' }}>
             <li>
-              Open <code>chrome://extensions</code> in Chrome/Edge and enable{' '}
-              <strong>Developer mode</strong>.
+              Open <code>chrome://extensions</code> in Chrome/Edge, enable{' '}
+              <strong>Developer mode</strong>, and click{' '}
+              <strong>Load unpacked</strong> on the <code>extension/</code>{' '}
+              folder (or click Reload if already loaded).
             </li>
             <li>
-              Click <strong>Load unpacked</strong> and select the{' '}
-              <code>extension/</code> folder in this project.
+              Click the <strong>NutriCheck</strong> extension icon, paste your
+              active URL below, and click <strong>Save URL</strong>:
             </li>
             <li>
-              Open the <strong>NutriCheck</strong> extension icon and paste your
-              active dashboard URL below:
+              Keep Amazon and NutriCheck in the same Chrome browser — every{' '}
+              <strong>Add to Cart</strong> click syncs here automatically, or
+              click <strong>Open in NutriCheck Website</strong> on the popup.
             </li>
           </ol>
 

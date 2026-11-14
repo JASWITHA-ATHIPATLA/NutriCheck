@@ -1773,6 +1773,192 @@ textarea {
   text-decoration: underline;
 }
 
+/* Clean Gauge + Pie Visual Grid & Structured Nutrition Tables */
+.score-visual-grid {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 20px;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  align-items: center;
+}
+
+.gauge-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-muted);
+}
+
+.pie-card {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-muted);
+  padding: 16px 18px;
+}
+
+.pie-header {
+  margin-bottom: 12px;
+}
+
+.pie-title {
+  font-family: var(--font-display);
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.pie-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.pie-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.pie-layout {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.pie-svg {
+  width: 132px;
+  height: 132px;
+  flex-shrink: 0;
+}
+
+.pie-center-val {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 800;
+  fill: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.pie-center-lbl {
+  font-size: 11px;
+  font-weight: 600;
+  fill: var(--text-muted);
+}
+
+.pie-legend {
+  flex: 1;
+  min-width: 170px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pie-legend-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.pie-legend-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pie-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.pie-legend-name {
+  color: var(--text-primary);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pie-legend-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.pie-legend-pct {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.table-section {
+  padding: 18px 0 4px;
+}
+
+.table-section-title {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+}
+
+.nutrition-table {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.nutrition-table th {
+  background-color: var(--bg-subtle);
+}
+
+.table-note-cell {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.eval-pill {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.eval-pill.is-good {
+  background-color: var(--green-bg);
+  color: var(--green-ink);
+}
+
+.eval-pill.is-moderate {
+  background-color: var(--yellow-bg);
+  color: var(--yellow-ink);
+}
+
+.eval-pill.is-high {
+  background-color: var(--red-bg);
+  color: var(--red-ink);
+}
+
+.eval-pill.is-neutral {
+  background-color: var(--bg-subtle);
+  color: var(--text-secondary);
+}
+
 /* Responsive Breakpoints */
 @media (max-width: 980px) {
   .nc-hero-inner {
@@ -1798,7 +1984,8 @@ textarea {
     grid-template-columns: 1fr;
   }
 
-  .score-gauge-row {
+  .score-gauge-row,
+  .score-visual-grid {
     grid-template-columns: 1fr;
   }
 

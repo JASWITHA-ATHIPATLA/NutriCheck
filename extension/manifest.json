@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "NutriCheck – Amazon Food Health Analyzer",
-  "version": "1.0.0",
-  "description": "Detects Add to Cart clicks on Amazon food items and sends nutrition data to your NutriCheck ML analyzer for instant Good/Moderate/Not Good alerts.",
+  "version": "1.1.0",
+  "description": "Detects Add to Cart clicks on Amazon food items and syncs nutrition analysis to your NutriCheck website (local or Vercel).",
   "permissions": ["storage"],
   "host_permissions": [
     "https://*.amazon.com/*",
@@ -10,8 +10,11 @@
     "https://*.amazon.co.uk/*",
     "https://*.amazon.ca/*",
     "https://*.amazon.de/*",
+    "https://*.openfoodfacts.org/*",
     "http://localhost:3000/*",
     "http://127.0.0.1:3000/*",
+    "https://*.vercel.app/*",
+    "https://*.netlify.app/*",
     "https://*.run.app/*"
   ],
   "background": {
@@ -28,10 +31,21 @@
       ],
       "js": ["content.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "http://localhost:3000/*",
+        "http://127.0.0.1:3000/*",
+        "https://*.vercel.app/*",
+        "https://*.netlify.app/*",
+        "https://*.run.app/*"
+      ],
+      "js": ["bridge.js"],
+      "run_at": "document_idle"
     }
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "HealthGuard Settings"
+    "default_title": "NutriCheck Settings"
   }
 }

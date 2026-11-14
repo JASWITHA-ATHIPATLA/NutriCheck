@@ -1140,8 +1140,18 @@ def scan_packet_ingredients(payload: PacketScanInput) -> PacketScanResponse:
             )
         )
 
+    m_seg = re.search(
+        r"ingredients?\s*[:\-]?\s*(.+?)(?:\bnutrition|\ballergen|\bstorage|\bmanufactured|\bpacked by|\bbest before|\bnet weight|$)",
+        raw,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    ingredient_source_text = (
+        m_seg.group(1)
+        if m_seg
+        else re.sub(r"\bnutrition\s*(?:facts|information)?[\s\S]*$", "", raw, flags=re.IGNORECASE)
+    )
     parsed_ingredients = _extract_ingredients_segment(raw)
-    masked_raw = raw.lower()
+    masked_raw = ingredient_source_text.lower()
     findings: list[IngredientFinding] = []
     seen_labels: set[str] = set()
 
@@ -1164,12 +1174,13 @@ def scan_packet_ingredients(payload: PacketScanInput) -> PacketScanResponse:
         pattern = re.compile(rf"\b{re.escape(kw)}s?\b")
         if pattern.search(masked_raw):
             masked_raw = pattern.sub(" ", masked_raw)
-            if label not in seen_labels:
-                seen_labels.add(label)
+            norm_label = "Refined Flour (Maida)" if label == "Refined Wheat Flour (Maida)" else label
+            if norm_label not in seen_labels:
+                seen_labels.add(norm_label)
                 is_top_ingredient = any(kw in p.lower() for p in parsed_ingredients[:2])
                 findings.append(
                     IngredientFinding(
-                        ingredient=label,
+                        ingredient=norm_label,
                         rating="moderate",
                         reason=(
                             f"Listed near the top of the packet ({reason})"

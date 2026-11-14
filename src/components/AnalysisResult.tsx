@@ -6,6 +6,7 @@ import {
   ShoppingCart,
 } from 'lucide-react';
 import type { HealthLabel, PredictionResult } from '../types';
+import { BreakdownPieChart } from './BreakdownPieChart';
 import { NutritionGauge } from './NutritionGauge';
 
 interface AnalysisResultProps {
@@ -27,6 +28,13 @@ function StatusIcon({ label }: { label: HealthLabel }) {
   return <ShieldAlert size={18} />;
 }
 
+function statusPillLabel(status?: 'good' | 'moderate' | 'high'): string {
+  if (status === 'good') return 'Good';
+  if (status === 'moderate') return 'Moderate';
+  if (status === 'high') return 'High Concern';
+  return 'Measured';
+}
+
 export function AnalysisResult({
   result,
   isAnalyzing,
@@ -42,8 +50,8 @@ export function AnalysisResult({
         <h2 className="empty-title">Ready to Analyze Nutrition</h2>
         <p className="empty-desc">
           Select any food above, enter nutrition values on the left, or load a
-          dataset sample below to inspect its NutriCheck health score and
-          classification.
+          dataset sample below to inspect its NutriCheck health score, calorie
+          pie chart, and nutrition table.
         </p>
         <div className="form-actions" style={{ justifyContent: 'center' }}>
           <button
@@ -70,8 +78,7 @@ export function AnalysisResult({
       <section className="card empty-state" aria-busy="true">
         <h2 className="empty-title">Running Nutrition Model...</h2>
         <p className="empty-desc">
-          Evaluating nutrient density and macro ratios with the trained Random
-          Forest model.
+          Evaluating nutrient density and macro ratios with NutriCheck.
         </p>
       </section>
     );
@@ -92,7 +99,76 @@ export function AnalysisResult({
       : result.classification === 'Moderate'
       ? 'Moderate'
       : 'Not Good';
+
   const flagMap = new Map(result.nutrient_flags.map((f) => [f.nutrient, f]));
+
+  const proteinKcal = Math.round(result.nutrition.protein * 4);
+  const fatKcal = Math.round(result.nutrition.fat * 9);
+  const sugarKcal = Math.round(result.nutrition.sugars * 4);
+  const otherKcal = Math.max(
+    0,
+    Math.round(result.nutrition.calories - (proteinKcal + fatKcal + sugarKcal))
+  );
+
+  const macroSlices = [
+    {
+      label: 'Protein',
+      value: proteinKcal,
+      color: '#16a34a',
+      displayValue: `${result.nutrition.protein}g`,
+    },
+    {
+      label: 'Total Fat',
+      value: fatKcal,
+      color: '#d97706',
+      displayValue: `${result.nutrition.fat}g`,
+    },
+    {
+      label: 'Sugars',
+      value: sugarKcal,
+      color: '#dc2626',
+      displayValue: `${result.nutrition.sugars}g`,
+    },
+    {
+      label: 'Other Carbs',
+      value: otherKcal,
+      color: '#64748b',
+      displayValue: `${otherKcal} kcal`,
+    },
+  ];
+
+  const rows = [
+    {
+      name: 'Calories',
+      value: `${result.nutrition.calories} kcal`,
+      share: 'Per 100g / serving',
+      status: undefined,
+    },
+    {
+      name: 'Sugars',
+      value: `${result.nutrition.sugars} g`,
+      share: `${result.nutrition.sugar_kcal_pct}% of kcal`,
+      status: flagMap.get('Sugar')?.status,
+    },
+    {
+      name: 'Total Fat',
+      value: `${result.nutrition.fat} g`,
+      share: `${result.nutrition.fat_kcal_pct}% of kcal`,
+      status: flagMap.get('Total Fat')?.status,
+    },
+    {
+      name: 'Protein',
+      value: `${result.nutrition.protein} g`,
+      share: `${result.nutrition.protein_kcal_pct}% of kcal`,
+      status: flagMap.get('Protein')?.status,
+    },
+    {
+      name: 'Sodium',
+      value: `${Math.round(result.nutrition.sodium_mg)} mg`,
+      share: `${Math.round(result.nutrition.sodium_per_100kcal)} mg / 100 kcal`,
+      status: flagMap.get('Sodium')?.status,
+    },
+  ];
 
   return (
     <section className="card" aria-labelledby="analysis-result-heading">
@@ -109,109 +185,63 @@ export function AnalysisResult({
 
         <div className={`status-badge ${statusCls}`}>
           <StatusIcon label={result.classification} />
-          <span>{result.classification}</span>
+          <span>{verdictText}</span>
         </div>
       </div>
 
-      <div className="score-section score-gauge-row">
-        <NutritionGauge
-          score={result.health_score}
-          label={verdictText}
-          tone={gaugeTone}
-          title="Nutrition score"
+      <div className="score-visual-grid">
+        <div className="gauge-panel">
+          <NutritionGauge
+            score={result.health_score}
+            label={verdictText}
+            tone={gaugeTone}
+            title="Nutrition score"
+          />
+        </div>
+
+        <BreakdownPieChart
+          title="Calorie & Macro Breakdown"
+          subtitle="Share of calories from Protein, Fat, Sugars & Other Carbs"
+          slices={macroSlices}
+          centerValue={`${Math.round(result.nutrition.calories)}`}
+          centerLabel="kcal"
+          emptyMessage="Zero-calorie beverage or item."
         />
-
-        <div className="score-meta-col">
-          <div className="score-meta-title">ML Class Probabilities</div>
-          <div className="prob-bars">
-            <div className="prob-bar-item">
-              <span>Healthy</span>
-              <span className="tabular">{result.probabilities.Healthy}%</span>
-            </div>
-            <div className="prob-bar-item">
-              <span>Moderate</span>
-              <span className="tabular">{result.probabilities.Moderate}%</span>
-            </div>
-            <div className="prob-bar-item">
-              <span>Unhealthy</span>
-              <span className="tabular">{result.probabilities.Unhealthy}%</span>
-            </div>
-          </div>
-        </div>
       </div>
 
-      <div className="nutrient-grid">
-        <div className="nutrient-cell">
-          <div className="nutrient-cell-label">
-            <span>Calories</span>
-          </div>
-          <div className="nutrient-cell-value">{result.nutrition.calories} kcal</div>
-          <div className="nutrient-cell-note">Per 100g / serving</div>
-        </div>
-
-        <div className="nutrient-cell">
-          <div className="nutrient-cell-label">
-            <span>Sugar</span>
-            {flagMap.get('Sugar') && (
-              <span className={`flag-text-${flagMap.get('Sugar')!.status}`}>
-                {flagMap.get('Sugar')!.status.toUpperCase()}
-              </span>
-            )}
-          </div>
-          <div className="nutrient-cell-value">{result.nutrition.sugars} g</div>
-          <div className="nutrient-cell-note">
-            <span className="tabular">{result.nutrition.sugar_kcal_pct}%</span> of kcal
-          </div>
-        </div>
-
-        <div className="nutrient-cell">
-          <div className="nutrient-cell-label">
-            <span>Total Fat</span>
-            {flagMap.get('Total Fat') && (
-              <span className={`flag-text-${flagMap.get('Total Fat')!.status}`}>
-                {flagMap.get('Total Fat')!.status.toUpperCase()}
-              </span>
-            )}
-          </div>
-          <div className="nutrient-cell-value">{result.nutrition.fat} g</div>
-          <div className="nutrient-cell-note">
-            <span className="tabular">{result.nutrition.fat_kcal_pct}%</span> of kcal
-          </div>
-        </div>
-
-        <div className="nutrient-cell">
-          <div className="nutrient-cell-label">
-            <span>Protein</span>
-            {flagMap.get('Protein') && (
-              <span className={`flag-text-${flagMap.get('Protein')!.status}`}>
-                {flagMap.get('Protein')!.status.toUpperCase()}
-              </span>
-            )}
-          </div>
-          <div className="nutrient-cell-value">{result.nutrition.protein} g</div>
-          <div className="nutrient-cell-note">
-            <span className="tabular">{result.nutrition.protein_kcal_pct}%</span> of kcal
-          </div>
-        </div>
-
-        <div className="nutrient-cell">
-          <div className="nutrient-cell-label">
-            <span>Sodium</span>
-            {flagMap.get('Sodium') && (
-              <span className={`flag-text-${flagMap.get('Sodium')!.status}`}>
-                {flagMap.get('Sodium')!.status.toUpperCase()}
-              </span>
-            )}
-          </div>
-          <div className="nutrient-cell-value">
-            {Math.round(result.nutrition.sodium_mg)} mg
-          </div>
-          <div className="nutrient-cell-note">
-            <span className="tabular">
-              {Math.round(result.nutrition.sodium_per_100kcal)}
-            </span>{' '}
-            mg/100 kcal
-          </div>
+      <div className="table-section">
+        <div className="table-section-title">Nutrition Facts Table</div>
+        <div className="data-table-wrap">
+          <table className="data-table nutrition-table">
+            <thead>
+              <tr>
+                <th>Nutrient</th>
+                <th className="num">Quantity</th>
+                <th className="num">Energy / Ratio</th>
+                <th>Evaluation</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.name}>
+                  <td>
+                    <strong>{row.name}</strong>
+                  </td>
+                  <td className="num">{row.value}</td>
+                  <td className="num">{row.share}</td>
+                  <td>
+                    <span
+                      className={`eval-pill ${
+                        row.status ? `is-${row.status}` : 'is-neutral'
+                      }`}
+                    >
+                      {statusPillLabel(row.status)}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
 
