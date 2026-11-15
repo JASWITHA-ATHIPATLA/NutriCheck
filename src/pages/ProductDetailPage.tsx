@@ -67,8 +67,8 @@ export function ProductDetailPage() {
 
   const ingredientSlices = [
     { label: 'Good Ingredients', value: ingGood, color: '#16a34a', displayValue: `${ingGood}` },
-    { label: 'Caution', value: ingMod, color: '#ca8a04', displayValue: `${ingMod}` },
-    { label: 'Watch / Bad', value: ingBad, color: '#dc2626', displayValue: `${ingBad}` },
+    { label: 'Caution', value: ingMod, color: '#d97706', displayValue: `${ingMod}` },
+    { label: 'Watch / Bad', value: ingBad, color: '#be123c', displayValue: `${ingBad}` },
     { label: 'Base / Neutral', value: ingNeutral, color: '#94a3b8', displayValue: `${ingNeutral}` },
   ];
 
@@ -88,13 +88,13 @@ export function ProductDetailPage() {
       label: 'Sugar Load',
       value: sugarCalories,
       displayValue: `${product.sugar_g.toFixed(1)}g`,
-      color: '#dc2626',
+      color: '#be123c',
     },
     {
       label: 'Sat. Fat & Sodium Watch',
       value: satFatCalories + sodiumPenalty,
       displayValue: `${product.saturated_fat_g.toFixed(1)}g sat · ${Math.round(product.sodium_mg)}mg Na`,
-      color: '#ca8a04',
+      color: '#d97706',
     },
   ];
 

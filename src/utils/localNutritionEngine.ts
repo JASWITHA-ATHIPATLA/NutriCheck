@@ -870,7 +870,7 @@ export async function searchOpenFoodFactsClient(
   const combinedLocal = [...stapleMatches, ...localCatalogMatches];
 
   try {
-    const url = `https://search.openfoodfacts.org/search?q=${encodeURIComponent(query)}&page_size=${Math.min(limit * 2, 16)}&fields=product_name,brands,nutriments`;
+    const url = `https://search.openfoodfacts.org/search?q=${encodeURIComponent(query)}&page_size=${Math.min(limit * 2, 16)}&fields=product_name,brands,nutriments,ingredients_text,image_front_small_url,image_front_url,image_url`;
     const res = await fetch(url);
     if (!res.ok) return combinedLocal.slice(0, limit);
     const data = await res.json();
@@ -885,6 +885,8 @@ export async function searchOpenFoodFactsClient(
       const display = brand && !name.toLowerCase().includes(brand.toLowerCase()) ? `${name} (${brand})` : name;
       let sodiumMg = Number(n['sodium_100g'] ?? 0) * 1000;
       if (!sodiumMg && n['salt_100g']) sodiumMg = Number(n['salt_100g']) * 393.4;
+      const offImg = p?.image_front_small_url || p?.image_front_url || p?.image_url || null;
+      const offIng = typeof p?.ingredients_text === 'string' && p.ingredients_text.trim() ? p.ingredients_text.trim() : null;
       results.push({
         food: display.slice(0, 140),
         food_norm: display.toLowerCase(),
@@ -894,6 +896,8 @@ export async function searchOpenFoodFactsClient(
         protein: round1(Number(n['proteins_100g'] ?? 0)),
         sodium_mg: round1(sodiumMg),
         source_group: 'Open Food Facts (Live Online)',
+        image_url: offImg,
+        ingredients_text: offIng,
       });
       if (results.length >= limit) break;
     }
@@ -903,11 +907,34 @@ export async function searchOpenFoodFactsClient(
   }
 }
 
+export function inferDefaultIngredientsClient(title: string): string | null {
+  const lower = title.toLowerCase();
+  if (/\b(rolled oats|oats|oatmeal)\b/.test(lower)) return '100% Wholegrain Rolled Oats';
+  if (/\b(brown rice)\b/.test(lower)) return '100% Wholegrain Brown Rice';
+  if (/\b(basmati|rice)\b/.test(lower)) return '100% Aged Basmati / Rice Grain';
+  if (/\b(mixed dry fruits|dry fruits|trail mix|nut mix)\b/.test(lower)) return 'Whole almonds, cashews, walnuts, raisins, pistachios';
+  if (/\b(almond|badam)\b/.test(lower)) return '100% Roasted / Natural California Almonds';
+  if (/\b(walnut|cashew|pistachio|peanut)\b/.test(lower)) return 'Whole Tree Nuts / Peanuts';
+  if (/\b(instant noodles|maggi|ramen|yippee|noodles)\b/.test(lower)) return 'Refined wheat flour (maida), palm oil, iodized salt, sugar, maltodextrin, flavor enhancer (E621), TBHQ';
+  if (/\b(potato chips|lays|kurkure|bingo|doritos|pringles|chips|namkeen|bhujia)\b/.test(lower)) return 'Potatoes, edible vegetable oil (palm olein), iodized salt, spices, dextrose';
+  if (/\b(biscuit|cookies|oreo|parle|bourbon|wafer)\b/.test(lower)) return 'Refined wheat flour (maida), sugar, vegetable fat (palm oil), invert syrup, milk solids, leavening agents, salt';
+  if (/\b(chocolate|dairy milk|kitkat|snickers)\b/.test(lower)) return 'Sugar, cocoa butter, milk solids, cocoa mass, soy lecithin, natural vanilla flavor';
+  if (/\b(coca cola|pepsi|sprite|fanta|thums up|cola|soda|soft drink)\b/.test(lower)) return 'Carbonated water, high fructose corn syrup, sugar, caramel color (E150d), phosphoric acid, caffeine, sodium benzoate';
+  if (/\b(peanut butter)\b/.test(lower)) return 'Roasted peanuts (98%), peanut oil, salt';
+  if (/\b(yogurt|curd|dahi)\b/.test(lower)) return 'Pasteurized milk, active live yogurt cultures';
+  if (/\b(biryani)\b/.test(lower)) return 'Basmati rice, spices, onions, oil/ghee, salt, herbs';
+  if (/\b(paneer butter masala|butter chicken)\b/.test(lower)) return 'Paneer / chicken, tomato puree, cream, butter, spices, salt, sugar';
+  if (/\b(dosa)\b/.test(lower)) return 'Fermented rice & urad dal batter, cooking oil, iodized salt';
+  if (/\b(pizza)\b/.test(lower)) return 'Refined wheat flour (maida), mozzarella cheese, tomato sauce, vegetable oil, salt, yeast';
+  return null;
+}
+
 export async function analyzeAmazonItemLocally(payload: {
   product_title: string;
   nutrition_text?: string;
   ingredients_text?: string;
   product_url?: string;
+  image_url?: string;
   source_platform?: string;
 }): Promise<AmazonCartEvent> {
   const title = payload.product_title.trim();
@@ -927,18 +954,15 @@ export async function analyzeAmazonItemLocally(payload: {
       : urlLower.includes('amazon')
       ? 'Amazon'
       : 'Online Store');
-  const combinedLabelText = [payload.ingredients_text || '', payload.nutrition_text || '']
+
+  let capturedIngredients = (payload.ingredients_text || '').trim();
+  let capturedImage = (payload.image_url || '').trim() || null;
+
+  const combinedLabelText = [capturedIngredients, payload.nutrition_text || '']
     .filter(Boolean)
     .join('\n');
 
   const parsed = combinedLabelText ? parseNutritionTextClient(combinedLabelText) : null;
-  const hasIngredients = Boolean(
-    payload.ingredients_text?.trim() ||
-      /\bingredients?\b/i.test(payload.nutrition_text || '')
-  );
-  const ingredientScan = hasIngredients
-    ? scanPacketLocally(title, combinedLabelText)
-    : null;
 
   let nutritionInput = parsed;
   let nutritionSource = parsed ? `${platform} Page Nutrition Facts` : '';
@@ -968,6 +992,12 @@ export async function analyzeAmazonItemLocally(payload: {
       };
       nutritionSource = online.source_group;
       matchedFood = online.food;
+      if (!capturedIngredients && online.ingredients_text) {
+        capturedIngredients = online.ingredients_text;
+      }
+      if (!capturedImage && online.image_url) {
+        capturedImage = online.image_url;
+      }
     }
   }
 
@@ -983,6 +1013,21 @@ export async function analyzeAmazonItemLocally(payload: {
     matchedFood = stapleOrCatalog.matched_food;
   }
 
+  if (!capturedIngredients) {
+    const inferred = inferDefaultIngredientsClient(title);
+    if (inferred) capturedIngredients = inferred;
+  }
+
+  const finalCombinedText = [capturedIngredients, payload.nutrition_text || '']
+    .filter(Boolean)
+    .join('\n');
+  const hasIngredients = Boolean(
+    capturedIngredients || /\bingredients?\b/i.test(payload.nutrition_text || '')
+  );
+  const ingredientScan = hasIngredients
+    ? scanPacketLocally(title, finalCombinedText)
+    : null;
+
   const eventId = Math.random().toString(36).slice(2, 10);
   if (!nutritionInput && !ingredientScan) {
     return {
@@ -993,11 +1038,12 @@ export async function analyzeAmazonItemLocally(payload: {
       status: 'needs_nutrition',
       product_title: title,
       product_url: payload.product_url || null,
+      image_url: capturedImage,
       nutrition_source: 'Nutrition Label Not Found on Page',
       matched_food: null,
-      message: `Captured "${title}". Nutrition facts were not detected—enter label numbers in the Food Analyzer to classify.`,
+      message: `Captured "${title}". Nutrition facts were not detected—enter label numbers below to classify.`,
       analysis: null,
-      ingredients_text: payload.ingredients_text || null,
+      ingredients_text: capturedIngredients || null,
       ingredient_scan: null,
     };
   }
@@ -1028,13 +1074,14 @@ export async function analyzeAmazonItemLocally(payload: {
     status: 'analyzed',
     product_title: title,
     product_url: payload.product_url || null,
+    image_url: capturedImage,
     nutrition_source: nutritionSource,
     matched_food: matchedFood,
     message: ingredientScan
       ? `${analysis.explanation} Scanned ${ingredientScan.ingredients_count} ingredients (${ingredientScan.verdict}).`
       : analysis.explanation,
     analysis,
-    ingredients_text: payload.ingredients_text || null,
+    ingredients_text: capturedIngredients || null,
     ingredient_scan: ingredientScan,
   };
 }

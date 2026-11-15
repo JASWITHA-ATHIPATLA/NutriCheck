@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle,
-  CheckCircle2,
-  ShieldAlert,
+  ExternalLink,
+  ShoppingBag,
+  X,
 } from 'lucide-react';
 import {
   BrowserRouter,
@@ -24,6 +24,7 @@ import { ProductDetailPage } from './pages/ProductDetailPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { RegisterPage } from './pages/RegisterPage';
 import { ScanPacketPage } from './pages/ScanPacketPage';
+import { evaluateProfileAlertsForValues } from './utils/healthProfileEngine';
 import { analyzeAmazonItemLocally } from './utils/localNutritionEngine';
 import type { AmazonCartEvent } from './types';
 
@@ -71,6 +72,18 @@ function RequireAuth({ children }: { children: React.ReactElement }) {
   return children;
 }
 
+function inferStorePlatform(ev: AmazonCartEvent): string {
+  if (ev.source_platform) return ev.source_platform;
+  const hay = `${ev.product_url || ''} ${ev.source || ''}`.toLowerCase();
+  if (hay.includes('flipkart')) return 'Flipkart';
+  if (hay.includes('instamart')) return 'Swiggy Instamart';
+  if (hay.includes('swiggy')) return 'Swiggy';
+  if (hay.includes('zomato')) return 'Zomato';
+  if (hay.includes('blinkit')) return 'Blinkit';
+  if (hay.includes('amazon')) return 'Amazon';
+  return 'Online Store';
+}
+
 function NutriCheckShell() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -81,14 +94,12 @@ function NutriCheckShell() {
   );
   const [isSubmittingAmazon, setIsSubmittingAmazon] = useState(false);
   const [amazonError, setAmazonError] = useState<string | null>(null);
-  const [amazonNotice, setAmazonNotice] = useState<{
-    level: 'success' | 'warning' | 'danger' | 'info';
-    title: string;
-    message: string;
-  } | null>(null);
+  const [popupEvent, setPopupEvent] = useState<AmazonCartEvent | null>(null);
+
   const seenEventIdsRef = useRef<Set<string>>(new Set());
   const initializedEventsRef = useRef(false);
   const backendAvailableRef = useRef<boolean>(true);
+  const popupTimerRef = useRef<number | null>(null);
 
   function mergeAmazonEvents(incoming: AmazonCartEvent[]) {
     if (!incoming.length) return;
@@ -107,46 +118,14 @@ function NutriCheckShell() {
     });
   }
 
-  function inferStorePlatform(ev: AmazonCartEvent): string {
-    if (ev.source_platform) return ev.source_platform;
-    const hay = `${ev.product_url || ''} ${ev.source || ''}`.toLowerCase();
-    if (hay.includes('flipkart')) return 'Flipkart';
-    if (hay.includes('instamart')) return 'Swiggy Instamart';
-    if (hay.includes('swiggy')) return 'Swiggy';
-    if (hay.includes('zomato')) return 'Zomato';
-    if (hay.includes('blinkit')) return 'Blinkit';
-    if (hay.includes('amazon')) return 'Amazon';
-    return 'Store';
-  }
-
-  function handleIncomingAmazonEvent(ev: AmazonCartEvent, showBanner = true) {
-    const storeName = inferStorePlatform(ev);
-    if (ev.status === 'analyzed' && ev.analysis) {
-      if (showBanner) {
-        const verdictWord =
-          ev.analysis.classification === 'Healthy'
-            ? 'Good'
-            : ev.analysis.classification === 'Moderate'
-            ? 'Moderate'
-            : 'Not Good';
-        setAmazonNotice({
-          level: ev.analysis.cart_alert.level,
-          title: `${storeName} Item Checked: ${verdictWord} (${ev.analysis.health_score}/100)`,
-          message: ev.message || `${ev.product_title} — ${ev.analysis.explanation}`,
-        });
-      }
-      return;
+  function triggerTopPopup(ev: AmazonCartEvent) {
+    setPopupEvent(ev);
+    if (popupTimerRef.current) {
+      window.clearTimeout(popupTimerRef.current);
     }
-
-    if (showBanner) {
-      setAmazonNotice({
-        level: 'warning',
-        title: `${storeName} Item Captured: ${ev.product_title}`,
-        message:
-          ev.message ||
-          `Nutrition label numbers were not found on the ${storeName} page. Open Store Connect to paste label numbers or ingredients.`,
-      });
-    }
+    popupTimerRef.current = window.setTimeout(() => {
+      setPopupEvent((curr) => (curr?.event_id === ev.event_id ? null : curr));
+    }, 18000);
   }
 
   useEffect(() => {
@@ -154,6 +133,8 @@ function NutriCheckShell() {
 
     const params = new URLSearchParams(window.location.search);
     const itemName = params.get('item') || params.get('food');
+    const urlImage = params.get('image_url') || undefined;
+    const urlIngredients = params.get('ingredients') || undefined;
 
     const initialStored = readStoredAmazonEvents();
     initialStored.forEach((ev) => seenEventIdsRef.current.add(ev.event_id));
@@ -178,13 +159,15 @@ function NutriCheckShell() {
             (ev) => ev.product_title.toLowerCase() === itemName.toLowerCase()
           );
           if (matchingExisting) {
-            handleIncomingAmazonEvent(matchingExisting, true);
+            triggerTopPopup(matchingExisting);
             navigate('/amazon');
           } else {
             navigate('/amazon');
             void handleAnalyzeAmazonText({
               product_title: itemName,
               nutrition_text: params.get('nutrition') || '',
+              ingredients_text: urlIngredients,
+              image_url: urlImage,
             });
           }
         }
@@ -217,7 +200,7 @@ function NutriCheckShell() {
       mergeAmazonEvents(incoming);
 
       if (unseen.length > 0) {
-        handleIncomingAmazonEvent(unseen[0], true);
+        triggerTopPopup(unseen[0]);
       }
     }
 
@@ -252,7 +235,7 @@ function NutriCheckShell() {
         );
         if (unseen.length > 0) {
           unseen.forEach((ev) => seenEventIdsRef.current.add(ev.event_id));
-          handleIncomingAmazonEvent(unseen[0], true);
+          triggerTopPopup(unseen[0]);
         }
       } catch {
         // Ignore transient polling hiccups
@@ -267,6 +250,8 @@ function NutriCheckShell() {
     nutrition_text: string;
     ingredients_text?: string;
     product_url?: string;
+    image_url?: string;
+    source_platform?: string;
   }) {
     setIsSubmittingAmazon(true);
     setAmazonError(null);
@@ -296,9 +281,16 @@ function NutriCheckShell() {
         ev = await analyzeAmazonItemLocally(payload);
       }
 
+      if (payload.image_url && !ev.image_url) {
+        ev.image_url = payload.image_url;
+      }
+      if (payload.source_platform && !ev.source_platform) {
+        ev.source_platform = payload.source_platform;
+      }
+
       seenEventIdsRef.current.add(ev.event_id);
       mergeAmazonEvents([ev]);
-      handleIncomingAmazonEvent(ev, true);
+      triggerTopPopup(ev);
     } catch (err) {
       setAmazonError(
         err instanceof Error ? err.message : 'Unable to analyze store item.'
@@ -314,6 +306,9 @@ function NutriCheckShell() {
       writeStoredAmazonEvents(next);
       return next;
     });
+    if (popupEvent?.event_id === eventId) {
+      setPopupEvent(null);
+    }
     window.postMessage(
       { type: 'NUTRICHECK_DELETE_AMAZON_EVENT', eventId },
       window.location.origin
@@ -325,58 +320,140 @@ function NutriCheckShell() {
 
   async function handleClearAmazonEvents() {
     setAmazonEvents([]);
+    setPopupEvent(null);
     writeStoredAmazonEvents([]);
     window.postMessage({ type: 'NUTRICHECK_CLEAR_AMAZON_EVENTS' }, window.location.origin);
     await fetch('/api/amazon/cart-events', { method: 'DELETE' }).catch(() => {});
   }
 
-  const showLiveNotice = Boolean(
-    currentUser && amazonNotice && location.pathname !== '/'
-  );
+  const showTopPopup = Boolean(currentUser && popupEvent);
+  const popupStore = popupEvent ? inferStorePlatform(popupEvent) : '';
+  const popupAnalysis = popupEvent?.analysis || null;
+  const popupProfile =
+    popupEvent && popupAnalysis
+      ? evaluateProfileAlertsForValues(
+          {
+            productName: popupEvent.product_title,
+            calories: popupAnalysis.nutrition.calories,
+            sugars: popupAnalysis.nutrition.sugars,
+            sodium_mg: popupAnalysis.nutrition.sodium_mg,
+            fat: popupAnalysis.nutrition.fat,
+            ingredientsText: popupEvent.ingredients_text || '',
+            baseScore: popupAnalysis.health_score,
+          },
+          currentUser
+        )
+      : null;
 
   return (
     <div className="app-shell">
       <ScrollToTop />
       <TopBar />
 
-      {showLiveNotice && amazonNotice && (
-        <div className="main-container" style={{ paddingBottom: 0 }}>
-          <div
-            className={`amazon-live-banner level-${amazonNotice.level}`}
-            role="status"
-            aria-live="polite"
-          >
-            <div className="cart-alert-body">
-              {amazonNotice.level === 'success' ? (
-                <CheckCircle2 size={20} />
-              ) : amazonNotice.level === 'danger' ? (
-                <ShieldAlert size={20} />
-              ) : (
-                <AlertTriangle size={20} />
-              )}
-              <div>
-                <div className="cart-alert-title">{amazonNotice.title}</div>
-                <p className="cart-alert-msg">{amazonNotice.message}</p>
-              </div>
+      {/* Top Add-to-Cart Floating Popup */}
+      {showTopPopup && popupEvent && (
+        <div
+          className="atc-top-popup"
+          role="dialog"
+          aria-label="Added to Cart Health Alert"
+          aria-live="polite"
+        >
+          <div className="atc-top-popup-bar">
+            <div className="atc-top-popup-brand">
+              <ShoppingBag size={14} />
+              <span>Added to Cart · {popupStore}</span>
             </div>
-            <div className="cart-alert-actions">
-              {location.pathname !== '/amazon' && location.pathname !== '/connect' && (
-                <button
-                  type="button"
-                  className="alert-dismiss-btn"
-                  onClick={() => navigate('/amazon')}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {popupProfile ? (
+                <span
+                  className={`risk-tag ${
+                    popupProfile.riskLevel === 'LOW RISK'
+                      ? 'is-low'
+                      : popupProfile.riskLevel === 'MODERATE RISK'
+                      ? 'is-moderate'
+                      : 'is-high'
+                  }`}
                 >
-                  Open Store Connect
-                </button>
+                  {popupProfile.riskLevel}
+                </span>
+              ) : (
+                <span className="risk-tag is-moderate">NEEDS NUTRITION</span>
               )}
               <button
                 type="button"
-                className="alert-dismiss-btn"
-                onClick={() => setAmazonNotice(null)}
+                className="atc-top-popup-close"
+                aria-label="Dismiss popup"
+                onClick={() => setPopupEvent(null)}
               >
-                Dismiss
+                <X size={16} />
               </button>
             </div>
+          </div>
+
+          <div className="atc-top-popup-body">
+            {popupEvent.image_url && (
+              <div className="atc-top-popup-thumb">
+                <img
+                  src={popupEvent.image_url}
+                  alt={popupEvent.product_title}
+                />
+              </div>
+            )}
+
+            <div className="atc-top-popup-info">
+              <div className="atc-top-popup-title">{popupEvent.product_title}</div>
+
+              {popupEvent.ingredients_text && (
+                <div className="atc-top-popup-ingredients">
+                  <strong>Ingredients:</strong>{' '}
+                  {popupEvent.ingredients_text.replace(/^ingredients\s*[:\-]?\s*/i, '')}
+                </div>
+              )}
+
+              {popupAnalysis ? (
+                <div className="atc-top-popup-macros">
+                  <span>{Math.round(popupAnalysis.nutrition.calories)} kcal</span>
+                  <span>·</span>
+                  <span>{popupAnalysis.nutrition.sugars}g sugar</span>
+                  <span>·</span>
+                  <span>{popupAnalysis.nutrition.fat}g fat</span>
+                  <span>·</span>
+                  <span>{Math.round(popupAnalysis.nutrition.sodium_mg)}mg Na</span>
+                </div>
+              ) : (
+                <p className="card-subtitle" style={{ marginTop: 4 }}>
+                  {popupEvent.message}
+                </p>
+              )}
+
+              {popupProfile && (
+                <div className="atc-top-popup-note">
+                  {popupProfile.alerts[0]}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="atc-top-popup-actions">
+            {location.pathname !== '/amazon' && location.pathname !== '/connect' && (
+              <button
+                type="button"
+                className="nc-btn-primary"
+                style={{ padding: '7px 14px', fontSize: '13px' }}
+                onClick={() => navigate('/amazon')}
+              >
+                <span>View in Store Connect</span>
+                <ExternalLink size={13} />
+              </button>
+            )}
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{ padding: '7px 14px', fontSize: '13px' }}
+              onClick={() => setPopupEvent(null)}
+            >
+              Close
+            </button>
           </div>
         </div>
       )}
@@ -434,10 +511,11 @@ function NutriCheckShell() {
                 <div className="page-shell">
                   <div className="page-header">
                     <div>
-                      <h1 className="page-title">Online Store &amp; Food Extension</h1>
+                      <h1 className="page-title">Store Connect</h1>
                       <p className="page-subtitle">
-                        Analyze products directly on Amazon, Flipkart, Swiggy Instamart,
-                        Zomato, and Blinkit personalized to your health profile.
+                        Added to cart products from Amazon, Flipkart, Swiggy Instamart,
+                        Zomato, and Blinkit with product images, ingredients, and
+                        personalized health alerts.
                       </p>
                     </div>
                   </div>

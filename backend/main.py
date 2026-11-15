@@ -67,6 +67,7 @@ class FoodNutritionInput(BaseModel):
 class AmazonAddToCartInput(BaseModel):
     product_title: str = Field(..., min_length=2, max_length=300)
     product_url: str | None = Field(default=None, max_length=1000)
+    image_url: str | None = Field(default=None, max_length=2000)
     nutrition_text: str | None = Field(default=None, max_length=8000)
     ingredients_text: str | None = Field(default=None, max_length=6000)
     brand: str | None = Field(default=None, max_length=120)
@@ -137,6 +138,7 @@ class AmazonCartEvent(BaseModel):
     status: Literal["analyzed", "needs_nutrition"] = "analyzed"
     product_title: str
     product_url: str | None
+    image_url: str | None = None
     nutrition_source: str
     matched_food: str | None
     message: str | None = None
@@ -741,7 +743,7 @@ def lookup_openfoodfacts_barcode(barcode: str) -> dict[str, Any] | None:
     if code in OFF_PRODUCT_CACHE:
         return OFF_PRODUCT_CACHE[code]
 
-    url = f"https://world.openfoodfacts.org/api/v2/product/{code}.json?fields=product_name,brands,nutriments,code"
+    url = f"https://world.openfoodfacts.org/api/v2/product/{code}.json?fields=product_name,brands,nutriments,code,ingredients_text,image_front_small_url,image_front_url,image_url"
     req = urllib.request.Request(
         url,
         headers={"User-Agent": "HealthGuard-Nutrition-Analyzer/1.2"},
@@ -766,6 +768,8 @@ def lookup_openfoodfacts_barcode(barcode: str) -> dict[str, Any] | None:
             "fat": parsed["fat"],
             "protein": parsed["protein"],
             "sodium_mg": parsed["sodium_mg"],
+            "ingredients_text": (prod.get("ingredients_text") or "").strip() or None,
+            "image_url": prod.get("image_front_small_url") or prod.get("image_front_url") or prod.get("image_url") or None,
             "source_group": "Open Food Facts (Barcode Match)",
         }
         OFF_PRODUCT_CACHE[code] = entry
@@ -786,7 +790,7 @@ def search_openfoodfacts(query: str, limit: int = 8) -> list[dict[str, Any]]:
         {
             "q": q_clean,
             "page_size": max(24, limit * 3),
-            "fields": "product_name,brands,nutriments,code",
+            "fields": "product_name,brands,nutriments,code,ingredients_text,image_front_small_url,image_front_url,image_url",
         }
     )
     req = urllib.request.Request(
@@ -832,6 +836,8 @@ def search_openfoodfacts(query: str, limit: int = 8) -> list[dict[str, Any]]:
                     "fat": parsed["fat"],
                     "protein": parsed["protein"],
                     "sodium_mg": parsed["sodium_mg"],
+                    "ingredients_text": (hit.get("ingredients_text") or "").strip() or None,
+                    "image_url": hit.get("image_front_small_url") or hit.get("image_front_url") or hit.get("image_url") or None,
                     "source_group": "Open Food Facts (Live Packaged Food DB)",
                 },
             )
@@ -962,13 +968,55 @@ def predict_food_health(payload: FoodNutritionInput) -> PredictionResponse:
         raise HTTPException(status_code=500, detail=f"Prediction failed: {exc}") from exc
 
 
+def _infer_default_ingredients(title: str) -> str | None:
+    lower = title.lower()
+    if re.search(r"\b(rolled oats|oats|oatmeal)\b", lower):
+        return "100% Wholegrain Rolled Oats"
+    if re.search(r"\b(brown rice)\b", lower):
+        return "100% Wholegrain Brown Rice"
+    if re.search(r"\b(basmati|rice)\b", lower):
+        return "100% Aged Basmati / Rice Grain"
+    if re.search(r"\b(mixed dry fruits|dry fruits|trail mix|nut mix)\b", lower):
+        return "Whole almonds, cashews, walnuts, raisins, pistachios"
+    if re.search(r"\b(almond|badam)\b", lower):
+        return "100% Roasted / Natural California Almonds"
+    if re.search(r"\b(walnut|cashew|pistachio|peanut)\b", lower):
+        return "Whole Tree Nuts / Peanuts"
+    if re.search(r"\b(instant noodles|maggi|ramen|yippee|noodles)\b", lower):
+        return "Refined wheat flour (maida), palm oil, iodized salt, sugar, maltodextrin, flavor enhancer (E621), TBHQ"
+    if re.search(r"\b(potato chips|lays|kurkure|bingo|doritos|pringles|chips|namkeen|bhujia)\b", lower):
+        return "Potatoes, edible vegetable oil (palm olein), iodized salt, spices, dextrose"
+    if re.search(r"\b(biscuit|cookies|oreo|parle|bourbon|wafer)\b", lower):
+        return "Refined wheat flour (maida), sugar, vegetable fat (palm oil), invert syrup, milk solids, leavening agents, salt"
+    if re.search(r"\b(chocolate|dairy milk|kitkat|snickers)\b", lower):
+        return "Sugar, cocoa butter, milk solids, cocoa mass, soy lecithin, natural vanilla flavor"
+    if re.search(r"\b(coca cola|pepsi|sprite|fanta|thums up|cola|soda|soft drink)\b", lower):
+        return "Carbonated water, high fructose corn syrup, sugar, caramel color (E150d), phosphoric acid, caffeine, sodium benzoate"
+    if re.search(r"\b(peanut butter)\b", lower):
+        return "Roasted peanuts (98%), peanut oil, salt"
+    if re.search(r"\b(yogurt|curd|dahi)\b", lower):
+        return "Pasteurized milk, active live yogurt cultures"
+    if re.search(r"\b(biryani)\b", lower):
+        return "Basmati rice, spices, onions, oil/ghee, salt, herbs"
+    if re.search(r"\b(paneer butter masala|butter chicken)\b", lower):
+        return "Paneer / chicken, tomato puree, cream, butter, spices, salt, sugar"
+    if re.search(r"\b(dosa)\b", lower):
+        return "Fermented rice & urad dal batter, cooking oil, iodized salt"
+    if re.search(r"\b(pizza)\b", lower):
+        return "Refined wheat flour (maida), mozzarella cheese, tomato sauce, vegetable oil, salt, yeast"
+    return None
+
+
 @app.post("/api/amazon/add-to-cart", response_model=AmazonCartEvent)
 def analyze_amazon_add_to_cart(payload: AmazonAddToCartInput) -> AmazonCartEvent:
     title = payload.product_title.strip()
     nutrition_source = ""
     matched_food: str | None = None
+    captured_ingredients = (payload.ingredients_text or "").strip()
+    captured_image = (payload.image_url or "").strip() or None
+
     combined_label_text = "\n".join(
-        t for t in (payload.ingredients_text or "", payload.nutrition_text or "") if t and t.strip()
+        t for t in (captured_ingredients, payload.nutrition_text or "") if t and t.strip()
     )
 
     has_explicit_numbers = all(
@@ -997,7 +1045,7 @@ def analyze_amazon_add_to_cart(payload: AmazonAddToCartInput) -> AmazonCartEvent
     else:
         parsed = parse_nutrition_text(combined_label_text)
         if parsed is not None:
-            nutrition_source = "Amazon Page Nutrition Text"
+            nutrition_source = "Store Page Nutrition Text"
             nutrition_input = FoodNutritionInput(
                 food_name=title,
                 calories=parsed["calories"],
@@ -1012,6 +1060,10 @@ def analyze_amazon_add_to_cart(payload: AmazonAddToCartInput) -> AmazonCartEvent
         if barcode_match is not None:
             nutrition_source = "Open Food Facts (Verified Barcode Match)"
             matched_food = str(barcode_match["food"])
+            if not captured_ingredients and barcode_match.get("ingredients_text"):
+                captured_ingredients = str(barcode_match["ingredients_text"])
+            if not captured_image and barcode_match.get("image_url"):
+                captured_image = str(barcode_match["image_url"])
             nutrition_input = FoodNutritionInput(
                 food_name=title,
                 calories=float(barcode_match["calories"]),
@@ -1060,6 +1112,10 @@ def analyze_amazon_add_to_cart(payload: AmazonAddToCartInput) -> AmazonCartEvent
                 if staple_match is None or overlap_ratio >= 0.5:
                     nutrition_source = "Open Food Facts (Live Packaged Food DB)"
                     matched_food = str(best_off["food"])
+                    if not captured_ingredients and best_off.get("ingredients_text"):
+                        captured_ingredients = str(best_off["ingredients_text"])
+                    if not captured_image and best_off.get("image_url"):
+                        captured_image = str(best_off["image_url"])
                     nutrition_input = FoodNutritionInput(
                         food_name=title,
                         calories=float(best_off["calories"]),
@@ -1096,13 +1152,21 @@ def analyze_amazon_add_to_cart(payload: AmazonAddToCartInput) -> AmazonCartEvent
                 sodium_mg=float(fallback_local["sodium_mg"]),
             )
 
+    if not captured_ingredients:
+        inferred_ing = _infer_default_ingredients(title)
+        if inferred_ing:
+            captured_ingredients = inferred_ing
+
+    final_label_text = "\n".join(
+        t for t in (captured_ingredients, payload.nutrition_text or "") if t and t.strip()
+    )
     has_ingredients = bool(
-        (payload.ingredients_text and payload.ingredients_text.strip())
+        captured_ingredients
         or re.search(r"\bingredients?\b", payload.nutrition_text or "", re.I)
     )
     ingredient_scan: PacketScanResponse | None = None
-    if has_ingredients and combined_label_text:
-        ingredient_scan = analyze_packet_text(title, combined_label_text, raise_on_empty=False)
+    if has_ingredients and final_label_text:
+        ingredient_scan = analyze_packet_text(title, final_label_text, raise_on_empty=False)
 
     url_lower = (payload.product_url or "").lower()
     source_platform = (
@@ -1127,6 +1191,7 @@ def analyze_amazon_add_to_cart(payload: AmazonAddToCartInput) -> AmazonCartEvent
             status="needs_nutrition",
             product_title=title,
             product_url=payload.product_url,
+            image_url=captured_image,
             nutrition_source="Nutrition Label Not Found on Page",
             matched_food=None,
             message=(
@@ -1134,7 +1199,7 @@ def analyze_amazon_add_to_cart(payload: AmazonAddToCartInput) -> AmazonCartEvent
                 "and no packaged-food match was found. Enter nutrition values or paste label text to classify."
             ),
             analysis=None,
-            ingredients_text=payload.ingredients_text,
+            ingredients_text=captured_ingredients or None,
             ingredient_scan=None,
         )
         CART_EVENTS.insert(0, event.model_dump())
@@ -1167,6 +1232,7 @@ def analyze_amazon_add_to_cart(payload: AmazonAddToCartInput) -> AmazonCartEvent
         status="analyzed",
         product_title=title,
         product_url=payload.product_url,
+        image_url=captured_image,
         nutrition_source=nutrition_source,
         matched_food=matched_food,
         message=(
@@ -1175,7 +1241,7 @@ def analyze_amazon_add_to_cart(payload: AmazonAddToCartInput) -> AmazonCartEvent
             else analysis.explanation
         ),
         analysis=analysis,
-        ingredients_text=payload.ingredients_text,
+        ingredients_text=captured_ingredients or None,
         ingredient_scan=ingredient_scan,
     )
 

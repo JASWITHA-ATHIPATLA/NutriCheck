@@ -124,6 +124,7 @@ export interface AmazonCartEvent {
   status: 'analyzed' | 'needs_nutrition';
   product_title: string;
   product_url: string | null;
+  image_url?: string | null;
   nutrition_source: string;
   matched_food: string | null;
   message: string | null;
@@ -142,6 +143,8 @@ export interface CatalogFoodItem {
   protein: number;
   sodium_mg: number;
   source_group: string;
+  image_url?: string | null;
+  ingredients_text?: string | null;
 }
 
 export interface IngredientFinding {

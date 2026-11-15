@@ -6,9 +6,10 @@ import {
   ChevronUp,
   Copy,
   ExternalLink,
+  Image as ImageIcon,
   PieChart,
   Puzzle,
-  Search,
+  ShoppingCart,
   SlidersHorizontal,
   Trash2,
 } from 'lucide-react';
@@ -32,10 +33,66 @@ interface AmazonConnectViewProps {
     nutrition_text: string;
     ingredients_text?: string;
     product_url?: string;
+    image_url?: string;
+    source_platform?: string;
   }) => Promise<void>;
   onDeleteEvent: (eventId: string) => void;
   onClearEvents: () => void;
 }
+
+interface QuickStoreProduct {
+  id: string;
+  store: 'Amazon' | 'Flipkart' | 'Swiggy Instamart' | 'Zomato';
+  title: string;
+  image_url: string;
+  ingredients_text: string;
+  nutrition_text: string;
+  product_url: string;
+}
+
+const QUICK_STORE_PRODUCTS: QuickStoreProduct[] = [
+  {
+    id: 'qs-oats',
+    store: 'Amazon',
+    title: 'Quaker Rolled Oats 1kg',
+    image_url:
+      'https://images.openfoodfacts.org/images/products/003/000/001/0402/front_en.104.200.jpg',
+    ingredients_text: 'Wholegrain Rolled Oats (100%)',
+    nutrition_text: 'Calories 379, Sugars 1.0g, Fat 6.5g, Protein 13.2g, Sodium 4mg',
+    product_url: 'https://www.amazon.in/s?k=Quaker+Rolled+Oats',
+  },
+  {
+    id: 'qs-dry-fruits',
+    store: 'Flipkart',
+    title: 'Mixed Dry Fruits & Nuts 500g',
+    image_url:
+      'https://images.openfoodfacts.org/images/products/327/408/000/5003/front_en.3.200.jpg',
+    ingredients_text: 'Almonds, Cashews, Walnuts, Pistachios, Raisins, Dried Dates',
+    nutrition_text: 'Calories 465, Sugars 14.0g, Fat 28.5g, Protein 14.2g, Sodium 6mg',
+    product_url: 'https://www.flipkart.com/search?q=Mixed+Dry+Fruits',
+  },
+  {
+    id: 'qs-noodles',
+    store: 'Swiggy Instamart',
+    title: 'Maggi 2-Minute Masala Noodles',
+    image_url:
+      'https://images.openfoodfacts.org/images/products/890/105/800/0290/front_en.48.200.jpg',
+    ingredients_text:
+      'Refined Wheat Flour (Maida), Palm Oil, Iodized Salt, Spices, Sugar, Thickener, Flavor Enhancer',
+    nutrition_text: 'Calories 427, Sugars 2.1g, Fat 15.7g, Protein 8.2g, Sodium 1120mg',
+    product_url: 'https://www.swiggy.com/instamart',
+  },
+  {
+    id: 'qs-choc',
+    store: 'Amazon',
+    title: 'Cadbury Dairy Milk Chocolate Bar',
+    image_url:
+      'https://images.openfoodfacts.org/images/products/762/220/113/0268/front_en.34.200.jpg',
+    ingredients_text: 'Sugar, Milk Solids, Cocoa Butter, Cocoa Mass, Emulsifiers (Soy Lecithin)',
+    nutrition_text: 'Calories 535, Sugars 51.5g, Fat 29.7g, Protein 7.6g, Sodium 79mg',
+    product_url: 'https://www.amazon.in/s?k=Cadbury+Dairy+Milk',
+  },
+];
 
 function getVerdictLabel(classification: 'Healthy' | 'Moderate' | 'Unhealthy'): string {
   if (classification === 'Healthy') return 'Good';
@@ -62,7 +119,6 @@ const SUPPORTED_STORES = [
   'Swiggy Food',
   'Zomato',
   'Blinkit',
-  'BigBasket',
 ];
 
 export function AmazonConnectView({
@@ -78,8 +134,10 @@ export function AmazonConnectView({
   const [nutritionText, setNutritionText] = useState('');
   const [ingredientsText, setIngredientsText] = useState('');
   const [productUrl, setProductUrl] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [expandedChartId, setExpandedChartId] = useState<string | null>(null);
+  const [addingQuickId, setAddingQuickId] = useState<string | null>(null);
 
   const serverOrigin =
     typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
@@ -106,7 +164,24 @@ export function AmazonConnectView({
       nutrition_text: nutritionText.trim(),
       ingredients_text: ingredientsText.trim() || undefined,
       product_url: productUrl.trim() || undefined,
+      image_url: imageUrl.trim() || undefined,
     });
+  }
+
+  async function handleQuickAdd(item: QuickStoreProduct) {
+    setAddingQuickId(item.id);
+    try {
+      await onAnalyzeAmazonText({
+        product_title: item.title,
+        nutrition_text: item.nutrition_text,
+        ingredients_text: item.ingredients_text,
+        product_url: item.product_url,
+        image_url: item.image_url,
+        source_platform: item.store,
+      });
+    } finally {
+      setAddingQuickId(null);
+    }
   }
 
   return (
@@ -119,13 +194,13 @@ export function AmazonConnectView({
           style={{ marginBottom: '20px' }}
         >
           <div className="active-profile-bar-copy">
-            <strong>Live store screening for {currentUser.fullName}</strong>
+            <strong>Add-to-cart screening for {currentUser.fullName}</strong>
             <span>
               {' '}
               · {getAgeGroupLabel(currentUser.age)} ({currentUser.age} yrs)
               {activeConditionLabels.length > 0
                 ? ` · Conditions: ${activeConditionLabels.join(', ')}`
-                : ' · General health thresholds'}
+                : ' · Standard healthy thresholds'}
               {currentUser.allergies.length > 0
                 ? ` · Allergies: ${currentUser.allergies.join(', ')}`
                 : ''}
@@ -138,26 +213,181 @@ export function AmazonConnectView({
         </div>
       )}
 
+      {/* Quick Store Add-to-Cart Product Shelf */}
+      <section className="card" style={{ marginBottom: '24px' }} aria-labelledby="quick-store-heading">
+        <div className="card-header">
+          <div>
+            <h2 id="quick-store-heading" className="card-title">
+              Store Products — Add to Cart &amp; Screen
+            </h2>
+            <p className="card-subtitle">
+              Click Add to Cart on any store item to see the top popup alert, product photo, ingredients, and risk result.
+            </p>
+          </div>
+        </div>
+
+        <div className="quick-store-grid">
+          {QUICK_STORE_PRODUCTS.map((item) => (
+            <div key={item.id} className="quick-store-card">
+              <div className="quick-store-top">
+                <span className="store-chip">{item.store}</span>
+              </div>
+              <div className="quick-store-img-box">
+                <img
+                  src={item.image_url}
+                  alt={item.title}
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              </div>
+              <div className="quick-store-ing-preview">
+                <strong>Ingredients:</strong> {item.ingredients_text}
+              </div>
+              <div className="quick-store-title">{item.title}</div>
+              <button
+                type="button"
+                className="btn-primary"
+                style={{ width: '100%', flex: 'none', padding: '9px 12px' }}
+                disabled={addingQuickId === item.id || isSubmitting}
+                onClick={() => handleQuickAdd(item)}
+              >
+                <ShoppingCart size={14} />
+                <span>
+                  {addingQuickId === item.id ? 'Checking...' : 'Add to Cart'}
+                </span>
+              </button>
+            </div>
+          ))}
+        </div>
+      </section>
+
       <div className="two-col-grid">
         <div className="result-column">
+          <section className="card" aria-labelledby="amazon-paste-heading">
+            <div className="card-header">
+              <div>
+                <h2 id="amazon-paste-heading" className="card-title">
+                  Add Product to Cart &amp; Check
+                </h2>
+                <p className="card-subtitle">
+                  Enter any store item name, product image URL, and ingredients or nutrition text.
+                </p>
+              </div>
+            </div>
+
+            <form className="form-stack" onSubmit={handleFormSubmit}>
+              <div className="field">
+                <label htmlFor="amz-title" className="field-label">
+                  <span>Product Name</span>
+                  <span className="field-unit">Required</span>
+                </label>
+                <input
+                  id="amz-title"
+                  type="text"
+                  required
+                  className="field-input"
+                  placeholder="e.g., India Gate Basmati Rice, Mixed Dry Fruits, or Maggi"
+                  value={productTitle}
+                  onChange={(e) => setProductTitle(e.target.value)}
+                />
+              </div>
+
+              <div className="field">
+                <label htmlFor="amz-ingredients" className="field-label">
+                  <span>Ingredients Text</span>
+                  <span className="field-unit">Shown above nutrition details</span>
+                </label>
+                <textarea
+                  id="amz-ingredients"
+                  className="field-input field-textarea"
+                  style={{ minHeight: '72px' }}
+                  placeholder="e.g., Ingredients: Wholegrain Rolled Oats, Almonds, Chia Seeds"
+                  value={ingredientsText}
+                  onChange={(e) => setIngredientsText(e.target.value)}
+                />
+              </div>
+
+              <div className="field">
+                <label htmlFor="amz-nutrition" className="field-label">
+                  <span>Nutrition Facts Text</span>
+                  <span className="field-unit">Optional</span>
+                </label>
+                <textarea
+                  id="amz-nutrition"
+                  className="field-input field-textarea"
+                  style={{ minHeight: '68px' }}
+                  placeholder="e.g., Calories 356, Sugars 0.1g, Fat 0.6g, Protein 7.1g, Sodium 5mg"
+                  value={nutritionText}
+                  onChange={(e) => setNutritionText(e.target.value)}
+                />
+              </div>
+
+              <div className="field-grid">
+                <div className="field">
+                  <label htmlFor="amz-img" className="field-label">
+                    <span>Product Image URL</span>
+                    <span className="field-unit">Optional</span>
+                  </label>
+                  <input
+                    id="amz-img"
+                    type="url"
+                    className="field-input"
+                    placeholder="https://m.media-amazon.com/images/..."
+                    value={imageUrl}
+                    onChange={(e) => setImageUrl(e.target.value)}
+                  />
+                </div>
+
+                <div className="field">
+                  <label htmlFor="amz-url" className="field-label">
+                    <span>Store Product Link</span>
+                    <span className="field-unit">Optional</span>
+                  </label>
+                  <input
+                    id="amz-url"
+                    type="url"
+                    className="field-input"
+                    placeholder="https://www.amazon.in/dp/..."
+                    value={productUrl}
+                    onChange={(e) => setProductUrl(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {submitError && (
+                <div className="error-banner" role="alert">
+                  <AlertCircle size={16} />
+                  <span>{submitError}</span>
+                </div>
+              )}
+
+              <button type="submit" className="btn-primary" disabled={isSubmitting}>
+                <ShoppingCart size={16} />
+                <span>
+                  {isSubmitting ? 'Analyzing Product...' : 'Add to Cart & Analyze'}
+                </span>
+              </button>
+            </form>
+          </section>
+
           <section className="card" aria-labelledby="amazon-ext-heading">
             <div className="card-header">
               <div>
                 <h2 id="amazon-ext-heading" className="card-title">
-                  Online Store &amp; Food Extension (General)
+                  Chrome Extension Store Sync
                 </h2>
                 <p className="card-subtitle">
-                  Checks ingredients and calories right on product pages and on every Add to Cart click.
+                  Captures product photo, ingredients, and nutrition automatically when you click Add to Cart.
                 </p>
               </div>
-              <Puzzle size={20} color="#ca8a04" />
+              <Puzzle size={20} color="#146c43" />
             </div>
 
             <div className="info-callout">
-              <strong>Works across grocery stores &amp; food apps:</strong> Load the{' '}
-              <code>extension/</code> folder in Chrome/Edge and save your live URL. On any supported store, click{' '}
-              <strong>Check Ingredients · NutriCheck</strong> directly on a product page or click{' '}
-              <strong>Add / Add to Cart</strong> to see your personalized health verdict and pie charts here.
+              <strong>Supported shopping apps:</strong> Load the{' '}
+              <code>extension/</code> folder in Chrome/Edge and save your live URL. Clicking{' '}
+              <strong>Add to Cart</strong> triggers an instant popup on the store page and syncs the product photo + ingredients here.
               <div className="store-chips-row" aria-label="Supported stores">
                 {SUPPORTED_STORES.map((store) => (
                   <span key={store} className="store-chip">
@@ -167,19 +397,13 @@ export function AmazonConnectView({
               </div>
             </div>
 
-            <ol className="rule-list" style={{ marginBottom: '16px' }}>
+            <ol className="rule-list" style={{ marginBottom: '14px' }}>
               <li>
-                Open <code>chrome://extensions</code> in Chrome/Edge, enable{' '}
-                <strong>Developer mode</strong>, and click{' '}
-                <strong>Load unpacked</strong> on the <code>extension/</code>{' '}
-                folder (or click Reload ↻ after updating).
+                Open <code>chrome://extensions</code>, enable <strong>Developer mode</strong>, and click{' '}
+                <strong>Load unpacked</strong> on <code>extension/</code>.
               </li>
               <li>
-                Click the <strong>NutriCheck</strong> extension icon, paste your
-                active URL below, and click <strong>Save URL</strong>:
-              </li>
-              <li>
-                Browse Amazon, Flipkart, Swiggy Instamart, Zomato, or Blinkit in Chrome — ingredient checks appear right on the page and sync here automatically.
+                Click the <strong>NutriCheck</strong> extension icon, paste this URL, and click <strong>Save URL</strong>:
               </li>
             </ol>
 
@@ -195,106 +419,16 @@ export function AmazonConnectView({
               </button>
             </div>
           </section>
-
-          <section className="card" aria-labelledby="amazon-paste-heading">
-            <div className="card-header">
-              <div>
-                <h2 id="amazon-paste-heading" className="card-title">
-                  Check Any Grocery Item or Restaurant Dish
-                </h2>
-                <p className="card-subtitle">
-                  Enter any item name (e.g., &ldquo;Mixed Dry Fruits&rdquo;, &ldquo;Masala Dosa&rdquo;, or &ldquo;Maggi Noodles&rdquo;) and optional label text.
-                </p>
-              </div>
-            </div>
-
-            <form className="form-stack" onSubmit={handleFormSubmit}>
-              <div className="field">
-                <label htmlFor="amz-title" className="field-label">
-                  <span>Product or Food Name</span>
-                  <span className="field-unit">Required</span>
-                </label>
-                <input
-                  id="amz-title"
-                  type="text"
-                  required
-                  className="field-input"
-                  placeholder="e.g., India Gate Basmati Rice, Paneer Butter Masala, or Maggi"
-                  value={productTitle}
-                  onChange={(e) => setProductTitle(e.target.value)}
-                />
-              </div>
-
-              <div className="field">
-                <label htmlFor="amz-ingredients" className="field-label">
-                  <span>Ingredients Text (from product page)</span>
-                  <span className="field-unit">Optional</span>
-                </label>
-                <textarea
-                  id="amz-ingredients"
-                  className="field-input field-textarea"
-                  style={{ minHeight: '72px' }}
-                  placeholder="e.g., Ingredients: Wholegrain Rolled Oats, Almonds, Chia Seeds"
-                  value={ingredientsText}
-                  onChange={(e) => setIngredientsText(e.target.value)}
-                />
-              </div>
-
-              <div className="field">
-                <label htmlFor="amz-nutrition" className="field-label">
-                  <span>Nutrition Facts Text (from product page)</span>
-                  <span className="field-unit">Optional</span>
-                </label>
-                <textarea
-                  id="amz-nutrition"
-                  className="field-input field-textarea"
-                  style={{ minHeight: '72px' }}
-                  placeholder="e.g., Calories 356, Sugars 0.1g, Fat 0.6g, Protein 7.1g, Sodium 5mg (leave blank for auto-lookup)"
-                  value={nutritionText}
-                  onChange={(e) => setNutritionText(e.target.value)}
-                />
-              </div>
-
-              <div className="field">
-                <label htmlFor="amz-url" className="field-label">
-                  <span>Store Link</span>
-                  <span className="field-unit">Optional</span>
-                </label>
-                <input
-                  id="amz-url"
-                  type="url"
-                  className="field-input"
-                  placeholder="https://www.amazon.in/... or flipkart.com / swiggy.com / zomato.com"
-                  value={productUrl}
-                  onChange={(e) => setProductUrl(e.target.value)}
-                />
-              </div>
-
-              {submitError && (
-                <div className="error-banner" role="alert">
-                  <AlertCircle size={16} />
-                  <span>{submitError}</span>
-                </div>
-              )}
-
-              <button type="submit" className="btn-primary" disabled={isSubmitting}>
-                <Search size={16} />
-                <span>
-                  {isSubmitting ? 'Analyzing Food...' : 'Analyze Food Item'}
-                </span>
-              </button>
-            </form>
-          </section>
         </div>
 
         <section className="card" aria-labelledby="amazon-feed-heading">
           <div className="card-header">
             <div>
               <h2 id="amazon-feed-heading" className="card-title">
-                Live Store &amp; Food Monitor ({events.length})
+                Added to Cart Products ({events.length})
               </h2>
               <p className="card-subtitle">
-                Updates automatically from Amazon, Flipkart, Swiggy Instamart, Zomato &amp; Blinkit.
+                Synced from Amazon, Flipkart, Swiggy Instamart, Zomato, Blinkit, or added directly.
               </p>
             </div>
             {events.length > 0 && (
@@ -303,18 +437,17 @@ export function AmazonConnectView({
                 className="cart-remove-btn"
                 onClick={onClearEvents}
               >
-                Clear Feed
+                Clear Cart
               </button>
             )}
           </div>
 
           {events.length === 0 ? (
             <div className="empty-state" style={{ padding: '32px 16px' }}>
-              <h3 className="empty-title">Waiting for Store Scans or Add-to-Cart Clicks</h3>
+              <h3 className="empty-title">No Added to Cart Products Yet</h3>
               <p className="empty-desc">
-                Click <strong>Check Ingredients</strong> or <strong>Add to Cart</strong> on
-                Amazon, Flipkart, Swiggy Instamart, or Zomato — or test any food on the left
-                to see its personalized health screening, calories table, and pie chart here.
+                Click <strong>Add to Cart</strong> on any store card above, or click{' '}
+                <strong>Add to Cart</strong> on Amazon / Flipkart / Swiggy with the extension active.
               </p>
             </div>
           ) : (
@@ -375,9 +508,25 @@ export function AmazonConnectView({
                   <article key={ev.event_id} className="event-item">
                     <div className="event-item-top">
                       <div>
+                        <div className="store-meta-badges">
+                          <span className="store-chip">{platform}</span>
+                          {prof && (
+                            <span
+                              className={`risk-tag ${
+                                prof.riskLevel === 'LOW RISK'
+                                  ? 'is-low'
+                                  : prof.riskLevel === 'MODERATE RISK'
+                                  ? 'is-moderate'
+                                  : 'is-high'
+                              }`}
+                            >
+                              {prof.riskLevel}
+                            </span>
+                          )}
+                        </div>
                         <div className="event-item-title">{ev.product_title}</div>
                         <div className="event-item-meta">
-                          {platform} · {ev.nutrition_source}
+                          {ev.nutrition_source}
                           {ev.matched_food ? ` (${ev.matched_food})` : ''}
                         </div>
                       </div>
@@ -390,6 +539,54 @@ export function AmazonConnectView({
                           </span>
                         ) : (
                           <span>Needs Nutrition</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Product Image above Ingredients */}
+                    <div className="store-product-hero">
+                      <div className="store-product-thumb-wrap">
+                        {ev.image_url ? (
+                          <img
+                            src={ev.image_url}
+                            alt={ev.product_title}
+                            className="store-product-thumb"
+                            onError={(e) => {
+                              (e.currentTarget as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <div className="store-product-thumb-empty" aria-hidden="true">
+                            <ImageIcon size={24} />
+                            <span>{platform}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="store-ingredients-banner">
+                        <div className="store-ingredients-label">Ingredients</div>
+                        <p className="store-ingredients-copy">
+                          {ev.ingredients_text
+                            ? ev.ingredients_text.replace(/^ingredients\s*[:\-]?\s*/i, '')
+                            : 'No ingredient list captured from page yet.'}
+                        </p>
+                        {resolvedScan && (
+                          <div className="store-ing-badges">
+                            <span
+                              className={`eval-pill ${
+                                resolvedScan.verdict === 'Good'
+                                  ? 'is-good'
+                                  : resolvedScan.verdict === 'Moderate'
+                                  ? 'is-moderate'
+                                  : 'is-high'
+                              }`}
+                            >
+                              {resolvedScan.verdict} ({resolvedScan.score}/100)
+                            </span>
+                            <span className="amz-ing-counts">
+                              {ingGoodCount} good · {ingModCount} caution · {ingBadCount} bad
+                            </span>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -419,26 +616,7 @@ export function AmazonConnectView({
                       </div>
                     )}
 
-                    {resolvedScan && (
-                      <div className="amz-ing-strip">
-                        <span
-                          className={`eval-pill ${
-                            resolvedScan.verdict === 'Good'
-                              ? 'is-good'
-                              : resolvedScan.verdict === 'Moderate'
-                              ? 'is-moderate'
-                              : 'is-high'
-                          }`}
-                        >
-                          Ingredients: {resolvedScan.verdict} ({resolvedScan.score}/100)
-                        </span>
-                        <span className="amz-ing-counts">
-                          {ingGoodCount} good · {ingModCount} caution · {ingBadCount} bad
-                        </span>
-                      </div>
-                    )}
-
-                    <p className="card-subtitle" style={{ color: '#44403c', marginTop: 6 }}>
+                    <p className="card-subtitle" style={{ color: '#475569', marginTop: 6 }}>
                       {a ? a.explanation : ev.message}
                     </p>
 
@@ -478,7 +656,7 @@ export function AmazonConnectView({
                       <div style={{ marginTop: '12px' }}>
                         <BreakdownPieChart
                           title="Good vs. Watch Nutrition Share"
-                          subtitle="Protective protein/fiber vs. sugars, fats & sodium"
+                          subtitle="Protective protein vs. sugars, fats & sodium"
                           slices={[
                             {
                               label: 'Good (Protein)',
@@ -490,7 +668,7 @@ export function AmazonConnectView({
                               label: 'Watch (Sugars)',
                               value: Math.max(0, a.nutrition.sugars * 4),
                               displayValue: `${a.nutrition.sugars} g`,
-                              color: '#dc2626',
+                              color: '#be123c',
                             },
                             {
                               label: 'Watch (Fats + Sodium)',
@@ -499,7 +677,7 @@ export function AmazonConnectView({
                                 a.nutrition.fat * 9 + a.nutrition.sodium_mg * 0.05
                               ),
                               displayValue: `${a.nutrition.fat} g fat · ${Math.round(a.nutrition.sodium_mg)} mg Na`,
-                              color: '#ca8a04',
+                              color: '#d97706',
                             },
                           ]}
                           centerValue={`${a.health_score}`}
@@ -514,7 +692,7 @@ export function AmazonConnectView({
                               slices={[
                                 { label: 'Good', value: ingGoodCount, color: '#16a34a', displayValue: `${ingGoodCount}` },
                                 { label: 'Caution', value: ingModCount, color: '#d97706', displayValue: `${ingModCount}` },
-                                { label: 'Bad', value: ingBadCount, color: '#dc2626', displayValue: `${ingBadCount}` },
+                                { label: 'Bad', value: ingBadCount, color: '#be123c', displayValue: `${ingBadCount}` },
                                 { label: 'Neutral', value: ingNeutralCount, color: '#94a3b8', displayValue: `${ingNeutralCount}` },
                               ]}
                               centerValue={`${resolvedScan.ingredients_count}`}
@@ -549,6 +727,7 @@ export function AmazonConnectView({
                           onClick={() => {
                             setProductTitle(ev.product_title);
                             setProductUrl(ev.product_url || '');
+                            setImageUrl(ev.image_url || '');
                             setNutritionText('');
                             setIngredientsText(ev.ingredients_text || '');
                             document.getElementById('amz-nutrition')?.focus();

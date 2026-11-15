@@ -66,10 +66,21 @@
     const btn = target.closest('button, input[type="submit"], [role="button"], a[role="button"]');
     if (!btn) return null;
 
+    const ariaLabelledBy = btn.getAttribute('aria-labelledby');
+    let labelledText = '';
+    if (ariaLabelledBy) {
+      labelledText = ariaLabelledBy
+        .split(/\s+/)
+        .map((id) => document.getElementById(id)?.textContent || '')
+        .join(' ');
+    }
+
     const label = (
       btn.textContent ||
       btn.getAttribute('aria-label') ||
+      labelledText ||
       btn.getAttribute('value') ||
+      btn.getAttribute('title') ||
       ''
     )
       .replace(/\s+/g, ' ')
@@ -514,6 +525,76 @@
     };
   }
 
+  function normalizeImageCandidate(rawUrl) {
+    if (!rawUrl) return '';
+    const trimmed = String(rawUrl).trim();
+    if (!trimmed || trimmed.startsWith('data:image/gif') || trimmed.includes('transparent-pixel')) {
+      return '';
+    }
+    try {
+      const resolved = new URL(trimmed, window.location.origin).href;
+      if (!/^https?:\/\//i.test(resolved)) return '';
+      return resolved;
+    } catch {
+      return '';
+    }
+  }
+
+  function extractProductImageFromDoc(doc, card, platform) {
+    const scope = card || doc;
+    const selectors =
+      platform === 'Amazon'
+        ? [
+            '#landingImage',
+            '#imgBlkFront',
+            '#main-image',
+            '#imgTagWrapperId img',
+            'img.s-image',
+            'img[data-old-hires]',
+            'img[src*="media-amazon"]',
+            'img[src*="images-amazon"]',
+          ]
+        : platform === 'Flipkart'
+        ? ['img.DByuf4', 'img._396cs4', 'img._2r_T1I', 'img.jLEJ7H', 'img[src*="rukminim"]']
+        : ['img[src]'];
+
+    for (const sel of selectors) {
+      const imgs = scope.querySelectorAll(sel);
+      for (const img of imgs) {
+        const hiRes = img.getAttribute('data-old-hires');
+        const dyn = img.getAttribute('data-a-dynamic-image');
+        let dynFirst = '';
+        if (dyn && dyn.startsWith('{')) {
+          try {
+            const keys = Object.keys(JSON.parse(dyn));
+            if (keys.length) dynFirst = keys[0];
+          } catch {
+            // ignore
+          }
+        }
+        const cand =
+          normalizeImageCandidate(hiRes) ||
+          normalizeImageCandidate(img.getAttribute('src')) ||
+          normalizeImageCandidate(img.currentSrc) ||
+          normalizeImageCandidate(dynFirst) ||
+          normalizeImageCandidate(img.getAttribute('data-src'));
+        if (cand) return cand;
+      }
+    }
+
+    if (card) {
+      const anyImg = card.querySelector('img[src]');
+      const cand = normalizeImageCandidate(anyImg?.getAttribute('src') || anyImg?.currentSrc);
+      if (cand) return cand;
+    }
+
+    const ogImg = doc.querySelector('meta[property="og:image"], meta[name="twitter:image"]');
+    const ogCand = normalizeImageCandidate(ogImg?.getAttribute('content'));
+    if (ogCand) return ogCand;
+
+    return '';
+  }
+
   function isProductDetailPage(platform) {
     const p = window.location.pathname.toLowerCase();
     if (platform === 'Amazon') {
@@ -543,11 +624,17 @@
         platform
       );
       const dpUrl = isMainDetailPage ? window.location.href : extractAmazonLinkFromCard(card, btn);
+      const imageUrl = extractProductImageFromDoc(
+        document,
+        isMainDetailPage ? null : card,
+        platform
+      );
       return {
         platform,
         isMainDetailPage,
         initialTitle,
         dpUrl,
+        imageUrl,
         cardNotes: '',
       };
     }
@@ -562,12 +649,18 @@
     );
     const dpUrl = detailPage ? window.location.href : extractProductLinkGeneric(card, platform);
     const cardNotes = card ? extractDishDescriptionFromCard(card) : '';
+    const imageUrl = extractProductImageFromDoc(
+      document,
+      detailPage ? null : card,
+      platform
+    );
 
     return {
       platform,
       isMainDetailPage: detailPage,
       initialTitle,
       dpUrl,
+      imageUrl,
       cardNotes,
     };
   }
@@ -575,6 +668,7 @@
   async function resolveProductDetails(snapshot) {
     let productTitle = snapshot.initialTitle;
     const productUrl = snapshot.dpUrl || window.location.href;
+    let imageUrl = snapshot.imageUrl || '';
     let nutritionText = '';
     let ingredientsText = snapshot.cardNotes || '';
     let meta = { brand: '', barcode: '' };
@@ -585,6 +679,9 @@
       if (extractedCurrent.ingredientsText) {
         ingredientsText = extractedCurrent.ingredientsText;
       }
+      if (!imageUrl) {
+        imageUrl = extractProductImageFromDoc(document, null, snapshot.platform);
+      }
       meta = extractBrandAndBarcodeFromDoc(document);
     } else if (
       snapshot.dpUrl &&
@@ -593,7 +690,7 @@
     ) {
       try {
         const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 3500);
+        const timer = setTimeout(() => ctrl.abort(), 2800);
         const res = await fetch(snapshot.dpUrl, {
           credentials: 'same-origin',
           signal: ctrl.signal,
@@ -611,6 +708,9 @@
           if (fetchedData.ingredientsText) {
             ingredientsText = fetchedData.ingredientsText;
           }
+          if (!imageUrl) {
+            imageUrl = extractProductImageFromDoc(parsedDoc, null, snapshot.platform);
+          }
           meta = extractBrandAndBarcodeFromDoc(parsedDoc);
         }
       } catch {
@@ -622,6 +722,7 @@
       platform: snapshot.platform,
       productTitle,
       productUrl,
+      imageUrl,
       nutritionText,
       ingredientsText,
       brand: meta.brand,
@@ -629,7 +730,7 @@
     };
   }
 
-  /* ---------------- Natural Yellow & White Easy Floating Card ---------------- */
+  /* ---------------- Emerald Mint & White Top Floating Card ---------------- */
   function removeExistingToast() {
     const existing = document.getElementById('nutricheck-floating-card');
     if (existing) existing.remove();
@@ -651,6 +752,8 @@
       verdict,
       productName,
       platform,
+      imageUrl,
+      ingredientsText,
       takeaway,
       message,
       score,
@@ -661,39 +764,39 @@
 
     const badgeStyle =
       level === 'success'
-        ? { bg: '#f0fdf4', border: '#bbf7d0', ink: '#15803d', dot: '#16a34a' }
+        ? { bg: '#dcfce7', border: '#bbf7d0', ink: '#166534' }
         : level === 'danger'
-        ? { bg: '#fef2f2', border: '#fecaca', ink: '#b91c1c', dot: '#dc2626' }
+        ? { bg: '#fce7f3', border: '#fbcfe8', ink: '#9f1239' }
         : level === 'warning'
-        ? { bg: '#fffbeb', border: '#fde68a', ink: '#b45309', dot: '#d97706' }
-        : { bg: '#fefce8', border: '#eab308', ink: '#854d0e', dot: '#eab308' };
+        ? { bg: '#fef3c7', border: '#fde68a', ink: '#92400e' }
+        : { bg: '#eaf1ee', border: '#cbd5e1', ink: '#146c43' };
 
     const card = document.createElement('div');
     card.id = 'nutricheck-floating-card';
     card.style.cssText = [
       'position:fixed',
-      'top:12px',
-      'right:12px',
+      'top:14px',
+      'right:14px',
       'z-index:2147483647',
-      'width:min(344px, calc(100vw - 24px))',
-      'max-height:calc(100vh - 24px)',
+      'width:min(368px, calc(100vw - 24px))',
+      'max-height:calc(100vh - 28px)',
       'overflow-y:auto',
       'box-sizing:border-box',
       'background:#ffffff',
-      'border:1.5px solid #eab308',
-      'border-radius:12px',
-      'box-shadow:0 12px 32px rgba(28,25,23,0.16)',
+      'border:1.5px solid #146c43',
+      'border-radius:14px',
+      'box-shadow:0 16px 38px rgba(15,23,42,0.18)',
       'font-family:system-ui,-apple-system,Segoe UI,sans-serif',
-      'color:#1c1917',
+      'color:#0f172a',
     ].join(';');
 
-    // Warm yellow top bar
+    // Crisp mint top bar
     const topBar = document.createElement('div');
     topBar.style.cssText =
-      'background:#fefce8;border-bottom:1px solid #efe5bd;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;';
+      'background:#eaf1ee;border-bottom:1px solid #d5e2dc;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;';
 
     const brandWrap = document.createElement('div');
-    brandWrap.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#854d0e;min-width:0;overflow-wrap:anywhere;';
+    brandWrap.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#146c43;min-width:0;overflow-wrap:anywhere;';
     brandWrap.textContent = `NutriCheck · ${platform || 'Store Check'}`;
     topBar.appendChild(brandWrap);
 
@@ -701,9 +804,9 @@
     closeBtn.type = 'button';
     closeBtn.textContent = '×';
     closeBtn.title = 'Close';
-    closeBtn.setAttribute('aria-label', 'Close NutriCheck card');
+    closeBtn.setAttribute('aria-label', 'Close NutriCheck popup');
     closeBtn.style.cssText =
-      'background:transparent;border:none;color:#57534e;font-size:20px;cursor:pointer;line-height:1;min-width:32px;min-height:32px;display:inline-flex;align-items:center;justify-content:center;padding:0;flex-shrink:0;';
+      'background:transparent;border:none;color:#475569;font-size:20px;cursor:pointer;line-height:1;min-width:30px;min-height:30px;display:inline-flex;align-items:center;justify-content:center;padding:0;flex-shrink:0;';
     closeBtn.onclick = () => {
       card.remove();
       try {
@@ -718,14 +821,43 @@
     const body = document.createElement('div');
     body.style.cssText = 'padding:12px 14px;';
 
-    // Title + Verdict Row
+    // Product Image on Top (when available) + Title & Verdict Row
+    if (imageUrl) {
+      const imgWrap = document.createElement('div');
+      imgWrap.style.cssText =
+        'width:100%;height:112px;background:#f8faf9;border:1px solid #dfe7e3;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:8px;margin-bottom:10px;box-sizing:border-box;overflow:hidden;';
+      const imgEl = document.createElement('img');
+      imgEl.src = imageUrl;
+      imgEl.alt = productName || 'Product';
+      imgEl.style.cssText = 'max-width:100%;max-height:100%;object-fit:contain;';
+      imgEl.onerror = () => imgWrap.remove();
+      imgWrap.appendChild(imgEl);
+      body.appendChild(imgWrap);
+    }
+
+    // Ingredients block right below image / above summary
+    if (ingredientsText) {
+      const ingBox = document.createElement('div');
+      ingBox.style.cssText =
+        'background:#f8faf9;border:1px solid #dfe7e3;border-radius:8px;padding:8px 10px;margin-bottom:10px;';
+      const ingLbl = document.createElement('div');
+      ingLbl.textContent = 'INGREDIENTS';
+      ingLbl.style.cssText = 'font-size:10px;font-weight:700;letter-spacing:0.06em;color:#475569;margin-bottom:3px;';
+      const ingVal = document.createElement('div');
+      ingVal.textContent = ingredientsText.replace(/^ingredients\s*[:\-]?\s*/i, '').slice(0, 220);
+      ingVal.style.cssText = 'font-size:12px;color:#0f172a;line-height:1.4;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;';
+      ingBox.appendChild(ingLbl);
+      ingBox.appendChild(ingVal);
+      body.appendChild(ingBox);
+    }
+
     const titleRow = document.createElement('div');
     titleRow.style.cssText = 'display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px;';
 
     const nameEl = document.createElement('div');
     nameEl.textContent = productName || toastData.title || 'Food Item';
     nameEl.style.cssText =
-      'font-size:13.5px;font-weight:700;color:#1c1917;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;';
+      'font-size:13.5px;font-weight:700;color:#0f172a;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;';
     titleRow.appendChild(nameEl);
 
     const pill = document.createElement('div');
@@ -735,17 +867,16 @@
     titleRow.appendChild(pill);
     body.appendChild(titleRow);
 
-    // 1-line easy takeaway
     const summaryEl = document.createElement('p');
     summaryEl.textContent = takeaway || message || '';
-    summaryEl.style.cssText = 'margin:0 0 10px 0;font-size:12.5px;color:#44403c;line-height:1.45;';
+    summaryEl.style.cssText = 'margin:0 0 10px 0;font-size:12.5px;color:#475569;line-height:1.45;';
     body.appendChild(summaryEl);
 
     // Compact 4-cell mini nutrition strip
     if (macros && macros.calories != null) {
       const strip = document.createElement('div');
       strip.style.cssText =
-        'display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px;background:#fffef7;border:1px solid #efe5bd;border-radius:8px;padding:8px 6px;text-align:center;';
+        'display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px;background:#f8faf9;border:1px solid #dfe7e3;border-radius:8px;padding:8px 6px;text-align:center;';
 
       const metrics = [
         ['Calories', `${Math.round(macros.calories)}`],
@@ -757,10 +888,10 @@
         const cell = document.createElement('div');
         const lbl = document.createElement('div');
         lbl.textContent = k;
-        lbl.style.cssText = 'font-size:10px;color:#78716c;font-weight:600;';
+        lbl.style.cssText = 'font-size:10px;color:#64748b;font-weight:600;';
         const val = document.createElement('div');
         val.textContent = v;
-        val.style.cssText = 'font-size:12.5px;color:#1c1917;font-weight:700;margin-top:2px;';
+        val.style.cssText = 'font-size:12.5px;color:#0f172a;font-weight:700;margin-top:2px;';
         cell.appendChild(lbl);
         cell.appendChild(val);
         strip.appendChild(cell);
@@ -768,19 +899,19 @@
       body.appendChild(strip);
     }
 
-    // Visual Good vs Bad Ingredient bar + up to 4 clear chips
+    // Ingredient classification bar + chips
     if (ingredientSummary && ingredientSummary.total > 0) {
       const { goodCount, modCount, badCount, total, highlights } = ingredientSummary;
       const barWrap = document.createElement('div');
       barWrap.style.cssText = 'margin-bottom:10px;';
 
       const barLabel = document.createElement('div');
-      barLabel.style.cssText = 'font-size:11px;font-weight:700;color:#57534e;margin-bottom:4px;display:flex;justify-content:space-between;';
-      barLabel.textContent = `Packet Ingredients (${goodCount} good · ${modCount + badCount} to watch)`;
+      barLabel.style.cssText = 'font-size:11px;font-weight:700;color:#475569;margin-bottom:4px;display:flex;justify-content:space-between;';
+      barLabel.textContent = `Ingredient Check (${goodCount} good · ${modCount + badCount} to watch)`;
       barWrap.appendChild(barLabel);
 
       const bar = document.createElement('div');
-      bar.style.cssText = 'height:7px;border-radius:4px;overflow:hidden;display:flex;background:#f5f5f4;margin-bottom:7px;';
+      bar.style.cssText = 'height:7px;border-radius:4px;overflow:hidden;display:flex;background:#e2e8f0;margin-bottom:7px;';
       if (goodCount > 0) {
         const seg = document.createElement('div');
         seg.style.cssText = `width:${(goodCount / total) * 100}%;background:#16a34a;`;
@@ -793,7 +924,7 @@
       }
       if (badCount > 0) {
         const seg = document.createElement('div');
-        seg.style.cssText = `width:${(badCount / total) * 100}%;background:#dc2626;`;
+        seg.style.cssText = `width:${(badCount / total) * 100}%;background:#be123c;`;
         bar.appendChild(seg);
       }
       barWrap.appendChild(bar);
@@ -805,10 +936,10 @@
           const chip = document.createElement('span');
           const c =
             item.rating === 'good'
-              ? { bg: '#f0fdf4', fg: '#15803d', bd: '#bbf7d0', prefix: '✓ ' }
+              ? { bg: '#dcfce7', fg: '#166534', bd: '#bbf7d0', prefix: '✓ ' }
               : item.rating === 'moderate'
-              ? { bg: '#fffbeb', fg: '#b45309', bd: '#fde68a', prefix: '! ' }
-              : { bg: '#fef2f2', fg: '#b91c1c', bd: '#fecaca', prefix: '✕ ' };
+              ? { bg: '#fef3c7', fg: '#92400e', bd: '#fde68a', prefix: '! ' }
+              : { bg: '#fce7f3', fg: '#9f1239', bd: '#fbcfe8', prefix: '✕ ' };
           chip.textContent = `${c.prefix}${item.ingredient}`;
           chip.style.cssText = `font-size:11px;font-weight:600;padding:2px 7px;border-radius:4px;background:${c.bg};color:${c.fg};border:1px solid ${c.bd};`;
           chipsRow.appendChild(chip);
@@ -818,15 +949,15 @@
       body.appendChild(barWrap);
     }
 
-    // Bottom Yellow Action Button
+    // Emerald Green Action Button
     const actionsRow = document.createElement('div');
     actionsRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:4px;';
 
     const openBtn = document.createElement('button');
     openBtn.type = 'button';
-    openBtn.textContent = 'View Full Pie Chart & Table';
+    openBtn.textContent = 'Open in Store Connect ↗';
     openBtn.style.cssText =
-      'flex:1;background:#facc15;color:#1c1917;border:1px solid #eab308;border-radius:6px;padding:8px 10px;font-size:12px;font-weight:700;cursor:pointer;';
+      'flex:1;background:#146c43;color:#ffffff;border:1px solid #105635;border-radius:8px;padding:9px 12px;font-size:12.5px;font-weight:700;cursor:pointer;';
     openBtn.onclick = () => {
       chrome.runtime.sendMessage({
         type: 'HEALTHGUARD_OPEN_SITE',
@@ -840,14 +971,26 @@
     document.body.appendChild(card);
   }
 
+  let lastDispatchedTitle = '';
+  let lastDispatchedAt = 0;
+
   function sendForAnalysis(details) {
-    if (!details.productTitle) return;
+    const title = cleanExtractedTitle(details.productTitle);
+    if (!title) return;
+    const now = Date.now();
+    if (title.toLowerCase() === lastDispatchedTitle && now - lastDispatchedAt < 4000) {
+      return;
+    }
+    lastDispatchedTitle = title.toLowerCase();
+    lastDispatchedAt = now;
+
     chrome.runtime.sendMessage(
       {
         type: 'HEALTHGUARD_ADD_TO_CART',
         payload: {
-          product_title: details.productTitle,
+          product_title: title,
           product_url: details.productUrl,
+          image_url: details.imageUrl || undefined,
           nutrition_text: details.nutritionText,
           ingredients_text: details.ingredientsText,
           brand: details.brand || undefined,
@@ -889,16 +1032,16 @@
       'max-width:calc(100vw - 28px)',
       'min-height:42px',
       'box-sizing:border-box',
-      'background:#facc15',
-      'color:#1c1917',
-      'border:1.5px solid #ca8a04',
+      'background:#146c43',
+      'color:#ffffff',
+      'border:1px solid #105635',
       'border-radius:8px',
       'padding:10px 14px',
       'font-family:system-ui,-apple-system,Segoe UI,sans-serif',
       'font-size:13px',
       'font-weight:700',
       'cursor:pointer',
-      'box-shadow:0 6px 18px rgba(28,25,23,0.16)',
+      'box-shadow:0 8px 20px rgba(15,23,42,0.18)',
     ].join(';');
 
     btn.onclick = async () => {
@@ -909,6 +1052,7 @@
         isMainDetailPage: true,
         initialTitle: title,
         dpUrl: window.location.href,
+        imageUrl: extractProductImageFromDoc(document, null, platform),
         cardNotes: '',
       });
       sendForAnalysis(details);
@@ -961,11 +1105,63 @@
       const snapshot = captureClickSnapshot(btn);
       if (!snapshot.initialTitle && !snapshot.dpUrl) return;
 
-      void (async () => {
-        const details = await resolveProductDetails(snapshot);
-        sendForAnalysis(details);
-      })();
+      if (snapshot.isMainDetailPage || !snapshot.dpUrl || snapshot.dpUrl === window.location.href) {
+        void (async () => {
+          const details = await resolveProductDetails(snapshot);
+          sendForAnalysis(details);
+        })();
+        return;
+      }
+
+      // Send fast immediate snapshot before any page navigation, or enrich if staying on page
+      const isFormSubmit =
+        btn.tagName === 'INPUT' ||
+        btn.getAttribute('type') === 'submit' ||
+        Boolean(btn.closest('form'));
+      if (isFormSubmit) {
+        const extractedNow = extractIngredientsAndNutritionFromDoc(document);
+        sendForAnalysis({
+          platform: snapshot.platform,
+          productTitle: snapshot.initialTitle,
+          productUrl: snapshot.dpUrl || window.location.href,
+          imageUrl: snapshot.imageUrl,
+          nutritionText: extractedNow.nutritionText,
+          ingredientsText: snapshot.cardNotes || extractedNow.ingredientsText,
+          brand: '',
+          barcode: '',
+        });
+      } else {
+        void (async () => {
+          const details = await resolveProductDetails(snapshot);
+          sendForAnalysis(details);
+        })();
+      }
     },
     true
   );
+
+  // Backup MutationObserver for Amazon "Added to Cart" drawer / smart wagon confirmation
+  if (detectPlatform() === 'Amazon' && document.body) {
+    const atcObserver = new MutationObserver(() => {
+      const conf = document.querySelector(
+        '#NATC_SMART_WAGON_CONF_MSG_SUCCESS, #sw-atc-confirmation, #attach-added-to-cart-message, #huc-v2-order-row-confirm-text'
+      );
+      if (!conf) return;
+      const title = extractProductTitleFromDoc(document, null, null, 'Amazon');
+      if (!title) return;
+      const extracted = extractIngredientsAndNutritionFromDoc(document);
+      const meta = extractBrandAndBarcodeFromDoc(document);
+      sendForAnalysis({
+        platform: 'Amazon',
+        productTitle: title,
+        productUrl: window.location.href,
+        imageUrl: extractProductImageFromDoc(document, null, 'Amazon'),
+        nutritionText: extracted.nutritionText,
+        ingredientsText: extracted.ingredientsText,
+        brand: meta.brand,
+        barcode: meta.barcode,
+      });
+    });
+    atcObserver.observe(document.body, { childList: true, subtree: true });
+  }
 })();

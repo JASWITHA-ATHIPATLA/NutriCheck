@@ -103,7 +103,7 @@ export function DashboardPage() {
         >
           <div className="suggestions-header">
             <div className="suggestions-title-row">
-              <Sparkles size={17} color="#ca8a04" aria-hidden="true" />
+              <Sparkles size={17} color="#146c43" aria-hidden="true" />
               <h2 id="suggestions-heading" className="card-title">
                 Personalized Health Suggestions
               </h2>

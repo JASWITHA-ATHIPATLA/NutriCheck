@@ -515,6 +515,44 @@ async function lookupStapleOrCatalogInWorker(title) {
   return null;
 }
 
+function inferDefaultIngredientsInWorker(title) {
+  const lower = (title || '').toLowerCase();
+  if (/mixed\s*dry\s*fruits|dry\s*fruits|trail\s*mix|panchmewa/.test(lower)) {
+    return 'Almonds, Cashews, Walnuts, Pistachios, Raisins, Dried Dates';
+  }
+  if (/almond|badam/.test(lower)) return 'Whole Almonds (100%)';
+  if (/walnut|akhrot/.test(lower)) return 'Whole Walnut Kernels (100%)';
+  if (/cashew|kaju/.test(lower)) return 'Whole Cashews (100%)';
+  if (/pistachio|pista/.test(lower)) return 'Roasted Pistachios';
+  if (/dates|khajoor|raisin|kishmish/.test(lower)) return 'Natural Dried Fruit (100%)';
+  if (/rolled oats|steel cut oats|oats|oatmeal/.test(lower)) return 'Wholegrain Rolled Oats (100%)';
+  if (/muesli|granola/.test(lower)) return 'Rolled Oats, Wheat Flakes, Sugar, Palm Oil, Raisins, Almonds';
+  if (/basmati rice|white rice|sona masoori|rice/.test(lower)) return 'Aged Basmati Rice Grains (100%)';
+  if (/brown rice|red rice/.test(lower)) return 'Wholegrain Unpolished Brown Rice (100%)';
+  if (/whole wheat|atta|chakki/.test(lower)) return '100% Whole Wheat Flour (Atta)';
+  if (/instant noodles|maggi|ramen|yippee|noodles/.test(lower)) {
+    return 'Refined Wheat Flour (Maida), Palm Oil, Iodized Salt, Spices, Sugar, Flavor Enhancers';
+  }
+  if (/potato chips|lays|kurkure|namkeen|bhujia|chips/.test(lower)) {
+    return 'Potatoes, Refined Palmolein Oil, Iodized Salt, Spices & Condiments, Sugar';
+  }
+  if (/biscuit|cookies|oreo|parle|bourbon|marie/.test(lower)) {
+    return 'Refined Wheat Flour (Maida), Sugar, Palm Oil, Invert Syrup, Milk Solids, Salt';
+  }
+  if (/chocolate|dairy milk|kitkat|snickers/.test(lower)) {
+    return 'Sugar, Cocoa Butter, Milk Solids, Cocoa Mass, Emulsifiers (Soy Lecithin)';
+  }
+  if (/coca cola|pepsi|sprite|fanta|soft drink|soda|cola/.test(lower)) {
+    return 'Carbonated Water, Sugar, Caramel Color, Phosphoric Acid, Caffeine, Natural Flavors';
+  }
+  if (/biryani/.test(lower)) return 'Basmati Rice, Spices, Ghee/Oil, Onions, Ginger Garlic, Salt';
+  if (/masala dosa|dosa/.test(lower)) return 'Fermented Rice & Urad Dal Batter, Potato Masala, Cooking Oil, Salt';
+  if (/idli/.test(lower)) return 'Steamed Fermented Rice & Urad Dal Batter, Salt';
+  if (/pizza/.test(lower)) return 'Refined Wheat Flour, Mozzarella Cheese, Tomato Sauce, Olive Oil, Salt';
+  if (/burger/.test(lower)) return 'Refined Flour Bun, Fried Patty, Mayonnaise, Cheese Slice, Salt, Spices';
+  return '';
+}
+
 async function lookupOpenFoodFactsInWorker(title, barcode) {
   if (barcode) {
     try {
@@ -531,6 +569,7 @@ async function lookupOpenFoodFactsInWorker(title, barcode) {
             matched_food: p.product_name || title,
             source: 'Open Food Facts (Barcode)',
             ingredients_text: p.ingredients_text || '',
+            image_url: p.image_front_small_url || p.image_front_url || p.image_url || '',
             nutrition: {
               calories: Number(kcal) || 0,
               sugars: Number(n.sugars_100g || 0),
@@ -558,7 +597,7 @@ async function lookupOpenFoodFactsInWorker(title, barcode) {
 
   try {
     const r = await fetch(
-      `https://search.openfoodfacts.org/search?q=${encodeURIComponent(cleanQuery)}&page_size=6&fields=product_name,brands,nutriments,ingredients_text`
+      `https://search.openfoodfacts.org/search?q=${encodeURIComponent(cleanQuery)}&page_size=6&fields=product_name,brands,nutriments,ingredients_text,image_front_small_url,image_front_url,image_url`
     );
     if (r.ok) {
       const d = await r.json();
@@ -572,6 +611,7 @@ async function lookupOpenFoodFactsInWorker(title, barcode) {
           matched_food: p.product_name,
           source: 'Open Food Facts (Live Packaged DB)',
           ingredients_text: p.ingredients_text || '',
+          image_url: p.image_front_small_url || p.image_front_url || p.image_url || '',
           nutrition: {
             calories: Number(kcal) || 0,
             sugars: Number(n.sugars_100g || 0),
@@ -602,6 +642,7 @@ async function lookupOpenFoodFactsInWorker(title, barcode) {
           matched_food: p.product_name,
           source: 'Open Food Facts (Live Packaged DB)',
           ingredients_text: p.ingredients_text || '',
+          image_url: p.image_front_small_url || p.image_front_url || p.image_url || '',
           nutrition: {
             calories: Number(kcal) || 0,
             sugars: Number(n.sugars_100g || 0),
@@ -629,14 +670,15 @@ async function analyzeInExtensionFallback(payload) {
   let nutritionSource = nutrition ? `${platform} Page Nutrition Facts` : '';
   let matchedFood = null;
   let capturedIngredients = payload.ingredients_text || '';
+  let imageUrl = payload.image_url || '';
 
-  if (!nutrition) {
+  if (!nutrition || !imageUrl || !capturedIngredients) {
     const stapleOrCatalog = await lookupStapleOrCatalogInWorker(title);
     const titleWords = title.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').trim().split(/\s+/).filter(Boolean);
     const isPureStaple =
       stapleOrCatalog?.source === 'Grocery & Dish Profile' && titleWords.length <= 2;
 
-    const off = isPureStaple ? null : await lookupOpenFoodFactsInWorker(title, payload.barcode);
+    const off = isPureStaple && nutrition && imageUrl ? null : await lookupOpenFoodFactsInWorker(title, payload.barcode);
     let offIsRelevant = false;
     if (off) {
       if (!stapleOrCatalog) {
@@ -650,24 +692,38 @@ async function analyzeInExtensionFallback(payload) {
     }
 
     if (off && offIsRelevant) {
-      nutrition = off.nutrition;
-      nutritionSource = off.source;
-      matchedFood = off.matched_food;
+      if (!nutrition) {
+        nutrition = off.nutrition;
+        nutritionSource = off.source;
+        matchedFood = off.matched_food;
+      }
       if (!capturedIngredients && off.ingredients_text) {
         capturedIngredients = off.ingredients_text;
       }
-    } else if (stapleOrCatalog) {
+      if (!imageUrl && off.image_url) {
+        imageUrl = off.image_url;
+      }
+    } else if (stapleOrCatalog && !nutrition) {
       nutrition = stapleOrCatalog.nutrition;
       nutritionSource = stapleOrCatalog.source;
       matchedFood = stapleOrCatalog.matched_food;
     } else if (off) {
-      nutrition = off.nutrition;
-      nutritionSource = off.source;
-      matchedFood = off.matched_food;
+      if (!nutrition) {
+        nutrition = off.nutrition;
+        nutritionSource = off.source;
+        matchedFood = off.matched_food;
+      }
       if (!capturedIngredients && off.ingredients_text) {
         capturedIngredients = off.ingredients_text;
       }
+      if (!imageUrl && off.image_url) {
+        imageUrl = off.image_url;
+      }
     }
+  }
+
+  if (!capturedIngredients) {
+    capturedIngredients = inferDefaultIngredientsInWorker(title);
   }
 
   const baseNutrition = nutrition || { calories: 150, sugars: 0, fat: 0, protein: 0, sodium_mg: 0 };
@@ -686,6 +742,7 @@ async function analyzeInExtensionFallback(payload) {
       status: 'needs_nutrition',
       product_title: title,
       product_url: payload.product_url || null,
+      image_url: imageUrl || null,
       nutrition_source: 'Nutrition Label Not Found on Page',
       matched_food: null,
       message: `Captured "${title}" from ${platform}. Open NutriCheck to enter label numbers or scan packet photo.`,
@@ -710,6 +767,7 @@ async function analyzeInExtensionFallback(payload) {
     status: 'analyzed',
     product_title: title,
     product_url: payload.product_url || null,
+    image_url: imageUrl || null,
     nutrition_source: nutritionSource,
     matched_food: matchedFood,
     message: ingredientScan
@@ -721,8 +779,10 @@ async function analyzeInExtensionFallback(payload) {
   };
 }
 
-function buildToastFromResponse({ ok, baseUrl, data, error, productTitle, platform }) {
+function buildToastFromResponse({ ok, baseUrl, data, error, productTitle, platform, imageUrl, ingredientsText }) {
   const storeName = data?.source_platform || platform || 'Online Store';
+  const resolvedImage = data?.image_url || imageUrl || '';
+  const resolvedIngredients = data?.ingredients_text || ingredientsText || '';
 
   if (!ok || !data) {
     const fallbackQuery = new URLSearchParams({
@@ -735,6 +795,8 @@ function buildToastFromResponse({ ok, baseUrl, data, error, productTitle, platfo
       verdict: 'Offline',
       platform: storeName,
       productName: productTitle || 'Food Item',
+      imageUrl: resolvedImage,
+      ingredientsText: resolvedIngredients,
       takeaway: error || `Could not reach NutriCheck at ${baseUrl}.`,
       score: null,
       baseUrl,
@@ -743,20 +805,24 @@ function buildToastFromResponse({ ok, baseUrl, data, error, productTitle, platfo
   }
 
   if (data.status === 'needs_nutrition' || !data.analysis) {
-    const query = new URLSearchParams({
+    const queryParams = new URLSearchParams({
       item: data.product_title || productTitle || 'Food Item',
       source: storeName.toLowerCase(),
-    }).toString();
+    });
+    if (resolvedImage) queryParams.set('image_url', resolvedImage);
+    if (resolvedIngredients) queryParams.set('ingredients', resolvedIngredients.slice(0, 350));
 
     return {
       level: 'warning',
       verdict: 'Needs Info',
       platform: storeName,
       productName: data.product_title || productTitle || 'Food Item',
+      imageUrl: resolvedImage,
+      ingredientsText: resolvedIngredients,
       takeaway: 'Label numbers were not on this page. Open NutriCheck to paste or scan the packet.',
       score: null,
       baseUrl,
-      query,
+      query: queryParams.toString(),
     };
   }
 
@@ -787,7 +853,7 @@ function buildToastFromResponse({ ok, baseUrl, data, error, productTitle, platfo
     }
   }
 
-  const query = new URLSearchParams({
+  const queryParams = new URLSearchParams({
     item: a.food_name,
     calories: String(a.nutrition.calories),
     sugars: String(a.nutrition.sugars),
@@ -795,13 +861,17 @@ function buildToastFromResponse({ ok, baseUrl, data, error, productTitle, platfo
     protein: String(a.nutrition.protein),
     sodium_mg: String(a.nutrition.sodium_mg),
     source: storeName.toLowerCase(),
-  }).toString();
+  });
+  if (resolvedImage) queryParams.set('image_url', resolvedImage);
+  if (resolvedIngredients) queryParams.set('ingredients', resolvedIngredients.slice(0, 350));
 
   return {
     level: a.cart_alert.level,
     verdict,
     platform: storeName,
     productName: a.food_name,
+    imageUrl: resolvedImage,
+    ingredientsText: resolvedIngredients,
     takeaway: a.explanation,
     score: a.health_score,
     macros: {
@@ -812,12 +882,8 @@ function buildToastFromResponse({ ok, baseUrl, data, error, productTitle, platfo
     },
     ingredientSummary,
     baseUrl,
-    query,
+    query: queryParams.toString(),
   };
-}
-
-function isLocalApiHost(url) {
-  return /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(url);
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -831,12 +897,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       }
       const productTitle = rawTitle || 'Food Item';
       const platform = inferPlatformName(message.payload?.product_url, message.payload?.source_platform);
+      const payloadImageUrl = message.payload?.image_url || '';
+      const payloadIngredients = message.payload?.ingredients_text || '';
 
       await saveToastState({
         level: 'info',
         verdict: 'Checking...',
         platform,
         productName: productTitle,
+        imageUrl: payloadImageUrl,
+        ingredientsText: payloadIngredients,
         takeaway: 'Scanning ingredients and nutrition profile...',
         score: null,
         baseUrl,
@@ -844,22 +914,24 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       });
 
       let eventData = null;
-      if (isLocalApiHost(baseUrl)) {
-        try {
-          const res = await fetch(`${baseUrl}/api/amazon/add-to-cart`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(message.payload),
-          });
-          if (res.ok) {
-            const candidate = await res.json().catch(() => null);
-            if (candidate && candidate.status === 'analyzed') {
-              eventData = candidate;
-            }
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 2800);
+        const res = await fetch(`${baseUrl}/api/amazon/add-to-cart`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(message.payload),
+          signal: ctrl.signal,
+        });
+        clearTimeout(timer);
+        if (res.ok) {
+          const candidate = await res.json().catch(() => null);
+          if (candidate && candidate.status === 'analyzed') {
+            eventData = candidate;
           }
-        } catch {
-          // Fallback below
         }
+      } catch {
+        // Fallback to local worker engine below
       }
 
       if (!eventData) {
@@ -868,8 +940,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         );
       }
 
-      if (eventData && !eventData.source_platform) {
-        eventData.source_platform = platform;
+      if (eventData) {
+        if (!eventData.source_platform) eventData.source_platform = platform;
+        if (!eventData.image_url && payloadImageUrl) eventData.image_url = payloadImageUrl;
+        if (!eventData.ingredients_text && payloadIngredients) {
+          eventData.ingredients_text = payloadIngredients;
+        }
       }
 
       await saveEventToExtensionHistory(eventData);
@@ -880,6 +956,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         data: eventData,
         productTitle,
         platform,
+        imageUrl: payloadImageUrl,
+        ingredientsText: payloadIngredients,
       });
       await saveToastState(toast);
       sendResponse({ ok: true, baseUrl, event: eventData, toast });
@@ -895,7 +973,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'HEALTHGUARD_OPEN_SITE') {
     (async () => {
       const baseUrl = await getHealthGuardUrl();
-      const target = message.query ? `${baseUrl}/analyzer?${message.query}` : `${baseUrl}/analyzer`;
+      const target = message.query ? `${baseUrl}/amazon?${message.query}` : `${baseUrl}/amazon`;
       chrome.tabs.create({ url: target });
     })();
   }
