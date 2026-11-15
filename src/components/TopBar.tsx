@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Leaf, LogOut, Menu, X } from 'lucide-react';
+import { Leaf, LogOut, Menu, UserCircle2, X } from 'lucide-react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
@@ -8,6 +8,9 @@ export function TopBar() {
   const location = useLocation();
   const { currentUser, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const isStoreConnectRoute =
+    location.pathname === '/amazon' || location.pathname === '/connect';
 
   useEffect(() => {
     setMenuOpen(false);
@@ -69,6 +72,17 @@ export function TopBar() {
             </nav>
 
             <div className="topbar-actions">
+              {isStoreConnectRoute && (
+                <span className="topbar-connected-pill">Store connected</span>
+              )}
+              <Link
+                to="/profile"
+                className="topbar-profile-icon-btn"
+                title={`Profile: ${currentUser.fullName}`}
+                aria-label="Health Profile"
+              >
+                <UserCircle2 size={20} />
+              </Link>
               <button
                 type="button"
                 className="topbar-logout-btn"

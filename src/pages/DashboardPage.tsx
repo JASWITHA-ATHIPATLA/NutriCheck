@@ -1,6 +1,20 @@
 import React, { useMemo, useState } from 'react';
-import { CheckCircle2, Plus, Search, ShieldAlert, SlidersHorizontal, Sparkles } from 'lucide-react';
+import {
+  CheckCircle2,
+  Droplets,
+  Leaf,
+  Plus,
+  Search,
+  ShieldAlert,
+  SlidersHorizontal,
+  Sparkles,
+  Sprout,
+  Wheat,
+} from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
+import wellnessCapsuleImg from '../assets/images/dashboard_wellness_capsule_1794737387347.jpg';
+import kitchenWellnessImg from '../assets/images/dashboard_kitchen_wellness_1794737388833.jpg';
+import wholefoodBowlImg from '../assets/images/dashboard_wholefood_bowl_1794737387978.jpg';
 import { useAuth } from '../context/AuthContext';
 import type { RiskLevel } from '../types';
 import {
@@ -9,6 +23,21 @@ import {
   getProfileSuggestions,
 } from '../utils/healthProfileEngine';
 
+interface NutritionPillar {
+  id: string;
+  index: string;
+  label: string;
+  query: string;
+  risk: 'ALL' | RiskLevel;
+}
+
+const NUTRITION_PILLARS: NutritionPillar[] = [
+  { id: 'good-fats', index: '(01)', label: 'Good Fats', query: 'almonds', risk: 'ALL' },
+  { id: 'whole-grains', index: '(02)', label: 'Whole Grains', query: 'oats', risk: 'ALL' },
+  { id: 'plant-protein', index: '(03)', label: 'Plant Protein', query: 'peanut', risk: 'ALL' },
+  { id: 'low-risk', index: '(04)', label: 'Low Risk Picks', query: '', risk: 'LOW RISK' },
+];
+
 export function DashboardPage() {
   const { currentUser, products, evaluateProduct } = useAuth();
   const navigate = useNavigate();
@@ -16,6 +45,8 @@ export function DashboardPage() {
   const [queryInput, setQueryInput] = useState('');
   const [appliedQuery, setAppliedQuery] = useState('');
   const [riskFilter, setRiskFilter] = useState<'ALL' | RiskLevel>('ALL');
+  const [activePillarId, setActivePillarId] = useState<string | null>(null);
+  const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
 
   const evaluatedItems = useMemo(() => {
     return products.map((product) => ({
@@ -50,7 +81,34 @@ export function DashboardPage() {
 
   function handleSearchSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setActivePillarId(null);
     setAppliedQuery(queryInput);
+  }
+
+  function handlePillarClick(pillar: NutritionPillar) {
+    if (activePillarId === pillar.id) {
+      setActivePillarId(null);
+      setQueryInput('');
+      setAppliedQuery('');
+      setRiskFilter('ALL');
+      return;
+    }
+
+    setActivePillarId(pillar.id);
+    setQueryInput(pillar.query);
+    setAppliedQuery(pillar.query);
+    setRiskFilter(pillar.risk);
+    const target = document.getElementById('catalog-heading');
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
+
+  function renderPillarIcon(id: string) {
+    if (id === 'good-fats') return <Droplets size={14} aria-hidden="true" />;
+    if (id === 'whole-grains') return <Wheat size={14} aria-hidden="true" />;
+    if (id === 'plant-protein') return <Sprout size={14} aria-hidden="true" />;
+    return <Leaf size={14} aria-hidden="true" />;
   }
 
   if (!currentUser) {
@@ -59,17 +117,53 @@ export function DashboardPage() {
 
   return (
     <div className="page-shell">
-      {/* Greeting / Active Profile Card */}
-      <section className="card dashboard-hero-card" aria-label="Health profile status">
-        <div className="dashboard-hero-row">
-          <div>
-            <p className="section-kicker" style={{ marginBottom: '4px' }}>
-              YOUR FOOD DASHBOARD
-            </p>
-            <h1 className="page-title" style={{ fontSize: '26px' }}>
-              Hello, {currentUser.fullName}
-            </h1>
-            <p className="card-subtitle" style={{ marginTop: '4px', fontSize: '14px' }}>
+      {/* Unified Personalized Dashboard Hero & Wellness Showcase */}
+      <section
+        className="dashboard-editorial-card"
+        aria-label="Health profile status and daily nutrition showcase"
+      >
+        <div className="dashboard-editorial-left">
+          {!failedImages.capsule ? (
+            <img
+              src={wellnessCapsuleImg}
+              alt="Fresh broccoli, strawberries, green apple, red onion, herbs, and almonds bursting from a clean nutrition capsule"
+              className="dashboard-editorial-capsule-img"
+              referrerPolicy="no-referrer"
+              onError={() =>
+                setFailedImages((prev) => ({ ...prev, capsule: true }))
+              }
+            />
+          ) : (
+            <div className="dashboard-img-fallback">
+              <Leaf size={28} />
+              <span>Whole Food Nutrition</span>
+            </div>
+          )}
+        </div>
+
+        <div className="dashboard-editorial-right">
+          <div className="dashboard-editorial-head">
+            <div className="dashboard-editorial-profile-top">
+              <div className="dashboard-editorial-greeting">
+                <p className="section-kicker" style={{ marginBottom: '4px' }}>
+                  YOUR FOOD DASHBOARD
+                </p>
+                <h1 className="dashboard-editorial-title">
+                  Hello, {currentUser.fullName}
+                </h1>
+              </div>
+
+              <Link
+                to="/profile"
+                className="btn-secondary dashboard-editorial-edit-btn"
+                style={{ textDecoration: 'none' }}
+              >
+                <SlidersHorizontal size={15} />
+                <span>Edit health profile</span>
+              </Link>
+            </div>
+
+            <p className="dashboard-editorial-meta">
               {getAgeGroupLabel(currentUser.age)} ({currentUser.age} yrs) · Profile-based
               screening is active
               {activeConditionLabels.length > 0 && (
@@ -79,17 +173,81 @@ export function DashboardPage() {
                 <span> · Allergies: {currentUser.allergies.join(', ')}</span>
               )}
             </p>
+
+            <div className="dashboard-editorial-rule-row" aria-hidden="true">
+              <span>GOALS.</span>
+              <span className="dashboard-editorial-rule-line" />
+              <span>HEALTH.</span>
+            </div>
           </div>
 
-          <div className="dashboard-hero-actions">
-            <Link
-              to="/profile"
-              className="btn-secondary"
-              style={{ textDecoration: 'none' }}
-            >
-              <SlidersHorizontal size={15} />
-              <span>Edit health profile</span>
-            </Link>
+          {/* Organic Cloud-Masked Kitchen Lifestyle Photo */}
+          <div className="dashboard-cloud-frame">
+            {!failedImages.kitchen ? (
+              <img
+                src={kitchenWellnessImg}
+                alt="Smiling person in a bright sunlit kitchen with fresh tomatoes, leafy greens, and citrus"
+                className="dashboard-cloud-img"
+                referrerPolicy="no-referrer"
+                onError={() =>
+                  setFailedImages((prev) => ({ ...prev, kitchen: true }))
+                }
+              />
+            ) : (
+              <div className="dashboard-img-fallback">
+                <Sparkles size={24} />
+                <span>Everyday Mindful Eating</span>
+              </div>
+            )}
+          </div>
+
+          {/* Bottom Split: Whole Food Bowl Visual + Interactive Pillars */}
+          <div className="dashboard-editorial-bottom">
+            <div className="dashboard-bowl-card">
+              <div className="dashboard-bowl-thumb">
+                {!failedImages.bowl ? (
+                  <img
+                    src={wholefoodBowlImg}
+                    alt="Balanced whole foods on stone: avocado, spinach, almonds, rolled oats, blueberries, and chia seeds"
+                    className="dashboard-bowl-img"
+                    referrerPolicy="no-referrer"
+                    onError={() =>
+                      setFailedImages((prev) => ({ ...prev, bowl: true }))
+                    }
+                  />
+                ) : (
+                  <div className="dashboard-img-fallback">
+                    <Sprout size={22} />
+                    <span>Balanced Ingredients</span>
+                  </div>
+                )}
+              </div>
+              <p className="dashboard-bowl-caption">
+                Our 4 Pillars of Nutrition
+              </p>
+            </div>
+
+            <div className="dashboard-pillars-list" role="group" aria-label="Filter catalogue by nutrition pillar">
+              {NUTRITION_PILLARS.map((pillar) => {
+                const isActive = activePillarId === pillar.id;
+                return (
+                  <button
+                    key={pillar.id}
+                    type="button"
+                    className={`dashboard-pillar-btn ${isActive ? 'is-active' : ''}`}
+                    onClick={() => handlePillarClick(pillar)}
+                  >
+                    <span className="dashboard-pillar-text">
+                      <span className="dashboard-pillar-idx">{pillar.index}</span>
+                      <span>{pillar.label}</span>
+                    </span>
+                    <span className="dashboard-pillar-icon">
+                      {renderPillarIcon(pillar.id)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       </section>
@@ -194,6 +352,7 @@ export function DashboardPage() {
             placeholder="Search product, brand or category..."
             value={queryInput}
             onChange={(e) => {
+              setActivePillarId(null);
               setQueryInput(e.target.value);
               setAppliedQuery(e.target.value);
             }}
@@ -222,7 +381,10 @@ export function DashboardPage() {
             key={lvl}
             type="button"
             className={`chart-switch-tab ${riskFilter === lvl ? 'is-active' : ''}`}
-            onClick={() => setRiskFilter(lvl)}
+            onClick={() => {
+              setActivePillarId(null);
+              setRiskFilter(lvl);
+            }}
           >
             {lvl === 'ALL'
               ? `All (${evaluatedItems.length})`
@@ -253,6 +415,7 @@ export function DashboardPage() {
                 type="button"
                 className="btn-secondary"
                 onClick={() => {
+                  setActivePillarId(null);
                   setQueryInput('');
                   setAppliedQuery('');
                   setRiskFilter('ALL');

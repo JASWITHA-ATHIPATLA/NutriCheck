@@ -58,7 +58,7 @@ const QUICK_STORE_PRODUCTS: QuickStoreProduct[] = [
   {
     id: 'qs-oats',
     store: 'Amazon',
-    title: 'Quaker Rolled Oats 1kg',
+    title: 'Rolled Oats 1kg',
     badgeLabel: 'Healthy choice',
     badgeTone: 'is-good',
     image_url: CATALOG_PRODUCT_IMAGES['plain-oats'],
@@ -69,7 +69,7 @@ const QUICK_STORE_PRODUCTS: QuickStoreProduct[] = [
   {
     id: 'qs-dry-fruits',
     store: 'Flipkart',
-    title: 'California Almonds 500g',
+    title: 'California Almonds',
     badgeLabel: 'Healthy choice',
     badgeTone: 'is-good',
     image_url: CATALOG_PRODUCT_IMAGES['roasted-unsalted-almonds'],
@@ -80,7 +80,7 @@ const QUICK_STORE_PRODUCTS: QuickStoreProduct[] = [
   {
     id: 'qs-noodles',
     store: 'Swiggy Instamart',
-    title: 'Maggi 2-Minute Masala Noodles',
+    title: 'Masala Instant Noodles',
     badgeLabel: 'High sodium',
     badgeTone: 'is-poor',
     image_url: CATALOG_PRODUCT_IMAGES['instant-noodles'],
@@ -92,7 +92,7 @@ const QUICK_STORE_PRODUCTS: QuickStoreProduct[] = [
   {
     id: 'qs-choc',
     store: 'Amazon',
-    title: 'Dairy Milk Chocolate Bar',
+    title: 'Milk Chocolate Bar',
     badgeLabel: 'High sugar',
     badgeTone: 'is-poor',
     image_url: CATALOG_PRODUCT_IMAGES['chocolate-bar'],
