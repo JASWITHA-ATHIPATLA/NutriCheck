@@ -34,7 +34,7 @@
   const INGREDIENT_REGEX = /\bingredients?\b|\bcontains\b|\ballergen/i;
 
   const UI_CHROME_TITLE_RE =
-    /^(?:subtotal|cart subtotal|your cart|shopping cart|proceed to (?:buy|checkout)|order summary|buy now|add to cart|added to cart|go to cart|see options|see all buying options|quick look|sponsored|sponsored ad|ad|best seller|amazon'?s choice|overall pick|limited time deal|deal of the day|delivery|free delivery|results|price|filters?|sort by|featured|loading\.*|amazon(?:\.[a-z.]+)?|flipkart|swiggy|instamart|zomato|blinkit|add|add item|customisable|customizable)$/i;
+    /^(?:subtotal|cart subtotal|your cart|shopping cart|proceed to (?:buy|checkout)|order summary|buy now|add to cart|added to cart|add to basket|add to bag|go to cart|see options|see all buying options|quick look|sponsored|sponsored ad|ad|best seller|bestseller|must try|chef'?s special|newly added|highly reordered|pure veg|veg|non-veg|non veg|amazon'?s choice|overall pick|limited time deal|deal of the day|delivery|free delivery|results|price|filters?|sort by|featured|loading\.*|amazon(?:\.[a-z.]+)?|flipkart|swiggy|instamart|zomato|blinkit|add|add item|add items|customise|customize|customisable|customizable|repeat last)$/i;
 
   function cleanExtractedTitle(raw) {
     if (!raw) return '';
@@ -49,6 +49,7 @@
     if (/^\d+(?:\.\d+)?\s+out of\s+5\s+stars?$/i.test(cleaned)) return '';
     if (/^\(?[\d,]+(?:\s*ratings?|\s*votes?)?\)?$/.test(cleaned)) return '';
     if (/^\d+(?:\.\d+)?\s*(?:g|gm|gms|kg|ml|l|ltr|oz|lb|pcs|count|pack)$/i.test(cleaned)) return '';
+    if (/^(?:serves?\s+\d+|\d+\s*★|\d+\.\d+\s*\(\d+\))/i.test(cleaned)) return '';
     if (
       /^\d+\s*-\s*\d+\s+of\s+(?:over\s+)?[\d,]+\s+results/i.test(cleaned) ||
       /\bsort by:\s*featured\b/i.test(cleaned) ||
@@ -59,8 +60,65 @@
     return cleaned.slice(0, 260);
   }
 
-  function isAddToCartElement(target) {
-    if (!target || !(target instanceof Element)) return null;
+  function normalizeAddLabel(raw) {
+    const label = String(raw || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (!label || label.length > 85) return { label: '', stripped: '' };
+    if (
+      /\b(address|coupon|promo|tip|note|filter|sort|rating|veg only|bestseller|wishlist|compare|share|cancel|close|view cart|go to cart|checkout|proceed|buy now|remove|delete|clear|instruction|cooking|delivery|restaurant|review|photo)\b/i.test(
+        label
+      )
+    ) {
+      return { label: '', stripped: '' };
+    }
+    const stripped = label
+      .replace(/\badd\s+\d+\s+items?\b/gi, 'add item')
+      .replace(/(?:customisable|customizable|\badd-ons?\b|[₹$€£]\s*[\d,.]+|\|\s*[\d,.]+|\(\s*\d*\s*\)|[()+•|·\-])/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return { label, stripped };
+  }
+
+  function matchesAddText(label, stripped, platform) {
+    if (!stripped) return false;
+    if (
+      stripped === 'add to cart' ||
+      stripped.startsWith('add to cart') ||
+      stripped === 'add to basket' ||
+      stripped.startsWith('add to basket') ||
+      stripped === 'add to bag' ||
+      stripped.startsWith('add to bag') ||
+      stripped === 'add to order' ||
+      stripped === 'add item' ||
+      stripped === 'add items' ||
+      stripped.startsWith('add item') ||
+      stripped === 'add'
+    ) {
+      return true;
+    }
+    if (
+      platform === 'Swiggy' ||
+      platform === 'Swiggy Instamart' ||
+      platform === 'Zomato' ||
+      platform === 'Blinkit' ||
+      platform === 'Flipkart'
+    ) {
+      if (/^add(?:\s+(?:item|items|to\s+(?:cart|bag|basket|order)))?$/i.test(stripped)) {
+        return true;
+      }
+      if (/^(?:add|\+\s*add|add\s*\+)$/i.test(label.replace(/\s+/g, ' ').trim())) {
+        return true;
+      }
+      if (/^add\s+.{2,60}\s+to\s+(?:cart|bag|basket|order)$/i.test(stripped)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function isAddToCartElement(rawTarget) {
+    const target =
+      rawTarget instanceof Element ? rawTarget : rawTarget?.parentElement || null;
+    if (!target) return null;
     if (target.closest('#nutricheck-floating-card, #nutricheck-scan-fab')) return null;
 
     const platform = detectPlatform();
@@ -85,6 +143,7 @@
           aBtnText === 'add to cart' ||
           aBtnText === 'add to basket' ||
           aBtnText === 'add to fresh cart' ||
+          aBtnText === 'add' ||
           aBtnText.startsWith('add to cart') ||
           aBtnText.startsWith('add to basket')
         ) {
@@ -93,57 +152,63 @@
       }
     }
 
-    const btn = target.closest('button, input[type="submit"], [role="button"], a[role="button"]');
-    if (!btn) return null;
-
-    const ariaLabelledBy = btn.getAttribute('aria-labelledby');
-    let labelledText = '';
-    if (ariaLabelledBy) {
-      labelledText = ariaLabelledBy
-        .split(/\s+/)
-        .map((id) => document.getElementById(id)?.textContent || '')
-        .join(' ');
+    const btn = target.closest(
+      'button, input[type="submit"], [role="button"], a[role="button"], [data-testid*="add-button"], [data-testid*="add_button"], [data-cy*="add"]'
+    );
+    if (btn) {
+      const ariaLabelledBy = btn.getAttribute('aria-labelledby');
+      let labelledText = '';
+      if (ariaLabelledBy) {
+        labelledText = ariaLabelledBy
+          .split(/\s+/)
+          .map((id) => document.getElementById(id)?.textContent || '')
+          .join(' ');
+      }
+      const rawCandidates = [
+        btn.textContent,
+        btn.getAttribute('aria-label'),
+        labelledText,
+        btn.getAttribute('value'),
+        btn.getAttribute('title'),
+      ];
+      for (const raw of rawCandidates) {
+        if (!raw) continue;
+        const { label, stripped } = normalizeAddLabel(raw);
+        if (matchesAddText(label, stripped, platform)) {
+          return btn;
+        }
+      }
     }
 
-    const label = (
-      btn.textContent ||
-      btn.getAttribute('aria-label') ||
-      labelledText ||
-      btn.getAttribute('value') ||
-      btn.getAttribute('title') ||
-      ''
-    )
-      .replace(/\s+/g, ' ')
-      .trim()
-      .toLowerCase();
-
-    if (!label) return null;
-
+    // Zomato / Swiggy / Instamart / Blinkit / Flipkart often use styled <div>, <span>, or <a> as Add buttons
     if (
-      /\b(address|coupon|promo|tip|note|filter|sort|rating|veg only|bestseller|wishlist|compare|share|cancel|close|view cart|go to cart|checkout|proceed|buy now)\b/i.test(
-        label
-      )
+      platform === 'Zomato' ||
+      platform === 'Swiggy' ||
+      platform === 'Swiggy Instamart' ||
+      platform === 'Blinkit' ||
+      platform === 'Flipkart'
     ) {
-      return null;
-    }
-
-    if (
-      label === 'add to cart' ||
-      label.startsWith('add to cart') ||
-      label === 'add to basket' ||
-      label.startsWith('add to basket') ||
-      label === 'add to bag' ||
-      label === 'add item' ||
-      label.startsWith('add item') ||
-      label === 'add +' ||
-      label === 'add'
-    ) {
-      return btn;
-    }
-
-    if (platform === 'Swiggy' || platform === 'Swiggy Instamart' || platform === 'Zomato' || platform === 'Blinkit') {
-      if (/^add(?:\s*\+)?(?:\s*to\s*(?:cart|bag))?(?:\s*customisable)?$/i.test(label)) {
-        return btn;
+      let node = target;
+      for (let depth = 0; depth < 6 && node; depth += 1) {
+        if (node === document.body || node === document.documentElement) break;
+        const rect = node.getBoundingClientRect();
+        if (rect.width > 0 && rect.width <= 400 && rect.height > 0 && rect.height <= 96) {
+          const rawCandidates = [
+            node.textContent,
+            node.getAttribute('aria-label'),
+            node.getAttribute('title'),
+          ];
+          for (const raw of rawCandidates) {
+            if (!raw) continue;
+            const { label, stripped } = normalizeAddLabel(raw);
+            if (matchesAddText(label, stripped, platform)) {
+              return node;
+            }
+          }
+        } else if (rect.width > 440 || rect.height > 120) {
+          break;
+        }
+        node = node.parentElement;
       }
     }
 
@@ -152,13 +217,13 @@
 
   /* ---------------- Amazon Helpers ---------------- */
   function findAmazonCard(clickedEl) {
-    const directCard = clickedEl.closest(
-      '[data-component-type="s-search-result"], .s-result-item[data-asin]:not([data-asin=""]), [data-asin]:not([data-asin=""]), [data-csa-c-asin]:not([data-csa-c-asin=""]), li.a-carousel-card, .sc-list-item, .octopus-pc-item, [data-testid*="product-card"], [class*="ProductGridItem"]'
+    const outerCard = clickedEl.closest(
+      '[data-component-type="s-search-result"], .s-result-item[data-asin]:not([data-asin=""]), li.a-carousel-card, .sc-list-item, .octopus-pc-item, [data-testid*="product-card"], [class*="ProductGridItem"]'
     );
-    if (directCard) return directCard;
+    if (outerCard) return outerCard;
 
     let node = clickedEl.parentElement;
-    for (let depth = 0; depth < 8 && node; depth += 1) {
+    for (let depth = 0; depth < 9 && node; depth += 1) {
       if (
         node === document.body ||
         node === document.documentElement ||
@@ -169,13 +234,18 @@
       ) {
         break;
       }
-      const hasDpLink = node.querySelector('a[href*="/dp/"], a[href*="/gp/product/"]');
-      const hasAsinInput = node.querySelector('input[name="asin"], input[name="ASIN"]');
+      const hasImage = Boolean(node.querySelector('img'));
+      const hasDpLink = Boolean(node.querySelector('a[href*="/dp/"], a[href*="/gp/product/"], h2, h3'));
       const rect = node.getBoundingClientRect();
-      if ((hasDpLink || hasAsinInput) && rect.width > 80 && rect.width < 900) {
+      if (hasImage && hasDpLink && rect.width > 80 && rect.width < 950) {
         return node;
       }
       node = node.parentElement;
+    }
+
+    const asinContainer = clickedEl.closest('[data-asin]:not([data-asin=""]), [data-csa-c-asin]:not([data-csa-c-asin=""])');
+    if (asinContainer && asinContainer.querySelector('img, h2, h3')) {
+      return asinContainer;
     }
     return null;
   }
@@ -281,37 +351,69 @@
   }
 
   /* ---------------- Flipkart / Swiggy / Zomato / Blinkit Helpers ---------------- */
+  function isModalContainer(el) {
+    if (!el || !(el instanceof Element)) return false;
+    return Boolean(
+      el.closest(
+        '[role="dialog"], [aria-modal="true"], [data-testid*="modal" i], [data-testid*="customis" i], [data-testid*="customiz" i], [class*="Modal" i], [class*="Drawer" i], [class*="BottomSheet" i]'
+      )
+    );
+  }
+
   function findGenericCard(clickedEl, platform) {
     if (!clickedEl) return null;
 
+    const dialog = clickedEl.closest(
+      '[role="dialog"], [aria-modal="true"], [data-testid*="modal" i], [data-testid*="customis" i], [data-testid*="customiz" i]'
+    );
+    if (dialog) return dialog;
+
     if (platform === 'Flipkart') {
-      const direct = clickedEl.closest('[data-id], .slAVV4, ._1xHGtK, .tUxRFH, .cPHDOP');
+      const shelfItem = clickedEl.closest('[data-id]');
+      if (shelfItem && shelfItem.querySelector('a[href*="/p/"], img')) {
+        return shelfItem;
+      }
+      if (isProductDetailPage('Flipkart')) return null;
+      const direct = clickedEl.closest('.slAVV4, ._1xHGtK, .tUxRFH');
       if (direct) return direct;
     }
 
     if (platform === 'Swiggy' || platform === 'Swiggy Instamart') {
       const direct = clickedEl.closest(
-        '[data-testid="normal-dish-item"], [data-testid="recommended-dish-item"], [data-testid*="dish"], [data-testid*="item-card"], [data-testid*="product-card"], [role="dialog"]'
+        '[data-testid="normal-dish-item"], [data-testid="recommended-dish-item"], [data-testid*="dish"], [data-testid*="item-card"], [data-testid*="product-card"], [data-testid*="product"]'
       );
-      if (direct) return direct;
+      if (direct && (direct.querySelector('h2, h3, h4, [class*="name" i], [class*="title" i]') || (direct.textContent || '').length > 20)) {
+        return direct;
+      }
     }
 
     if (platform === 'Zomato') {
-      const direct = clickedEl.closest('[class*="sc-"][class*="item"], li, [role="dialog"]');
-      if (direct && (direct.querySelector('h4, h3, h2, p') || (direct.textContent || '').length < 450)) {
+      const direct = clickedEl.closest('[class*="sc-"][class*="item"], [data-testid*="dish"], li');
+      if (direct && (direct.querySelector('h4, h3, h2') || (direct.textContent || '').length > 25)) {
         return direct;
       }
     }
 
     let node = clickedEl.parentElement;
-    for (let depth = 0; depth < 7 && node; depth += 1) {
+    for (let depth = 0; depth < 10 && node; depth += 1) {
       if (node === document.body || node === document.documentElement) break;
       const rect = node.getBoundingClientRect();
       const textLen = (node.textContent || '').trim().length;
-      const hasHeadingOrImg = Boolean(
-        node.querySelector('h1, h2, h3, h4, img[alt], a[href*="/p/"], a[href*="/prn/"]')
+      const hasHeading = Boolean(
+        node.querySelector(
+          'h1, h2, h3, h4, a[href*="/p/"], a[href*="/prn/"], [class*="title" i], [class*="Title"], [class*="name" i], [class*="Name"]'
+        )
       );
-      if (hasHeadingOrImg && rect.width > 120 && rect.height < 520 && textLen > 6 && textLen < 900) {
+      const hasMediaAndText =
+        Boolean(node.querySelector('img')) && textLen >= 18;
+      if (
+        (hasHeading || hasMediaAndText) &&
+        rect.width >= 130 &&
+        rect.height >= 64 &&
+        rect.height < 520 &&
+        textLen > 10 &&
+        textLen < 1100
+      ) {
         return node;
       }
       node = node.parentElement;
@@ -324,13 +426,13 @@
     const candidates = [];
     const push = (raw, bonus = 0) => {
       const t = cleanExtractedTitle(raw);
-      if (!t) return;
-      candidates.push({ text: t, score: Math.min(t.length, 100) + bonus });
+      if (!t || t.length > 140) return;
+      candidates.push({ text: t, score: Math.min(t.length, 90) + bonus });
     };
 
     const selectors =
       platform === 'Flipkart'
-        ? ['a.wjcEIp', 'a.s1Q9rs', '.KzDlHZ', 'a[title]', 'a[href*="/p/"]', 'h2', 'h3']
+        ? ['a.wjcEIp', 'a.s1Q9rs', 'a.WKTcLC', '.KzDlHZ', 'a[title]', 'a[href*="/p/"]', 'h2', 'h3']
         : platform === 'Swiggy' || platform === 'Swiggy Instamart'
         ? [
             '[data-testid*="item-name"]',
@@ -339,15 +441,15 @@
             'h3',
             'h2',
             'h4',
-            '[aria-hidden="false"]',
             'div[class*="Title"]',
+            '[aria-hidden="false"]',
           ]
         : platform === 'Zomato'
-        ? ['h4', 'h3', 'h2', '[class*="title"]', 'img[alt]']
+        ? ['h4', 'h3', 'h2', '[class*="title"]', '[class*="Title"]', 'img[alt]']
         : ['[class*="ProductTitle"]', '[class*="name"]', 'h3', 'h4', 'h2', 'img[alt]'];
 
     for (let i = 0; i < selectors.length; i += 1) {
-      const bonus = Math.max(0, 32 - i * 3);
+      const bonus = Math.max(0, 36 - i * 3);
       card.querySelectorAll(selectors[i]).forEach((el) => {
         if (selectors[i] === 'a[title]') {
           push(el.getAttribute('title'), bonus);
@@ -356,6 +458,19 @@
         } else {
           push(el.textContent || el.innerText, bonus);
         }
+      });
+    }
+
+    // Zomato / Swiggy styled-components fallback: scan compact leaf text elements inside the card
+    if ((platform === 'Zomato' || platform === 'Swiggy' || platform === 'Swiggy Instamart') && candidates.length === 0) {
+      let leafIdx = 0;
+      card.querySelectorAll('p, span, div').forEach((el) => {
+        if (el.children.length > 0) return;
+        const txt = (el.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!txt || txt.length < 3 || txt.length > 75) return;
+        if (/^(?:customis|add|in stock|\+|−|-|\d)/i.test(txt)) return;
+        push(txt, Math.max(2, 24 - leafIdx * 3));
+        leafIdx += 1;
       });
     }
 
@@ -432,7 +547,7 @@
         if (cardTitle) return cardTitle;
       }
       const detailHeading = doc.querySelector(
-        'h1.VU-ZEz, span.VU-ZEz, span.B_NuCI, h1[class*="Title"], h1'
+        'h1._6EBuvT span, h1._6EBuvT, h1.VU-ZEz, span.VU-ZEz, span.B_NuCI, h1[class*="Title"], h1'
       );
       if (detailHeading) {
         const t = cleanExtractedTitle(detailHeading.textContent || detailHeading.innerText);
@@ -561,7 +676,12 @@
   function normalizeImageCandidate(rawUrl) {
     if (!rawUrl) return '';
     const trimmed = String(rawUrl).trim();
-    if (!trimmed || trimmed.startsWith('data:image/gif') || trimmed.includes('transparent-pixel')) {
+    if (
+      !trimmed ||
+      trimmed.startsWith('data:image/gif') ||
+      trimmed.startsWith('data:image/svg') ||
+      /transparent-pixel|grey-pixel|loading|spinner|sprite|1x1|\.gif(?:\?|$)/i.test(trimmed)
+    ) {
       return '';
     }
     try {
@@ -573,6 +693,75 @@
     }
   }
 
+  function extractCandidateFromImgElement(img) {
+    if (!img) return '';
+    const hiRes = img.getAttribute('data-old-hires');
+    let dynBest = '';
+    const dyn = img.getAttribute('data-a-dynamic-image');
+    if (dyn && dyn.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(dyn);
+        const entries = Object.entries(parsed);
+        entries.sort((a, b) => {
+          const areaA = Array.isArray(a[1]) ? (a[1][0] || 0) * (a[1][1] || 0) : 0;
+          const areaB = Array.isArray(b[1]) ? (b[1][0] || 0) * (b[1][1] || 0) : 0;
+          return areaB - areaA;
+        });
+        if (entries.length) dynBest = entries[0][0];
+      } catch {
+        // ignore
+      }
+    }
+
+    let srcsetBest = '';
+    const srcset = img.getAttribute('srcset') || img.getAttribute('data-srcset') || '';
+    if (srcset) {
+      const parts = srcset
+        .split(',')
+        .map((s) => s.trim().split(/\s+/)[0])
+        .filter(Boolean);
+      if (parts.length) srcsetBest = parts[parts.length - 1];
+    }
+
+    return (
+      normalizeImageCandidate(hiRes) ||
+      normalizeImageCandidate(dynBest) ||
+      normalizeImageCandidate(srcsetBest) ||
+      normalizeImageCandidate(img.getAttribute('src')) ||
+      normalizeImageCandidate(img.currentSrc) ||
+      normalizeImageCandidate(img.getAttribute('data-src')) ||
+      normalizeImageCandidate(img.getAttribute('data-lazy-src')) ||
+      normalizeImageCandidate(img.getAttribute('data-original'))
+    );
+  }
+
+  function extractBgImageCandidate(el) {
+    if (!el || !(el instanceof Element)) return '';
+    const style = el.getAttribute('style') || '';
+    const m = style.match(/url\(["']?([^"')]+)["']?\)/i);
+    if (m && m[1]) return normalizeImageCandidate(m[1]);
+    return '';
+  }
+
+  function isLikelyIconImg(img, url) {
+    const lowerUrl = (url || '').toLowerCase();
+    const alt = (img?.getAttribute?.('alt') || '').toLowerCase();
+    if (
+      /(?:veg[-_]?icon|non[-_]?veg[-_]?icon|nonveg[-_]?icon|veg[-_]?mark|veg[-_]?symbol|green[-_]?dot|red[-_]?dot|rating[-_]?star|badge[-_]?icon|nav[-_]?logo|sprite|spinner|arrow[-_]?icon)/i.test(
+        lowerUrl
+      ) ||
+      /^(?:veg|non-veg|non veg|rating|star|icon|logo)$/i.test(alt.trim())
+    ) {
+      return true;
+    }
+    const w = img.naturalWidth || img.width || 0;
+    const h = img.naturalHeight || img.height || 0;
+    if ((w > 0 && w < 26) || (h > 0 && h < 26)) {
+      return true;
+    }
+    return false;
+  }
+
   function extractProductImageFromDoc(doc, card, platform) {
     const scope = card || doc;
     const selectors =
@@ -581,44 +770,59 @@
             '#landingImage',
             '#imgBlkFront',
             '#main-image',
+            'img[data-a-image-name="landingImage"]',
             '#imgTagWrapperId img',
+            '.imgTagWrapper img',
+            '[data-feature-name="imageBlock"] img',
+            '#imageBlock img.a-dynamic-image',
+            '#main-image-container img',
+            '#image-block-carousel img',
             'img.s-image',
+            '.s-product-image-container img',
+            'img[data-image-latency="s-product-image"]',
             'img[data-old-hires]',
+            'img[src*="media-amazon.com/images/I/"]',
+            'img[src*="images-amazon.com/images/I/"]',
             'img[src*="media-amazon"]',
-            'img[src*="images-amazon"]',
+            'img[src*="ssl-images-amazon"]',
           ]
         : platform === 'Flipkart'
-        ? ['img.DByuf4', 'img._396cs4', 'img._2r_T1I', 'img.jLEJ7H', 'img[src*="rukminim"]']
+        ? [
+            'img.DByuf4',
+            'img._0DkuPH',
+            'img.jLEJ7H',
+            'img._396cs4',
+            'img._2r_T1I',
+            'img[src*="rukminim"]',
+          ]
+        : platform === 'Zomato'
+        ? ['img[src*="b.zmtcdn.com"]', 'img[src]']
+        : platform === 'Swiggy' || platform === 'Swiggy Instamart'
+        ? ['img[src*="media-assets.swiggy.com"]', 'img[src*="instamart"]', 'img[src]']
         : ['img[src]'];
 
     for (const sel of selectors) {
       const imgs = scope.querySelectorAll(sel);
       for (const img of imgs) {
-        const hiRes = img.getAttribute('data-old-hires');
-        const dyn = img.getAttribute('data-a-dynamic-image');
-        let dynFirst = '';
-        if (dyn && dyn.startsWith('{')) {
-          try {
-            const keys = Object.keys(JSON.parse(dyn));
-            if (keys.length) dynFirst = keys[0];
-          } catch {
-            // ignore
-          }
-        }
-        const cand =
-          normalizeImageCandidate(hiRes) ||
-          normalizeImageCandidate(img.getAttribute('src')) ||
-          normalizeImageCandidate(img.currentSrc) ||
-          normalizeImageCandidate(dynFirst) ||
-          normalizeImageCandidate(img.getAttribute('data-src'));
-        if (cand) return cand;
+        const cand = extractCandidateFromImgElement(img);
+        if (cand && !isLikelyIconImg(img, cand)) return cand;
       }
     }
 
     if (card) {
-      const anyImg = card.querySelector('img[src]');
-      const cand = normalizeImageCandidate(anyImg?.getAttribute('src') || anyImg?.currentSrc);
-      if (cand) return cand;
+      for (const anyImg of card.querySelectorAll('img')) {
+        const cand = extractCandidateFromImgElement(anyImg);
+        if (cand && !isLikelyIconImg(anyImg, cand)) return cand;
+      }
+      for (const bgEl of card.querySelectorAll('[style*="background-image"]')) {
+        const bg = extractBgImageCandidate(bgEl);
+        if (bg && !/(?:sprite|icon|logo|1x1)/i.test(bg)) return bg;
+      }
+      // If card had no image but we're on an Amazon/Flipkart detail page, search full document
+      if (isProductDetailPage(platform)) {
+        const docFallback = extractProductImageFromDoc(doc, null, platform);
+        if (docFallback) return docFallback;
+      }
     }
 
     const ogImg = doc.querySelector('meta[property="og:image"], meta[name="twitter:image"]');
@@ -631,10 +835,10 @@
   function isProductDetailPage(platform) {
     const p = window.location.pathname.toLowerCase();
     if (platform === 'Amazon') {
-      return Boolean(document.querySelector('#productTitle')) || /\/(?:dp|gp\/product)\//.test(p);
+      return Boolean(document.querySelector('#productTitle, #titleSection #title')) || /\/(?:dp|gp\/product)\//.test(p);
     }
     if (platform === 'Flipkart') {
-      return p.includes('/p/') || Boolean(document.querySelector('span.VU-ZEz, h1.VU-ZEz'));
+      return p.includes('/p/') || Boolean(document.querySelector('h1._6EBuvT, span.VU-ZEz, h1.VU-ZEz, span.B_NuCI'));
     }
     if (platform === 'Swiggy Instamart' || platform === 'Blinkit') {
       return p.includes('/item/') || p.includes('/prn/') || Boolean(document.querySelector('[class*="ProductDetail"], h1'));
@@ -642,26 +846,24 @@
     return false;
   }
 
+  let lastMenuCardSnapshot = null;
+
   function captureClickSnapshot(btn) {
     const platform = detectPlatform();
     if (platform === 'Amazon') {
-      const card = findAmazonCard(btn);
-      const inMainBuyBox = Boolean(
-        btn.closest('#ppd, #centerCol, #buybox, #desktop_buybox, #addToCart, #exports_desktop_qualifiedBuybox')
+      const inSearchOrCarousel = Boolean(
+        btn.closest(
+          '[data-component-type="s-search-result"], .s-result-item, li.a-carousel-card, .octopus-pc-item, #similarities_feature_div'
+        )
       );
-      const isMainDetailPage = Boolean(document.querySelector('#productTitle')) && (!card || inMainBuyBox);
-      const initialTitle = extractProductTitleFromDoc(
-        document,
-        isMainDetailPage ? null : card,
-        btn,
-        platform
+      const hasDetailHeader = Boolean(
+        document.querySelector('#productTitle, #titleSection #title, #dp-container')
       );
+      const isMainDetailPage = hasDetailHeader && !inSearchOrCarousel;
+      const card = isMainDetailPage ? null : findAmazonCard(btn);
+      const initialTitle = extractProductTitleFromDoc(document, card, btn, platform);
       const dpUrl = isMainDetailPage ? window.location.href : extractAmazonLinkFromCard(card, btn);
-      const imageUrl = extractProductImageFromDoc(
-        document,
-        isMainDetailPage ? null : card,
-        platform
-      );
+      const imageUrl = extractProductImageFromDoc(document, card, platform);
       return {
         platform,
         isMainDetailPage,
@@ -673,25 +875,52 @@
     }
 
     const card = findGenericCard(btn, platform);
+    const inDialog = Boolean(
+      (card && card.matches('[role="dialog"], [aria-modal="true"], [data-testid*="modal" i], [data-testid*="customis" i], [data-testid*="customiz" i]')) ||
+      isModalContainer(btn)
+    );
     const detailPage = isProductDetailPage(platform) && !card;
-    const initialTitle = extractProductTitleFromDoc(
+    let initialTitle = extractProductTitleFromDoc(
       document,
       detailPage ? null : card,
       btn,
       platform
     );
     const dpUrl = detailPage ? window.location.href : extractProductLinkGeneric(card, platform);
-    const cardNotes = card ? extractDishDescriptionFromCard(card) : '';
-    const imageUrl = extractProductImageFromDoc(
+    let cardNotes = card ? extractDishDescriptionFromCard(card) : '';
+    let imageUrl = extractProductImageFromDoc(
       document,
       detailPage ? null : card,
       platform
     );
 
+    if (
+      inDialog &&
+      lastMenuCardSnapshot &&
+      Date.now() - lastMenuCardSnapshot.at < 90000
+    ) {
+      if (!initialTitle || initialTitle.length < 3) initialTitle = lastMenuCardSnapshot.title;
+      if (!imageUrl) imageUrl = lastMenuCardSnapshot.imageUrl;
+      if (!cardNotes) cardNotes = lastMenuCardSnapshot.notes;
+    } else if (!inDialog && initialTitle) {
+      lastMenuCardSnapshot = {
+        title: initialTitle,
+        imageUrl,
+        notes: cardNotes,
+        at: Date.now(),
+      };
+    }
+
+    if (!initialTitle && lastMenuCardSnapshot && Date.now() - lastMenuCardSnapshot.at < 90000) {
+      initialTitle = lastMenuCardSnapshot.title;
+      if (!imageUrl) imageUrl = lastMenuCardSnapshot.imageUrl;
+      if (!cardNotes) cardNotes = lastMenuCardSnapshot.notes;
+    }
+
     return {
       platform,
       isMainDetailPage: detailPage,
-      initialTitle,
+      initialTitle: initialTitle || (platform !== 'Online Store' ? `${platform} Food Item` : ''),
       dpUrl,
       imageUrl,
       cardNotes,
@@ -860,6 +1089,7 @@
       imgWrap.style.cssText =
         'width:100%;height:112px;background:#f8faf9;border:1px solid #dfe7e3;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:8px;margin-bottom:10px;box-sizing:border-box;overflow:hidden;';
       const imgEl = document.createElement('img');
+      imgEl.referrerPolicy = 'no-referrer';
       imgEl.src = imageUrl;
       imgEl.alt = productName || 'Product';
       imgEl.style.cssText = 'max-width:100%;max-height:100%;object-fit:contain;';
@@ -1130,53 +1360,112 @@
     }
   }, 1500);
 
+  let pendingPressState = null;
+
+  function dispatchSnapshot(btn, snapshot) {
+    if (!snapshot || (!snapshot.initialTitle && !snapshot.dpUrl)) return;
+
+    if (snapshot.isMainDetailPage || !snapshot.dpUrl || snapshot.dpUrl === window.location.href) {
+      const extractedNow = extractIngredientsAndNutritionFromDoc(document);
+      const metaNow = extractBrandAndBarcodeFromDoc(document);
+      sendForAnalysis({
+        platform: snapshot.platform,
+        productTitle: snapshot.initialTitle,
+        productUrl: snapshot.dpUrl || window.location.href,
+        imageUrl: snapshot.imageUrl || extractProductImageFromDoc(document, null, snapshot.platform),
+        nutritionText: extractedNow.nutritionText,
+        ingredientsText: extractedNow.ingredientsText || snapshot.cardNotes,
+        brand: metaNow.brand,
+        barcode: metaNow.barcode,
+      });
+      return;
+    }
+
+    const isFormSubmit =
+      btn &&
+      (btn.tagName === 'INPUT' ||
+        btn.getAttribute('type') === 'submit' ||
+        Boolean(btn.closest('form')));
+    if (isFormSubmit) {
+      const extractedNow = extractIngredientsAndNutritionFromDoc(document);
+      sendForAnalysis({
+        platform: snapshot.platform,
+        productTitle: snapshot.initialTitle,
+        productUrl: snapshot.dpUrl || window.location.href,
+        imageUrl: snapshot.imageUrl,
+        nutritionText: extractedNow.nutritionText,
+        ingredientsText: snapshot.cardNotes || extractedNow.ingredientsText,
+        brand: '',
+        barcode: '',
+      });
+    } else {
+      void (async () => {
+        const details = await resolveProductDetails(snapshot);
+        sendForAnalysis(details);
+      })();
+    }
+  }
+
   document.addEventListener(
-    'click',
+    'pointerdown',
     (event) => {
       const btn = isAddToCartElement(event.target);
       if (!btn) return;
       const snapshot = captureClickSnapshot(btn);
       if (!snapshot.initialTitle && !snapshot.dpUrl) return;
+      if (pendingPressState?.timer) clearTimeout(pendingPressState.timer);
+      pendingPressState = {
+        btn,
+        snapshot,
+        at: Date.now(),
+        x: event.clientX || 0,
+        y: event.clientY || 0,
+        timer: null,
+      };
+    },
+    true
+  );
 
-      if (snapshot.isMainDetailPage || !snapshot.dpUrl || snapshot.dpUrl === window.location.href) {
-        const extractedNow = extractIngredientsAndNutritionFromDoc(document);
-        const metaNow = extractBrandAndBarcodeFromDoc(document);
-        sendForAnalysis({
-          platform: snapshot.platform,
-          productTitle: snapshot.initialTitle,
-          productUrl: snapshot.dpUrl || window.location.href,
-          imageUrl: snapshot.imageUrl || extractProductImageFromDoc(document, null, snapshot.platform),
-          nutritionText: extractedNow.nutritionText,
-          ingredientsText: extractedNow.ingredientsText || snapshot.cardNotes,
-          brand: metaNow.brand,
-          barcode: metaNow.barcode,
-        });
+  document.addEventListener(
+    'pointerup',
+    (event) => {
+      if (!pendingPressState) return;
+      const dist = Math.hypot(
+        (event.clientX || 0) - pendingPressState.x,
+        (event.clientY || 0) - pendingPressState.y
+      );
+      if (dist > 14) {
+        if (pendingPressState.timer) clearTimeout(pendingPressState.timer);
+        pendingPressState = null;
         return;
       }
+      const captured = pendingPressState;
+      captured.timer = setTimeout(() => {
+        if (pendingPressState === captured) {
+          pendingPressState = null;
+          dispatchSnapshot(captured.btn, captured.snapshot);
+        }
+      }, 220);
+    },
+    true
+  );
 
-      // Send fast immediate snapshot before any page navigation, or enrich if staying on page
-      const isFormSubmit =
-        btn.tagName === 'INPUT' ||
-        btn.getAttribute('type') === 'submit' ||
-        Boolean(btn.closest('form'));
-      if (isFormSubmit) {
-        const extractedNow = extractIngredientsAndNutritionFromDoc(document);
-        sendForAnalysis({
-          platform: snapshot.platform,
-          productTitle: snapshot.initialTitle,
-          productUrl: snapshot.dpUrl || window.location.href,
-          imageUrl: snapshot.imageUrl,
-          nutritionText: extractedNow.nutritionText,
-          ingredientsText: snapshot.cardNotes || extractedNow.ingredientsText,
-          brand: '',
-          barcode: '',
-        });
-      } else {
-        void (async () => {
-          const details = await resolveProductDetails(snapshot);
-          sendForAnalysis(details);
-        })();
+  document.addEventListener(
+    'click',
+    (event) => {
+      if (pendingPressState?.timer) clearTimeout(pendingPressState.timer);
+      let btn = isAddToCartElement(event.target);
+      let snapshot = btn ? captureClickSnapshot(btn) : null;
+
+      // If React unmounted/swapped the "ADD" button into a "+ 1 -" stepper between pointerdown and click:
+      if (!btn && pendingPressState && Date.now() - pendingPressState.at < 1200) {
+        btn = pendingPressState.btn;
+        snapshot = pendingPressState.snapshot;
       }
+      pendingPressState = null;
+
+      if (!btn || !snapshot) return;
+      dispatchSnapshot(btn, snapshot);
     },
     true
   );

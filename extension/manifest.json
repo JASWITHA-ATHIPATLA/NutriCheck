@@ -6,7 +6,9 @@
   "permissions": ["storage"],
   "host_permissions": [
     "https://*.amazon.com/*",
+    "https://amazon.com/*",
     "https://*.amazon.in/*",
+    "https://amazon.in/*",
     "https://*.amazon.co.uk/*",
     "https://*.amazon.ca/*",
     "https://*.amazon.de/*",
@@ -17,9 +19,13 @@
     "https://*.amazon.es/*",
     "https://*.amazon.it/*",
     "https://*.flipkart.com/*",
+    "https://flipkart.com/*",
     "https://*.swiggy.com/*",
+    "https://swiggy.com/*",
     "https://*.zomato.com/*",
+    "https://zomato.com/*",
     "https://*.blinkit.com/*",
+    "https://blinkit.com/*",
     "https://*.openfoodfacts.org/*",
     "http://localhost:3000/*",
     "http://127.0.0.1:3000/*",
@@ -34,7 +40,9 @@
     {
       "matches": [
         "https://*.amazon.com/*",
+        "https://amazon.com/*",
         "https://*.amazon.in/*",
+        "https://amazon.in/*",
         "https://*.amazon.co.uk/*",
         "https://*.amazon.ca/*",
         "https://*.amazon.de/*",
@@ -45,9 +53,13 @@
         "https://*.amazon.es/*",
         "https://*.amazon.it/*",
         "https://*.flipkart.com/*",
+        "https://flipkart.com/*",
         "https://*.swiggy.com/*",
+        "https://swiggy.com/*",
         "https://*.zomato.com/*",
-        "https://*.blinkit.com/*"
+        "https://zomato.com/*",
+        "https://*.blinkit.com/*",
+        "https://blinkit.com/*"
       ],
       "js": ["content.js"],
       "run_at": "document_idle"
