@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
 import {
   AlertCircle,
+  AlertTriangle,
   Check,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
   Copy,
   ExternalLink,
   Image as ImageIcon,
+  Lightbulb,
   PieChart,
   Puzzle,
   ShoppingCart,
@@ -339,14 +342,6 @@ export function AmazonConnectView({
                 const platform = inferPlatformLabel(ev);
                 const isChartOpen = expandedChartId === ev.event_id;
 
-                const badgeCls = !a
-                  ? 'is-pending'
-                  : a.classification === 'Healthy'
-                  ? 'is-healthy'
-                  : a.classification === 'Moderate'
-                  ? 'is-moderate'
-                  : 'is-unhealthy';
-
                 const resolvedScan =
                   scan ||
                   (ev.ingredients_text
@@ -385,157 +380,212 @@ export function AmazonConnectView({
                     )
                   : null;
 
-                return (
-                  <article key={ev.event_id} className="event-item">
-                    <div className="event-item-top">
-                      <div>
-                        <div className="store-meta-badges">
-                          <span className="store-chip">{platform}</span>
-                          {prof && (
-                            <span
-                              className={`risk-tag ${
-                                prof.riskLevel === 'LOW RISK'
-                                  ? 'is-low'
-                                  : prof.riskLevel === 'MODERATE RISK'
-                                  ? 'is-moderate'
-                                  : 'is-high'
-                              }`}
-                            >
-                              {prof.riskLevel}
-                            </span>
-                          )}
-                        </div>
-                        <div className="event-item-title">{ev.product_title}</div>
-                        <div className="event-item-meta">
-                          {ev.nutrition_source}
-                          {ev.matched_food ? ` (${ev.matched_food})` : ''}
-                        </div>
-                      </div>
+                const scoreTone = !a
+                  ? 'is-pending'
+                  : a.classification === 'Healthy'
+                  ? 'is-good'
+                  : a.classification === 'Moderate'
+                  ? 'is-moderate'
+                  : 'is-poor';
 
-                      <div className={`status-badge ${badgeCls}`}>
-                        {a ? (
-                          <span>
-                            {getVerdictLabel(a.classification)} ·{' '}
-                            <span className="tabular">{a.health_score}</span>
-                          </span>
-                        ) : (
-                          <span>Needs Nutrition</span>
-                        )}
+                const scorePillText = !a
+                  ? 'Pending nutrition info'
+                  : a.classification === 'Healthy'
+                  ? 'Good nutrition score'
+                  : a.classification === 'Moderate'
+                  ? 'Moderate nutrition score'
+                  : 'Poor nutrition score';
+
+                const riskTone = !prof
+                  ? 'is-moderate'
+                  : prof.riskLevel === 'LOW RISK'
+                  ? 'is-good'
+                  : prof.riskLevel === 'MODERATE RISK'
+                  ? 'is-moderate'
+                  : 'is-high';
+
+                const riskTitleText = !prof
+                  ? 'Pending check'
+                  : prof.riskLevel === 'LOW RISK'
+                  ? 'Low risk'
+                  : prof.riskLevel === 'MODERATE RISK'
+                  ? 'Moderate risk'
+                  : 'High risk';
+
+                const cleanedIngredients = ev.ingredients_text
+                  ? ev.ingredients_text.replace(
+                      /^ingredients(?:\s*\/\s*dish\s*notes)?\s*[:\-]?\s*/i,
+                      ''
+                    )
+                  : '';
+
+                const recommendationText =
+                  prof && prof.suggestions.length > 0
+                    ? prof.suggestions.join(' ')
+                    : a && a.classification === 'Healthy'
+                    ? 'Fits well with your saved health profile in normal portions.'
+                    : 'Consider unsweetened oats, plain nuts, or minimally processed snacks as alternatives.';
+
+                return (
+                  <article key={ev.event_id} className="pa-card">
+                    {/* Top Row: Product Analysis + Analyzed Pill */}
+                    <div className="pa-card-head">
+                      <div className="pa-card-head-title">
+                        <span>Product Analysis</span>
+                        <span className="store-chip">{platform}</span>
                       </div>
+                      <span className={`pa-status-pill ${a ? 'is-analyzed' : 'is-pending'}`}>
+                        {a ? 'Analyzed' : 'Needs Info'}
+                      </span>
                     </div>
 
-                    {/* Product Image above Ingredients */}
-                    <div className="store-product-hero">
-                      <div className="store-product-thumb-wrap">
+                    {/* Product Summary Row */}
+                    <div className="pa-product-row">
+                      <div className="pa-product-thumb">
                         {ev.image_url ? (
                           <img
                             src={ev.image_url}
                             alt={ev.product_title}
-                            className="store-product-thumb"
                             referrerPolicy="no-referrer"
                             onError={(e) => {
                               (e.currentTarget as HTMLImageElement).style.display = 'none';
                             }}
                           />
                         ) : (
-                          <div className="store-product-thumb-empty" aria-hidden="true">
-                            <ImageIcon size={24} />
-                            <span>{platform}</span>
+                          <div className="pa-thumb-empty" aria-hidden="true">
+                            <ImageIcon size={22} />
                           </div>
                         )}
                       </div>
 
-                      <div className="store-ingredients-banner">
-                        <div className="store-ingredients-label">Ingredients</div>
-                        <p className="store-ingredients-copy">
-                          {ev.ingredients_text
-                            ? ev.ingredients_text.replace(
-                                /^ingredients(?:\s*\/\s*dish\s*notes)?\s*[:\-]?\s*/i,
-                                ''
-                              )
-                            : 'No ingredient list captured from page yet.'}
-                        </p>
-                        {resolvedScan && (
-                          <div className="store-ing-badges">
-                            <span
-                              className={`eval-pill ${
-                                resolvedScan.verdict === 'Good'
-                                  ? 'is-good'
-                                  : resolvedScan.verdict === 'Moderate'
-                                  ? 'is-moderate'
-                                  : 'is-high'
-                              }`}
-                            >
-                              {resolvedScan.verdict} ({resolvedScan.score}/100)
-                            </span>
-                            <span className="amz-ing-counts">
-                              {ingGoodCount} good · {ingModCount} caution · {ingBadCount} bad
-                            </span>
-                          </div>
-                        )}
+                      <div className="pa-product-meta">
+                        <h3 className="pa-product-title">{ev.product_title}</h3>
+                        <div className="pa-product-sub">
+                          {platform}
+                          {ev.matched_food
+                            ? ` · ${ev.matched_food}`
+                            : ev.nutrition_source
+                            ? ` · ${ev.nutrition_source}`
+                            : ''}
+                        </div>
+                        <span className={`pa-score-chip ${scoreTone}`}>
+                          {scorePillText}
+                        </span>
                       </div>
                     </div>
 
+                    {/* Nutrition score + Health assessment */}
                     {a && (
-                      <div className="data-table-wrap" style={{ margin: '10px 0' }}>
-                        <table className="data-table nutrition-table amz-mini-table">
-                          <thead>
-                            <tr>
-                              <th className="num">Calories</th>
-                              <th className="num">Sugars</th>
-                              <th className="num">Fat</th>
-                              <th className="num">Protein</th>
-                              <th className="num">Sodium</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            <tr>
-                              <td className="num">{a.nutrition.calories} kcal</td>
-                              <td className="num">{a.nutrition.sugars} g</td>
-                              <td className="num">{a.nutrition.fat} g</td>
-                              <td className="num">{a.nutrition.protein} g</td>
-                              <td className="num">{Math.round(a.nutrition.sodium_mg)} mg</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-
-                    <p className="card-subtitle" style={{ color: '#475569', marginTop: 6 }}>
-                      {a ? a.explanation : ev.message}
-                    </p>
-
-                    {prof && (
-                      <div
-                        className={`profile-alert-box is-${prof.level}`}
-                        style={{ marginTop: '10px', padding: '10px 12px' }}
-                      >
-                        <div className="profile-alert-head-row">
-                          <span className="profile-alert-head" style={{ fontSize: '13px' }}>
-                            {prof.headline}
-                          </span>
-                          <span
-                            className={`risk-tag ${
-                              prof.riskLevel === 'LOW RISK'
-                                ? 'is-low'
-                                : prof.riskLevel === 'MODERATE RISK'
-                                ? 'is-moderate'
-                                : 'is-high'
-                            }`}
-                          >
-                            {prof.riskLevel}
-                          </span>
-                        </div>
-                        <p className="card-subtitle" style={{ marginTop: '4px', color: 'inherit' }}>
-                          {prof.alerts.join(' · ')}
-                        </p>
-                        {prof.suggestions.length > 0 && (
-                          <div className="profile-suggestions-sub">
-                            <strong>Suggestion:</strong> {prof.suggestions.join(' ')}
+                      <div className="pa-score-grid">
+                        <div className="pa-score-cell">
+                          <div className="pa-metric-label">Nutrition score</div>
+                          <div className={`pa-score-big ${scoreTone}`}>
+                            {a.health_score}/100
                           </div>
-                        )}
+                          <div className="pa-metric-sub">
+                            {getVerdictLabel(a.classification)}
+                          </div>
+                        </div>
+
+                        <div className="pa-score-cell">
+                          <div className="pa-metric-label">Health assessment</div>
+                          <div className={`pa-risk-big ${riskTone}`}>
+                            {riskTitleText}
+                          </div>
+                          <div className="pa-metric-sub">
+                            {currentUser
+                              ? `For ${currentUser.fullName}`
+                              : 'For selected profile'}
+                          </div>
+                        </div>
                       </div>
                     )}
+
+                    {/* Ingredients Section */}
+                    {cleanedIngredients && (
+                      <div className="pa-ingredients-block">
+                        <div className="pa-section-heading-sm">
+                          <span>Ingredients</span>
+                          {resolvedScan && (
+                            <span className="amz-ing-counts">
+                              {ingGoodCount} good · {ingModCount} caution · {ingBadCount} bad
+                            </span>
+                          )}
+                        </div>
+                        <p className="pa-ingredients-text">{cleanedIngredients}</p>
+                      </div>
+                    )}
+
+                    {/* Nutrition Facts Grid */}
+                    {a && (
+                      <div className="pa-facts-section">
+                        <div className="pa-section-heading">Nutrition Facts</div>
+                        <div className="pa-facts-grid">
+                          <div className="pa-fact-tile">
+                            <div className="pa-fact-val">
+                              {Math.round(a.nutrition.calories)}
+                            </div>
+                            <div className="pa-fact-lbl">Calories (kcal)</div>
+                          </div>
+                          <div className="pa-fact-tile">
+                            <div className="pa-fact-val">{a.nutrition.sugars}</div>
+                            <div className="pa-fact-lbl">Sugar (g)</div>
+                          </div>
+                          <div className="pa-fact-tile">
+                            <div className="pa-fact-val">{a.nutrition.fat}</div>
+                            <div className="pa-fact-lbl">Fat (g)</div>
+                          </div>
+                          <div className="pa-fact-tile">
+                            <div className="pa-fact-val">{a.nutrition.protein}</div>
+                            <div className="pa-fact-lbl">Protein (g)</div>
+                          </div>
+                          <div className="pa-fact-tile">
+                            <div className="pa-fact-val">
+                              {Math.round(a.nutrition.sodium_mg)}
+                            </div>
+                            <div className="pa-fact-lbl">Sodium (mg)</div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Health Insights & Recommendation */}
+                    <div className="pa-insights-section">
+                      <div className="pa-section-heading">Health Insights</div>
+                      <div className="pa-insight-row">
+                        <span className={`pa-insight-icon ${riskTone}`}>
+                          {prof?.riskLevel === 'LOW RISK' ? (
+                            <CheckCircle2 size={16} />
+                          ) : (
+                            <AlertTriangle size={16} />
+                          )}
+                        </span>
+                        <div className="pa-insight-copy">
+                          <div className="pa-insight-title">
+                            {prof ? prof.headline : a ? a.cart_alert.title : 'Label needed'}
+                          </div>
+                          <p className="pa-insight-desc">
+                            {prof
+                              ? prof.alerts.join(' · ')
+                              : a
+                              ? a.explanation
+                              : ev.message}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="pa-insight-divider" />
+
+                      <div className="pa-insight-row">
+                        <span className="pa-insight-icon is-good">
+                          <Lightbulb size={16} />
+                        </span>
+                        <div className="pa-insight-copy">
+                          <div className="pa-insight-title">Recommendation</div>
+                          <p className="pa-insight-desc">{recommendationText}</p>
+                        </div>
+                      </div>
+                    </div>
 
                     {isChartOpen && a && (
                       <div style={{ marginTop: '12px' }}>
