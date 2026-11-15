@@ -127,11 +127,6 @@ export function AmazonConnectView({
   onClearEvents,
 }: AmazonConnectViewProps) {
   const { currentUser } = useAuth();
-  const [productTitle, setProductTitle] = useState('');
-  const [nutritionText, setNutritionText] = useState('');
-  const [ingredientsText, setIngredientsText] = useState('');
-  const [productUrl, setProductUrl] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [expandedChartId, setExpandedChartId] = useState<string | null>(null);
   const [addingQuickId, setAddingQuickId] = useState<string | null>(null);
@@ -151,18 +146,6 @@ export function AmazonConnectView({
       setCopiedUrl(true);
       setTimeout(() => setCopiedUrl(false), 2000);
     }
-  }
-
-  async function handleFormSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!productTitle.trim()) return;
-    await onAnalyzeAmazonText({
-      product_title: productTitle.trim(),
-      nutrition_text: nutritionText.trim(),
-      ingredients_text: ingredientsText.trim() || undefined,
-      product_url: productUrl.trim() || undefined,
-      image_url: imageUrl.trim() || undefined,
-    });
   }
 
   async function handleQuickAdd(item: QuickStoreProduct) {
@@ -260,115 +243,15 @@ export function AmazonConnectView({
         </div>
       </section>
 
+      {submitError && (
+        <div className="error-banner" role="alert" style={{ marginBottom: '16px' }}>
+          <AlertCircle size={16} />
+          <span>{submitError}</span>
+        </div>
+      )}
+
       <div className="two-col-grid">
         <div className="result-column">
-          <section className="card" aria-labelledby="amazon-paste-heading">
-            <div className="card-header">
-              <div>
-                <h2 id="amazon-paste-heading" className="card-title">
-                  Add Product to Cart &amp; Check
-                </h2>
-                <p className="card-subtitle">
-                  Enter any store item name, product image URL, and ingredients or nutrition text.
-                </p>
-              </div>
-            </div>
-
-            <form className="form-stack" onSubmit={handleFormSubmit}>
-              <div className="field">
-                <label htmlFor="amz-title" className="field-label">
-                  <span>Product Name</span>
-                  <span className="field-unit">Required</span>
-                </label>
-                <input
-                  id="amz-title"
-                  type="text"
-                  required
-                  className="field-input"
-                  placeholder="e.g., India Gate Basmati Rice, Mixed Dry Fruits, or Maggi"
-                  value={productTitle}
-                  onChange={(e) => setProductTitle(e.target.value)}
-                />
-              </div>
-
-              <div className="field">
-                <label htmlFor="amz-ingredients" className="field-label">
-                  <span>Ingredients Text</span>
-                  <span className="field-unit">Shown above nutrition details</span>
-                </label>
-                <textarea
-                  id="amz-ingredients"
-                  className="field-input field-textarea"
-                  style={{ minHeight: '72px' }}
-                  placeholder="e.g., Ingredients: Wholegrain Rolled Oats, Almonds, Chia Seeds"
-                  value={ingredientsText}
-                  onChange={(e) => setIngredientsText(e.target.value)}
-                />
-              </div>
-
-              <div className="field">
-                <label htmlFor="amz-nutrition" className="field-label">
-                  <span>Nutrition Facts Text</span>
-                  <span className="field-unit">Optional</span>
-                </label>
-                <textarea
-                  id="amz-nutrition"
-                  className="field-input field-textarea"
-                  style={{ minHeight: '68px' }}
-                  placeholder="e.g., Calories 356, Sugars 0.1g, Fat 0.6g, Protein 7.1g, Sodium 5mg"
-                  value={nutritionText}
-                  onChange={(e) => setNutritionText(e.target.value)}
-                />
-              </div>
-
-              <div className="field-grid">
-                <div className="field">
-                  <label htmlFor="amz-img" className="field-label">
-                    <span>Product Image URL</span>
-                    <span className="field-unit">Optional</span>
-                  </label>
-                  <input
-                    id="amz-img"
-                    type="url"
-                    className="field-input"
-                    placeholder="https://m.media-amazon.com/images/..."
-                    value={imageUrl}
-                    onChange={(e) => setImageUrl(e.target.value)}
-                  />
-                </div>
-
-                <div className="field">
-                  <label htmlFor="amz-url" className="field-label">
-                    <span>Store Product Link</span>
-                    <span className="field-unit">Optional</span>
-                  </label>
-                  <input
-                    id="amz-url"
-                    type="url"
-                    className="field-input"
-                    placeholder="https://www.amazon.in/dp/..."
-                    value={productUrl}
-                    onChange={(e) => setProductUrl(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              {submitError && (
-                <div className="error-banner" role="alert">
-                  <AlertCircle size={16} />
-                  <span>{submitError}</span>
-                </div>
-              )}
-
-              <button type="submit" className="btn-primary" disabled={isSubmitting}>
-                <ShoppingCart size={16} />
-                <span>
-                  {isSubmitting ? 'Analyzing Product...' : 'Add to Cart & Analyze'}
-                </span>
-              </button>
-            </form>
-          </section>
-
           <section className="card" aria-labelledby="amazon-ext-heading">
             <div className="card-header">
               <div>
@@ -566,7 +449,10 @@ export function AmazonConnectView({
                         <div className="store-ingredients-label">Ingredients</div>
                         <p className="store-ingredients-copy">
                           {ev.ingredients_text
-                            ? ev.ingredients_text.replace(/^ingredients\s*[:\-]?\s*/i, '')
+                            ? ev.ingredients_text.replace(
+                                /^ingredients(?:\s*\/\s*dish\s*notes)?\s*[:\-]?\s*/i,
+                                ''
+                              )
                             : 'No ingredient list captured from page yet.'}
                         </p>
                         {resolvedScan && (
@@ -719,21 +605,13 @@ export function AmazonConnectView({
                       )}
 
                       {!a && (
-                        <button
-                          type="button"
+                        <Link
+                          to="/scan"
                           className="btn-secondary"
                           style={{ padding: '6px 10px', fontSize: '12.5px' }}
-                          onClick={() => {
-                            setProductTitle(ev.product_title);
-                            setProductUrl(ev.product_url || '');
-                            setImageUrl(ev.image_url || '');
-                            setNutritionText('');
-                            setIngredientsText(ev.ingredients_text || '');
-                            document.getElementById('amz-nutrition')?.focus();
-                          }}
                         >
-                          Enter Nutrition Here
-                        </button>
+                          Scan Packet Label
+                        </Link>
                       )}
 
                       {ev.product_url && (

@@ -407,7 +407,10 @@ function NutriCheckShell() {
               {popupEvent.ingredients_text && (
                 <div className="atc-top-popup-ingredients">
                   <strong>Ingredients:</strong>{' '}
-                  {popupEvent.ingredients_text.replace(/^ingredients\s*[:\-]?\s*/i, '')}
+                  {popupEvent.ingredients_text.replace(
+                    /^ingredients(?:\s*\/\s*dish\s*notes)?\s*[:\-]?\s*/i,
+                    ''
+                  )}
                 </div>
               )}
 
