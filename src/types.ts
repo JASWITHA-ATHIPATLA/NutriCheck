@@ -167,3 +167,54 @@ export interface PacketScanResult {
   summary: string;
   nutrition_analysis: PredictionResult | null;
 }
+
+export type HealthCondition =
+  | 'diabetes'
+  | 'hypertension'
+  | 'heart_disease'
+  | 'kidney_disease'
+  | 'obesity';
+
+export type RiskLevel = 'LOW RISK' | 'MODERATE RISK' | 'HIGH RISK';
+
+export interface UserHealthProfile {
+  id: string;
+  fullName: string;
+  email: string;
+  password: string;
+  age: number;
+  conditions: HealthCondition[];
+  allergies: string[];
+  dietaryNotes: string;
+  createdAt: string;
+}
+
+export interface CatalogProduct {
+  id: string;
+  name: string;
+  brand: string;
+  category: string;
+  servingSize: string;
+  calories: number;
+  sugar_g: number;
+  sodium_mg: number;
+  saturated_fat_g: number;
+  fat_g: number;
+  protein_g: number;
+  fiber_g: number;
+  ingredients: string;
+  allergens: string[];
+  storeUrl?: string;
+  isCustom?: boolean;
+}
+
+export interface PersonalizedCheckResult {
+  riskLevel: RiskLevel;
+  tone: 'good' | 'moderate' | 'bad';
+  score: number;
+  ageGroupLabel: string;
+  reasons: string[];
+  cautions: string[];
+  matchedAllergens: string[];
+  triggeredConditions: string[];
+}

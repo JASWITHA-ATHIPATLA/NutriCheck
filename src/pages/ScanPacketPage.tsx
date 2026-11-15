@@ -5,13 +5,21 @@ import {
   Loader2,
   ScanLine,
   ShieldAlert,
+  SlidersHorizontal,
   ThumbsUp,
   Upload,
   X,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import Tesseract from 'tesseract.js';
 import { BreakdownPieChart } from '../components/BreakdownPieChart';
 import { NutritionGauge } from '../components/NutritionGauge';
+import { useAuth } from '../context/AuthContext';
+import {
+  HEALTH_CONDITION_OPTIONS,
+  evaluateProfileAlertsForValues,
+  getAgeGroupLabel,
+} from '../utils/healthProfileEngine';
 import { scanPacketLocally } from '../utils/localNutritionEngine';
 import type { PacketScanResult } from '../types';
 
@@ -37,6 +45,7 @@ const SAMPLE_PACKETS = [
 ];
 
 export function ScanPacketPage() {
+  const { currentUser } = useAuth();
   const [productName, setProductName] = useState('');
   const [rawText, setRawText] = useState('');
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
@@ -224,6 +233,12 @@ export function ScanPacketPage() {
     ? 'moderate'
     : 'bad';
 
+  const activeConditionLabels = currentUser
+    ? HEALTH_CONDITION_OPTIONS.filter((opt) =>
+        currentUser.conditions.includes(opt.key)
+      ).map((opt) => opt.label)
+    : [];
+
   return (
     <div className="page-shell">
       <div className="page-header">
@@ -231,10 +246,32 @@ export function ScanPacketPage() {
           <h1 className="page-title">Scan Packet Ingredients</h1>
           <p className="page-subtitle">
             Upload a photo of any food packet&apos;s back label, snap with your camera,
-            or paste the ingredients list to see if it is Good, Moderate, or Not Good.
+            or paste the ingredients list to see how it fits your saved health profile.
           </p>
         </div>
       </div>
+
+      {currentUser && (
+        <div className="active-profile-bar" role="region" aria-label="Active health profile">
+          <div className="active-profile-bar-copy">
+            <strong>Personalized screening for {currentUser.fullName}</strong>
+            <span>
+              {' '}
+              · {getAgeGroupLabel(currentUser.age)} ({currentUser.age} yrs)
+              {activeConditionLabels.length > 0
+                ? ` · Conditions: ${activeConditionLabels.join(', ')}`
+                : ' · General health thresholds'}
+              {currentUser.allergies.length > 0
+                ? ` · Allergies: ${currentUser.allergies.join(', ')}`
+                : ''}
+            </span>
+          </div>
+          <Link to="/profile" className="text-action-link" style={{ flexShrink: 0 }}>
+            <SlidersHorizontal size={14} />
+            <span>Edit health profile</span>
+          </Link>
+        </div>
+      )}
 
       <div className="analyzer-grid">
         <section className="card" aria-labelledby="scan-input-heading">
@@ -479,6 +516,55 @@ export function ScanPacketPage() {
                   <div className="explanation-heading">Plain-English Verdict</div>
                   <p className="explanation-text">{result.summary}</p>
                 </div>
+
+                {(() => {
+                  const profileAlert = evaluateProfileAlertsForValues(
+                    {
+                      productName: result.product_name,
+                      calories: nut?.nutrition.calories ?? 0,
+                      sugars: nut?.nutrition.sugars ?? 0,
+                      sodium_mg: nut?.nutrition.sodium_mg ?? 0,
+                      fat: nut?.nutrition.fat ?? 0,
+                      ingredientsText: `${result.parsed_ingredients.join(', ')} ${rawText}`,
+                      baseScore: result.score,
+                    },
+                    currentUser
+                  );
+                  if (!profileAlert) return null;
+                  const boxClass =
+                    profileAlert.level === 'good'
+                      ? 'profile-alert-box is-good'
+                      : profileAlert.level === 'warning'
+                      ? 'profile-alert-box is-warning'
+                      : 'profile-alert-box is-danger';
+                  const riskBadgeCls =
+                    profileAlert.riskLevel === 'LOW RISK'
+                      ? 'is-low'
+                      : profileAlert.riskLevel === 'MODERATE RISK'
+                      ? 'is-moderate'
+                      : 'is-high';
+                  return (
+                    <div className={boxClass} role="status">
+                      <div className="profile-alert-head-row">
+                        <span className="profile-alert-head">{profileAlert.headline}</span>
+                        <span className={`risk-tag ${riskBadgeCls}`}>
+                          {profileAlert.riskLevel}
+                        </span>
+                      </div>
+                      <ul className="detail-bullet-list" style={{ margin: '8px 0 0' }}>
+                        {profileAlert.alerts.map((msg, i) => (
+                          <li key={i}>{msg}</li>
+                        ))}
+                      </ul>
+                      {profileAlert.suggestions.length > 0 && (
+                        <div className="profile-suggestions-sub">
+                          <strong>Suggestions for your health:</strong>{' '}
+                          {profileAlert.suggestions.join(' ')}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 <div className="score-visual-grid">
                   <div className="gauge-panel">

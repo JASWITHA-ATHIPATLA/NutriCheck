@@ -13,35 +13,19 @@ import {
   useNavigate,
 } from 'react-router-dom';
 import { AmazonConnectView } from './components/AmazonConnectView';
-import { AnalysisResult } from './components/AnalysisResult';
-import { CartPanel } from './components/CartPanel';
-import { CatalogGroceryDemo } from './components/CatalogGroceryDemo';
 import { Footer } from './components/Footer';
-import { ModelMetricsView } from './components/ModelMetricsView';
-import { NutritionForm } from './components/NutritionForm';
 import { TopBar } from './components/TopBar';
-import { AboutPage } from './pages/AboutPage';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { AddProductPage } from './pages/AddProductPage';
+import { DashboardPage } from './pages/DashboardPage';
 import { HomePage } from './pages/HomePage';
+import { LoginPage } from './pages/LoginPage';
+import { ProductDetailPage } from './pages/ProductDetailPage';
+import { ProfilePage } from './pages/ProfilePage';
+import { RegisterPage } from './pages/RegisterPage';
 import { ScanPacketPage } from './pages/ScanPacketPage';
-import {
-  FALLBACK_REPORT,
-  FALLBACK_SAMPLES,
-  analyzeAmazonItemLocally,
-  analyzeNutritionLocally,
-  searchOpenFoodFactsClient,
-} from './utils/localNutritionEngine';
-import type {
-  AmazonCartEvent,
-  CartAlert,
-  CartItem,
-  CatalogFoodItem,
-  EvaluationReport,
-  HealthLabel,
-  NutritionFormValues,
-  PacketScanResult,
-  PredictionResult,
-  SampleFood,
-} from './types';
+import { analyzeAmazonItemLocally } from './utils/localNutritionEngine';
+import type { AmazonCartEvent } from './types';
 
 const AMAZON_STORAGE_KEY = 'nutricheck_amazon_events_v1';
 
@@ -64,15 +48,6 @@ function writeStoredAmazonEvents(events: AmazonCartEvent[]) {
   }
 }
 
-const EMPTY_FORM: NutritionFormValues = {
-  food_name: '',
-  calories: '',
-  sugars: '',
-  fat: '',
-  protein: '',
-  sodium_mg: '',
-};
-
 function ScrollToTop() {
   const { pathname } = useLocation();
   useEffect(() => {
@@ -81,30 +56,25 @@ function ScrollToTop() {
   return null;
 }
 
+function RequireAuth({ children }: { children: React.ReactElement }) {
+  const { currentUser } = useAuth();
+  const location = useLocation();
+  if (!currentUser) {
+    return (
+      <Navigate
+        to="/login"
+        state={{ from: `${location.pathname}${location.search}` }}
+        replace
+      />
+    );
+  }
+  return children;
+}
+
 function NutriCheckShell() {
   const navigate = useNavigate();
   const location = useLocation();
-
-  const [formValues, setFormValues] = useState<NutritionFormValues>(EMPTY_FORM);
-  const [samples, setSamples] = useState<SampleFood[]>(FALLBACK_SAMPLES);
-  const [selectedSampleName, setSelectedSampleName] = useState('');
-  const [report, setReport] = useState<EvaluationReport | null>(FALLBACK_REPORT);
-  const [metricsError, setMetricsError] = useState<string | null>(null);
-
-  const [catalogItems, setCatalogItems] = useState<CatalogFoodItem[]>([]);
-  const [catalogQuery, setCatalogQuery] = useState('');
-  const [analyzingGroceryItem, setAnalyzingGroceryItem] = useState<string | null>(null);
-
-  const [prediction, setPrediction] = useState<PredictionResult | null>(null);
-  const [activeIngredientScan, setActiveIngredientScan] =
-    useState<PacketScanResult | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
-
-  const [cartItems, setCartItems] = useState<CartItem[]>([]);
-  const [activeAlert, setActiveAlert] = useState<
-    (CartAlert & { itemId?: string }) | null
-  >(null);
+  const { currentUser } = useAuth();
 
   const [amazonEvents, setAmazonEvents] = useState<AmazonCartEvent[]>(() =>
     typeof window !== 'undefined' ? readStoredAmazonEvents() : []
@@ -115,7 +85,6 @@ function NutriCheckShell() {
     level: 'success' | 'warning' | 'danger' | 'info';
     title: string;
     message: string;
-    needsNutrition?: boolean;
   } | null>(null);
   const seenEventIdsRef = useRef<Set<string>>(new Set());
   const initializedEventsRef = useRef(false);
@@ -138,40 +107,6 @@ function NutriCheckShell() {
     });
   }
 
-  function pushToCartWithAlert(res: PredictionResult, customId?: string) {
-    const id = customId || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const newItem: CartItem = {
-      id,
-      food_name: res.food_name,
-      classification: res.classification,
-      health_score: res.health_score,
-      calories: res.nutrition.calories,
-      sugars: res.nutrition.sugars,
-      fat: res.nutrition.fat,
-      protein: res.nutrition.protein,
-      sodium_mg: res.nutrition.sodium_mg,
-      cart_alert: res.cart_alert,
-    };
-
-    setCartItems((prev) => {
-      if (prev.some((item) => item.id === id)) return prev;
-      return [newItem, ...prev];
-    });
-    setActiveAlert({ ...res.cart_alert, itemId: id });
-  }
-
-  function applyPredictionToForm(res: PredictionResult) {
-    setPrediction(res);
-    setFormValues({
-      food_name: res.food_name,
-      calories: String(res.nutrition.calories),
-      sugars: String(res.nutrition.sugars),
-      fat: String(res.nutrition.fat),
-      protein: String(res.nutrition.protein),
-      sodium_mg: String(res.nutrition.sodium_mg),
-    });
-  }
-
   function inferStorePlatform(ev: AmazonCartEvent): string {
     if (ev.source_platform) return ev.source_platform;
     const hay = `${ev.product_url || ''} ${ev.source || ''}`.toLowerCase();
@@ -187,9 +122,6 @@ function NutriCheckShell() {
   function handleIncomingAmazonEvent(ev: AmazonCartEvent, showBanner = true) {
     const storeName = inferStorePlatform(ev);
     if (ev.status === 'analyzed' && ev.analysis) {
-      applyPredictionToForm(ev.analysis);
-      setActiveIngredientScan(ev.ingredient_scan || null);
-      pushToCartWithAlert(ev.analysis, `amz-${ev.event_id}`);
       if (showBanner) {
         const verdictWord =
           ev.analysis.classification === 'Healthy'
@@ -201,85 +133,19 @@ function NutriCheckShell() {
           level: ev.analysis.cart_alert.level,
           title: `${storeName} Item Checked: ${verdictWord} (${ev.analysis.health_score}/100)`,
           message: ev.message || `${ev.product_title} — ${ev.analysis.explanation}`,
-          needsNutrition: false,
         });
       }
       return;
     }
 
-    setPrediction(null);
-    setActiveIngredientScan(null);
-    setFormValues({
-      ...EMPTY_FORM,
-      food_name: ev.product_title,
-    });
     if (showBanner) {
       setAmazonNotice({
         level: 'warning',
         title: `${storeName} Item Captured: ${ev.product_title}`,
         message:
           ev.message ||
-          `Nutrition label numbers were not found on the ${storeName} page. Enter nutrition values below or paste label text to classify.`,
-        needsNutrition: true,
+          `Nutrition label numbers were not found on the ${storeName} page. Open Store Connect to paste label numbers or ingredients.`,
       });
-    }
-  }
-
-  async function runPrediction(
-    payload: {
-      food_name: string;
-      calories: number;
-      sugars: number;
-      fat: number;
-      protein: number;
-      sodium_mg: number;
-    },
-    autoAddAlert = false
-  ) {
-    setIsAnalyzing(true);
-    setFormError(null);
-    setActiveIngredientScan(null);
-    try {
-      const response = await fetch('/api/predict', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      if (response.ok) {
-        const data: PredictionResult = await response.json();
-        setPrediction(data);
-        if (autoAddAlert) {
-          pushToCartWithAlert(data);
-        }
-        return;
-      }
-
-      if (response.status === 422) {
-        const errBody = await response.json().catch(() => null);
-        throw new Error(errBody?.detail || `Invalid nutrition input (${response.status})`);
-      }
-
-      // Static Vercel fallback when Python backend is not hosted
-      const localRes = analyzeNutritionLocally(payload);
-      setPrediction(localRes);
-      if (autoAddAlert) {
-        pushToCartWithAlert(localRes);
-      }
-    } catch (err) {
-      if (err instanceof TypeError || (err instanceof Error && /failed to fetch|network/i.test(err.message))) {
-        const localRes = analyzeNutritionLocally(payload);
-        setPrediction(localRes);
-        if (autoAddAlert) {
-          pushToCartWithAlert(localRes);
-        }
-      } else {
-        setFormError(
-          err instanceof Error ? err.message : 'Failed to analyze nutrition values.'
-        );
-      }
-    } finally {
-      setIsAnalyzing(false);
     }
   }
 
@@ -288,43 +154,14 @@ function NutriCheckShell() {
 
     const params = new URLSearchParams(window.location.search);
     const itemName = params.get('item') || params.get('food');
-    const calParam = params.get('calories');
-    const sugParam = params.get('sugars');
-    const fatParam = params.get('fat');
-    const proParam = params.get('protein');
-    const sodParam = params.get('sodium_mg');
-    const hasCalorieParams = Boolean(
-      itemName && calParam && sugParam && fatParam && proParam && sodParam
-    );
 
     const initialStored = readStoredAmazonEvents();
     initialStored.forEach((ev) => seenEventIdsRef.current.add(ev.event_id));
 
-    async function loadInitialData() {
+    async function loadInitialEvents() {
       try {
-        const [samplesRes, metricsRes, eventsRes, foodsRes] = await Promise.all([
-          fetch('/api/samples').catch(() => null),
-          fetch('/api/metrics').catch(() => null),
-          fetch('/api/amazon/cart-events').catch(() => null),
-          fetch('/api/foods?limit=8').catch(() => null),
-        ]);
-
-        const apiOnline = Boolean(samplesRes && samplesRes.ok);
-        backendAvailableRef.current = apiOnline;
-
-        if (!cancelled && samplesRes?.ok) {
-          const sampleData: SampleFood[] = await samplesRes.json();
-          setSamples(sampleData);
-        }
-
-        if (!cancelled && metricsRes?.ok) {
-          const metricsData: EvaluationReport = await metricsRes.json();
-          setReport(metricsData);
-          setMetricsError(null);
-        } else if (!cancelled) {
-          setReport(FALLBACK_REPORT);
-          setMetricsError(null);
-        }
+        const eventsRes = await fetch('/api/amazon/cart-events').catch(() => null);
+        backendAvailableRef.current = Boolean(eventsRes && eventsRes.ok);
 
         let loadedEvents: AmazonCartEvent[] = [...initialStored];
         if (!cancelled && eventsRes?.ok) {
@@ -336,54 +173,13 @@ function NutriCheckShell() {
         loadedEvents.forEach((ev) => seenEventIdsRef.current.add(ev.event_id));
         initializedEventsRef.current = true;
 
-        const analyzedItems: CartItem[] = loadedEvents
-          .filter((ev) => ev.status === 'analyzed' && ev.analysis !== null)
-          .map((ev) => {
-            const a = ev.analysis!;
-            return {
-              id: `amz-${ev.event_id}`,
-              food_name: a.food_name,
-              classification: a.classification,
-              health_score: a.health_score,
-              calories: a.nutrition.calories,
-              sugars: a.nutrition.sugars,
-              fat: a.nutrition.fat,
-              protein: a.nutrition.protein,
-              sodium_mg: a.nutrition.sodium_mg,
-              cart_alert: a.cart_alert,
-            };
-          });
-        if (!cancelled && analyzedItems.length > 0) {
-          setCartItems((prev) => {
-            const existingIds = new Set(prev.map((p) => p.id));
-            return [
-              ...prev,
-              ...analyzedItems.filter((item) => !existingIds.has(item.id)),
-            ];
-          });
-        }
-
-        if (!cancelled && !hasCalorieParams && !itemName && loadedEvents.length > 0) {
-          handleIncomingAmazonEvent(loadedEvents[0], false);
-        }
-
-        if (!cancelled && foodsRes?.ok) {
-          const foodData: CatalogFoodItem[] = await foodsRes.json();
-          setCatalogItems(foodData);
-        } else if (!cancelled) {
-          const clientFoods = await searchOpenFoodFactsClient('', 8);
-          setCatalogItems(clientFoods);
-        }
-
-        if (!cancelled && itemName && !hasCalorieParams) {
+        if (!cancelled && itemName) {
           const matchingExisting = loadedEvents.find(
             (ev) => ev.product_title.toLowerCase() === itemName.toLowerCase()
           );
           if (matchingExisting) {
             handleIncomingAmazonEvent(matchingExisting, true);
-            if (matchingExisting.status === 'needs_nutrition') {
-              navigate('/amazon');
-            }
+            navigate('/amazon');
           } else {
             navigate('/amazon');
             void handleAnalyzeAmazonText({
@@ -395,41 +191,18 @@ function NutriCheckShell() {
       } catch {
         if (!cancelled) {
           backendAvailableRef.current = false;
-          setReport(FALLBACK_REPORT);
         }
       }
     }
 
-    loadInitialData();
-
-    if (hasCalorieParams && itemName) {
-      const payload = {
-        food_name: itemName,
-        calories: Number(calParam),
-        sugars: Number(sugParam),
-        fat: Number(fatParam),
-        protein: Number(proParam),
-        sodium_mg: Number(sodParam),
-      };
-      if (!Object.values(payload).some((v) => typeof v === 'number' && Number.isNaN(v))) {
-        setFormValues({
-          food_name: payload.food_name,
-          calories: String(payload.calories),
-          sugars: String(payload.sugars),
-          fat: String(payload.fat),
-          protein: String(payload.protein),
-          sodium_mg: String(payload.sodium_mg),
-        });
-        void runPrediction(payload, true);
-      }
-    }
+    void loadInitialEvents();
 
     return () => {
       cancelled = true;
     };
   }, []);
 
-  // Listen to real-time Chrome Extension tab bridge sync (works on Vercel & localhost!)
+  // Listen to real-time Chrome Extension tab bridge sync (works on Vercel & localhost)
   useEffect(() => {
     function handleBridgeMessage(event: MessageEvent) {
       if (event.origin !== window.location.origin) return;
@@ -445,16 +218,6 @@ function NutriCheckShell() {
 
       if (unseen.length > 0) {
         handleIncomingAmazonEvent(unseen[0], true);
-      } else {
-        const itemParam = new URLSearchParams(window.location.search).get('item');
-        if (itemParam) {
-          const matched = incoming.find(
-            (ev) => ev?.product_title?.toLowerCase() === itemParam.toLowerCase() && ev.ingredient_scan
-          );
-          if (matched?.ingredient_scan) {
-            setActiveIngredientScan(matched.ingredient_scan);
-          }
-        }
       }
     }
 
@@ -463,40 +226,7 @@ function NutriCheckShell() {
     return () => window.removeEventListener('message', handleBridgeMessage);
   }, []);
 
-  // Live search across local dataset + Open Food Facts
-  useEffect(() => {
-    const controller = new AbortController();
-    const handle = window.setTimeout(async () => {
-      try {
-        if (backendAvailableRef.current) {
-          const res = await fetch(
-            `/api/foods?q=${encodeURIComponent(catalogQuery)}&limit=8`,
-            { signal: controller.signal }
-          );
-          if (res.ok) {
-            const list: CatalogFoodItem[] = await res.json();
-            setCatalogItems(list);
-            return;
-          }
-          backendAvailableRef.current = false;
-        }
-        const clientList = await searchOpenFoodFactsClient(catalogQuery, 8);
-        setCatalogItems(clientList);
-      } catch {
-        if (!controller.signal.aborted) {
-          const clientList = await searchOpenFoodFactsClient(catalogQuery, 8);
-          setCatalogItems(clientList);
-        }
-      }
-    }, 260);
-
-    return () => {
-      controller.abort();
-      window.clearTimeout(handle);
-    };
-  }, [catalogQuery]);
-
-  // Poll backend for live Amazon extension Add-to-Cart events when Python backend is running
+  // Poll backend for live store extension events when local Python backend is running
   useEffect(() => {
     const timer = window.setInterval(async () => {
       if (!backendAvailableRef.current) return;
@@ -531,151 +261,6 @@ function NutriCheckShell() {
 
     return () => window.clearInterval(timer);
   }, []);
-
-  async function handleCatalogAddToCart(item: CatalogFoodItem) {
-    setAnalyzingGroceryItem(item.food);
-    setSelectedSampleName('');
-    setFormValues({
-      food_name: item.food,
-      calories: String(item.calories),
-      sugars: String(item.sugars),
-      fat: String(item.fat),
-      protein: String(item.protein),
-      sodium_mg: String(item.sodium_mg),
-    });
-
-    await runPrediction(
-      {
-        food_name: item.food,
-        calories: item.calories,
-        sugars: item.sugars,
-        fat: item.fat,
-        protein: item.protein,
-        sodium_mg: item.sodium_mg,
-      },
-      true
-    );
-
-    setAnalyzingGroceryItem(null);
-    requestAnimationFrame(() => {
-      document
-        .getElementById('live-analysis-anchor')
-        ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    });
-  }
-
-  function handleFieldChange(field: keyof NutritionFormValues, value: string) {
-    setSelectedSampleName('');
-    setFormValues((prev) => ({ ...prev, [field]: value }));
-  }
-
-  function applySample(sample: SampleFood) {
-    setSelectedSampleName(sample.food);
-    setFormValues({
-      food_name: sample.food,
-      calories: String(sample.calories),
-      sugars: String(sample.sugars),
-      fat: String(sample.fat),
-      protein: String(sample.protein),
-      sodium_mg: String(sample.sodium_mg),
-    });
-    void runPrediction({
-      food_name: sample.food,
-      calories: sample.calories,
-      sugars: sample.sugars,
-      fat: sample.fat,
-      protein: sample.protein,
-      sodium_mg: sample.sodium_mg,
-    });
-  }
-
-  function handleSelectSample(foodName: string) {
-    if (!foodName) {
-      setSelectedSampleName('');
-      return;
-    }
-    const found = samples.find((s) => s.food === foodName);
-    if (found) {
-      applySample(found);
-    }
-  }
-
-  function handleQuickPreset(label: HealthLabel) {
-    const found = samples.find((s) => s.dataset_label === label);
-    if (found) {
-      applySample(found);
-      return;
-    }
-
-    const fallback: Record<HealthLabel, SampleFood> = {
-      Healthy: {
-        food: 'Broccoli Cooked',
-        calories: 98,
-        sugars: 3.9,
-        fat: 1.1,
-        protein: 6.7,
-        sodium_mg: 100,
-        dataset_label: 'Healthy',
-        source_group: 'fallback',
-      },
-      Moderate: {
-        food: 'Pepperoni Pizza Slice',
-        calories: 308,
-        sugars: 4.2,
-        fat: 12.6,
-        protein: 12.7,
-        sodium_mg: 700,
-        dataset_label: 'Moderate',
-        source_group: 'fallback',
-      },
-      Unhealthy: {
-        food: 'Root Beer',
-        calories: 202,
-        sugars: 52.3,
-        fat: 0,
-        protein: 0,
-        sodium_mg: 68,
-        dataset_label: 'Unhealthy',
-        source_group: 'fallback',
-      },
-    };
-    applySample(fallback[label]);
-  }
-
-  function handleSubmit(event: React.FormEvent) {
-    event.preventDefault();
-    const calories = Number(formValues.calories);
-    const sugars = Number(formValues.sugars);
-    const fat = Number(formValues.fat);
-    const protein = Number(formValues.protein);
-    const sodium_mg = Number(formValues.sodium_mg);
-
-    if (
-      [calories, sugars, fat, protein, sodium_mg].some(
-        (v) => Number.isNaN(v) || v < 0
-      )
-    ) {
-      setFormError('Please enter valid non-negative numeric values for all nutrients.');
-      return;
-    }
-
-    void runPrediction({
-      food_name: formValues.food_name.trim() || 'Custom Food Item',
-      calories,
-      sugars,
-      fat,
-      protein,
-      sodium_mg,
-    });
-  }
-
-  function handleReset() {
-    setFormValues(EMPTY_FORM);
-    setSelectedSampleName('');
-    setPrediction(null);
-    setActiveIngredientScan(null);
-    setFormError(null);
-  }
 
   async function handleAnalyzeAmazonText(payload: {
     product_title: string;
@@ -716,7 +301,7 @@ function NutriCheckShell() {
       handleIncomingAmazonEvent(ev, true);
     } catch (err) {
       setAmazonError(
-        err instanceof Error ? err.message : 'Unable to analyze Amazon item.'
+        err instanceof Error ? err.message : 'Unable to analyze store item.'
       );
     } finally {
       setIsSubmittingAmazon(false);
@@ -745,42 +330,9 @@ function NutriCheckShell() {
     await fetch('/api/amazon/cart-events', { method: 'DELETE' }).catch(() => {});
   }
 
-  function handleInspectEventInAnalyzer(ev: AmazonCartEvent) {
-    if (ev.analysis) {
-      applyPredictionToForm(ev.analysis);
-      setActiveIngredientScan(ev.ingredient_scan || null);
-      setActiveAlert({ ...ev.analysis.cart_alert, itemId: `amz-${ev.event_id}` });
-      navigate('/analyzer');
-      requestAnimationFrame(() => {
-        document
-          .getElementById('live-analysis-anchor')
-          ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      });
-      return;
-    }
-
-    setPrediction(null);
-    setActiveIngredientScan(null);
-    setFormValues({
-      ...EMPTY_FORM,
-      food_name: ev.product_title,
-    });
-    navigate('/analyzer');
-    requestAnimationFrame(() => {
-      document
-        .getElementById('manual-analyzer-section')
-        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  }
-
-  function handleRemoveCartItem(id: string) {
-    setCartItems((prev) => prev.filter((item) => item.id !== id));
-    if (activeAlert?.itemId === id) {
-      setActiveAlert(null);
-    }
-  }
-
-  const showLiveNotice = amazonNotice && location.pathname !== '/';
+  const showLiveNotice = Boolean(
+    currentUser && amazonNotice && location.pathname !== '/'
+  );
 
   return (
     <div className="app-shell">
@@ -808,22 +360,13 @@ function NutriCheckShell() {
               </div>
             </div>
             <div className="cart-alert-actions">
-              {amazonNotice.needsNutrition && (
-                <button
-                  type="button"
-                  className="alert-dismiss-btn"
-                  onClick={() => navigate('/analyzer')}
-                >
-                  Enter Nutrition
-                </button>
-              )}
               {location.pathname !== '/amazon' && location.pathname !== '/connect' && (
                 <button
                   type="button"
                   className="alert-dismiss-btn"
                   onClick={() => navigate('/amazon')}
                 >
-                  Open Store Feed
+                  Open Store Connect
                 </button>
               )}
               <button
@@ -841,116 +384,79 @@ function NutriCheckShell() {
       <main className="app-main">
         <Routes>
           <Route path="/" element={<HomePage />} />
-          <Route path="/scan" element={<ScanPacketPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+
           <Route
-            path="/analyzer"
+            path="/dashboard"
             element={
-              <div className="page-shell">
-                <div className="page-header">
-                  <div>
-                    <h1 className="page-title">Food Nutrition Analyzer &amp; Cart</h1>
-                    <p className="page-subtitle">
-                      Search packaged grocery items online or enter label numbers to
-                      check health score, nutrient flags, and cart alerts.
-                    </p>
-                  </div>
-                </div>
-
-                <CatalogGroceryDemo
-                  items={catalogItems}
-                  searchQuery={catalogQuery}
-                  analyzingFoodName={analyzingGroceryItem}
-                  onSearchChange={setCatalogQuery}
-                  onAddToCartClick={handleCatalogAddToCart}
-                />
-
-                <div id="manual-analyzer-section" className="analyzer-grid">
-                  <NutritionForm
-                    values={formValues}
-                    samples={samples}
-                    selectedSampleName={selectedSampleName}
-                    isAnalyzing={isAnalyzing}
-                    errorMessage={formError}
-                    onChange={handleFieldChange}
-                    onSelectSample={handleSelectSample}
-                    onQuickPreset={handleQuickPreset}
-                    onSubmit={handleSubmit}
-                    onReset={handleReset}
-                  />
-
-                  <div id="live-analysis-anchor" className="result-column">
-                    <CartPanel
-                      activeAlert={activeAlert}
-                      cartItems={cartItems}
-                      onDismissAlert={() => setActiveAlert(null)}
-                      onRemoveItem={handleRemoveCartItem}
-                      onClearCart={() => {
-                        setCartItems([]);
-                        setActiveAlert(null);
-                      }}
-                    />
-
-                    <AnalysisResult
-                      result={prediction}
-                      ingredientScan={activeIngredientScan}
-                      isAnalyzing={isAnalyzing}
-                      onAddToCart={(res) => pushToCartWithAlert(res)}
-                      onQuickPreset={handleQuickPreset}
-                    />
-                  </div>
-                </div>
-              </div>
+              <RequireAuth>
+                <DashboardPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/dashboard/:productId"
+            element={
+              <RequireAuth>
+                <ProductDetailPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/add-product"
+            element={
+              <RequireAuth>
+                <AddProductPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <RequireAuth>
+                <ProfilePage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/scan"
+            element={
+              <RequireAuth>
+                <ScanPacketPage />
+              </RequireAuth>
             }
           />
           <Route
             path="/amazon"
             element={
-              <div className="page-shell">
-                <div className="page-header">
-                  <div>
-                    <h1 className="page-title">Online Store &amp; Food Extension</h1>
-                    <p className="page-subtitle">
-                      Analyze products directly on Amazon, Flipkart, Swiggy Instamart,
-                      Zomato, and Blinkit or paste any food item below.
-                    </p>
+              <RequireAuth>
+                <div className="page-shell">
+                  <div className="page-header">
+                    <div>
+                      <h1 className="page-title">Online Store &amp; Food Extension</h1>
+                      <p className="page-subtitle">
+                        Analyze products directly on Amazon, Flipkart, Swiggy Instamart,
+                        Zomato, and Blinkit personalized to your health profile.
+                      </p>
+                    </div>
                   </div>
+                  <AmazonConnectView
+                    events={amazonEvents}
+                    isSubmitting={isSubmittingAmazon}
+                    submitError={amazonError}
+                    onAnalyzeAmazonText={handleAnalyzeAmazonText}
+                    onDeleteEvent={handleDeleteAmazonEvent}
+                    onClearEvents={handleClearAmazonEvents}
+                  />
                 </div>
-                <AmazonConnectView
-                  events={amazonEvents}
-                  isSubmitting={isSubmittingAmazon}
-                  submitError={amazonError}
-                  onAnalyzeAmazonText={handleAnalyzeAmazonText}
-                  onInspectEventInAnalyzer={handleInspectEventInAnalyzer}
-                  onDeleteEvent={handleDeleteAmazonEvent}
-                  onClearEvents={handleClearAmazonEvents}
-                />
-              </div>
+              </RequireAuth>
             }
           />
-          <Route
-            path="/connect"
-            element={<Navigate to="/amazon" replace />}
-          />
-          <Route
-            path="/models"
-            element={
-              <div className="page-shell">
-                <div className="page-header">
-                  <div>
-                    <h1 className="page-title">
-                      Dataset Cleaning, EDA &amp; Model Comparison
-                    </h1>
-                    <p className="page-subtitle">
-                      Verified Scikit-learn training pipeline across 5 cleaned nutrition
-                      datasets.
-                    </p>
-                  </div>
-                </div>
-                <ModelMetricsView report={report} error={metricsError} />
-              </div>
-            }
-          />
-          <Route path="/about" element={<AboutPage />} />
+          <Route path="/connect" element={<Navigate to="/amazon" replace />} />
+          <Route path="/analyzer" element={<Navigate to="/" replace />} />
+          <Route path="/models" element={<Navigate to="/" replace />} />
+          <Route path="/about" element={<Navigate to="/" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
@@ -962,8 +468,10 @@ function NutriCheckShell() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <NutriCheckShell />
-    </BrowserRouter>
+    <AuthProvider>
+      <BrowserRouter>
+        <NutriCheckShell />
+      </BrowserRouter>
+    </AuthProvider>
   );
 }

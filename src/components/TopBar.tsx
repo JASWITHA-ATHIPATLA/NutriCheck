@@ -1,81 +1,125 @@
 import { useEffect, useState } from 'react';
-import { Leaf, Menu, ScanLine, X } from 'lucide-react';
+import { Leaf, LogOut, Menu, X } from 'lucide-react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 export function TopBar() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { currentUser, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     setMenuOpen(false);
   }, [location.pathname, location.search]);
 
+  function handleLogout() {
+    logout();
+    setMenuOpen(false);
+    navigate('/');
+  }
+
   return (
     <header className="topbar">
       <div className="topbar-inner">
-        <Link to="/" className="brand" aria-label="NutriCheck Home">
+        <Link
+          to={currentUser ? '/dashboard' : '/'}
+          className="brand"
+          aria-label="NutriCheck Home"
+        >
           <span className="brand-mark" aria-hidden="true">
             <Leaf size={17} strokeWidth={2.4} />
           </span>
           <span className="brand-title">NutriCheck</span>
         </Link>
 
-        <nav className="nav-links" aria-label="Primary navigation">
-          <NavLink
-            to="/"
-            end
-            className={({ isActive }) => `nav-tab ${isActive ? 'is-active' : ''}`}
-          >
-            Home
-          </NavLink>
-          <NavLink
-            to="/scan"
-            className={({ isActive }) => `nav-tab ${isActive ? 'is-active' : ''}`}
-          >
-            Scan Packet
-          </NavLink>
-          <NavLink
-            to="/analyzer"
-            className={({ isActive }) => `nav-tab ${isActive ? 'is-active' : ''}`}
-          >
-            Food Analyzer
-          </NavLink>
-          <NavLink
-            to="/amazon"
-            className={({ isActive }) => `nav-tab ${isActive ? 'is-active' : ''}`}
-          >
-            Store Connect
-          </NavLink>
-          <NavLink
-            to="/about"
-            className={({ isActive }) => `nav-tab ${isActive ? 'is-active' : ''}`}
-          >
-            About
-          </NavLink>
-        </nav>
+        {currentUser ? (
+          <>
+            <nav className="nav-links" aria-label="Primary navigation">
+              <NavLink
+                to="/dashboard"
+                className={({ isActive }) => `nav-tab ${isActive ? 'is-active' : ''}`}
+              >
+                Dashboard
+              </NavLink>
+              <NavLink
+                to="/profile"
+                className={({ isActive }) => `nav-tab ${isActive ? 'is-active' : ''}`}
+              >
+                Health Profile
+              </NavLink>
+              <NavLink
+                to="/add-product"
+                className={({ isActive }) => `nav-tab ${isActive ? 'is-active' : ''}`}
+              >
+                Add Product
+              </NavLink>
+              <NavLink
+                to="/scan"
+                className={({ isActive }) => `nav-tab ${isActive ? 'is-active' : ''}`}
+              >
+                Scan Packet
+              </NavLink>
+              <NavLink
+                to="/amazon"
+                className={({ isActive }) => `nav-tab ${isActive ? 'is-active' : ''}`}
+              >
+                Store Connect
+              </NavLink>
+            </nav>
 
-        <div className="topbar-actions">
-          <button
-            type="button"
-            className="topbar-cta"
-            onClick={() => navigate('/scan')}
-          >
-            <ScanLine size={15} />
-            <span>Scan Packet</span>
-          </button>
+            <div className="topbar-actions">
+              <button
+                type="button"
+                className="topbar-logout-btn"
+                onClick={handleLogout}
+              >
+                <LogOut size={15} />
+                <span>Logout</span>
+              </button>
 
-          <button
-            type="button"
-            className="mobile-menu-btn"
-            aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
-            aria-expanded={menuOpen}
-            aria-controls="mobile-nav-drawer"
-            onClick={() => setMenuOpen((prev) => !prev)}
-          >
-            {menuOpen ? <X size={20} /> : <Menu size={20} />}
-          </button>
-        </div>
+              <button
+                type="button"
+                className="mobile-menu-btn"
+                aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+                aria-expanded={menuOpen}
+                aria-controls="mobile-nav-drawer"
+                onClick={() => setMenuOpen((prev) => !prev)}
+              >
+                {menuOpen ? <X size={20} /> : <Menu size={20} />}
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="topbar-actions">
+            <div className="topbar-guest-links">
+              <NavLink
+                to="/login"
+                className={({ isActive }) => `nav-tab ${isActive ? 'is-active' : ''}`}
+              >
+                Login
+              </NavLink>
+              <button
+                type="button"
+                className="topbar-cta"
+                onClick={() => navigate('/register')}
+              >
+                Register
+              </button>
+            </div>
+
+            <button
+              type="button"
+              className="mobile-menu-btn"
+              aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+              aria-expanded={menuOpen}
+              aria-controls="mobile-nav-drawer"
+              onClick={() => setMenuOpen((prev) => !prev)}
+            >
+              {menuOpen ? <X size={20} /> : <Menu size={20} />}
+            </button>
+          </div>
+        )}
       </div>
 
       {menuOpen && (
@@ -84,45 +128,71 @@ export function TopBar() {
           className="mobile-nav-drawer"
           aria-label="Mobile navigation"
         >
-          <NavLink
-            to="/"
-            end
-            className={({ isActive }) => `mobile-nav-link ${isActive ? 'is-active' : ''}`}
-          >
-            Home
-          </NavLink>
-          <NavLink
-            to="/scan"
-            className={({ isActive }) => `mobile-nav-link ${isActive ? 'is-active' : ''}`}
-          >
-            Scan Packet
-          </NavLink>
-          <NavLink
-            to="/analyzer"
-            className={({ isActive }) => `mobile-nav-link ${isActive ? 'is-active' : ''}`}
-          >
-            Food Analyzer
-          </NavLink>
-          <NavLink
-            to="/amazon"
-            className={({ isActive }) => `mobile-nav-link ${isActive ? 'is-active' : ''}`}
-          >
-            Store Connect
-          </NavLink>
-          <NavLink
-            to="/about"
-            className={({ isActive }) => `mobile-nav-link ${isActive ? 'is-active' : ''}`}
-          >
-            About
-          </NavLink>
-          <button
-            type="button"
-            className="mobile-nav-cta"
-            onClick={() => navigate('/scan')}
-          >
-            <ScanLine size={16} />
-            <span>Scan Food Packet</span>
-          </button>
+          {currentUser ? (
+            <>
+              <NavLink
+                to="/dashboard"
+                className={({ isActive }) => `mobile-nav-link ${isActive ? 'is-active' : ''}`}
+              >
+                Dashboard
+              </NavLink>
+              <NavLink
+                to="/profile"
+                className={({ isActive }) => `mobile-nav-link ${isActive ? 'is-active' : ''}`}
+              >
+                Health Profile ({currentUser.fullName})
+              </NavLink>
+              <NavLink
+                to="/add-product"
+                className={({ isActive }) => `mobile-nav-link ${isActive ? 'is-active' : ''}`}
+              >
+                Add Product
+              </NavLink>
+              <NavLink
+                to="/scan"
+                className={({ isActive }) => `mobile-nav-link ${isActive ? 'is-active' : ''}`}
+              >
+                Scan Packet
+              </NavLink>
+              <NavLink
+                to="/amazon"
+                className={({ isActive }) => `mobile-nav-link ${isActive ? 'is-active' : ''}`}
+              >
+                Store Connect
+              </NavLink>
+              <button
+                type="button"
+                className="mobile-nav-cta"
+                onClick={handleLogout}
+              >
+                <LogOut size={16} />
+                <span>Logout</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <NavLink
+                to="/"
+                end
+                className={({ isActive }) => `mobile-nav-link ${isActive ? 'is-active' : ''}`}
+              >
+                Home
+              </NavLink>
+              <NavLink
+                to="/login"
+                className={({ isActive }) => `mobile-nav-link ${isActive ? 'is-active' : ''}`}
+              >
+                Login
+              </NavLink>
+              <button
+                type="button"
+                className="mobile-nav-cta"
+                onClick={() => navigate('/register')}
+              >
+                Create Account
+              </button>
+            </>
+          )}
         </nav>
       )}
     </header>
