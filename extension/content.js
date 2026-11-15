@@ -13,11 +13,20 @@
   const AMAZON_ADD_TO_CART_SELECTORS = [
     '#add-to-cart-button',
     '#add-to-cart-button-ubb',
+    '#freshAddToCartButton',
+    '#submit\\.add-to-cart',
+    '#submit\\.add-to-cart-announce',
+    '#submit\\.add-to-cart-ubb',
+    '#submit\\.add-to-cart-ubb-announce',
     'input[name="submit.add-to-cart"]',
+    'button[name="submit.addToCart"]',
+    '[data-action="add-to-cart"]',
+    '[data-action="fresh-add-to-cart"]',
     '[data-action="add-to-cart"] button',
     '[data-action="add-to-cart"] input',
     '.a-button-input[aria-labelledby*="add-to-cart"]',
-    'button[name="submit.addToCart"]',
+    '[id*="add-to-cart-button"]',
+    '[data-testid*="add-to-cart"]',
   ].join(',');
 
   const NUTRITION_REGEX =
@@ -56,11 +65,32 @@
 
     const platform = detectPlatform();
     if (platform === 'Amazon') {
-      if (target.closest('#ewc-content, #sc-subtotal-box, #gutterCartViewForm')) {
+      if (target.closest('#ewc-content, #sc-subtotal-box, #gutterCartViewForm, #buy-now-button, #submit\\.buy-now')) {
         return null;
       }
       const direct = target.closest(AMAZON_ADD_TO_CART_SELECTORS);
       if (direct) return direct;
+
+      const aBtn = target.closest('.a-button');
+      if (aBtn) {
+        if (
+          aBtn.querySelector(
+            'input[name="submit.add-to-cart"], button[name="submit.addToCart"], [id*="add-to-cart"]'
+          )
+        ) {
+          return aBtn;
+        }
+        const aBtnText = (aBtn.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+        if (
+          aBtnText === 'add to cart' ||
+          aBtnText === 'add to basket' ||
+          aBtnText === 'add to fresh cart' ||
+          aBtnText.startsWith('add to cart') ||
+          aBtnText.startsWith('add to basket')
+        ) {
+          return aBtn;
+        }
+      }
     }
 
     const btn = target.closest('button, input[type="submit"], [role="button"], a[role="button"]');
@@ -90,7 +120,7 @@
     if (!label) return null;
 
     if (
-      /\b(address|coupon|promo|tip|note|filter|sort|rating|veg only|bestseller|wishlist|compare|share|cancel|close|view cart|go to cart|checkout|proceed)\b/i.test(
+      /\b(address|coupon|promo|tip|note|filter|sort|rating|veg only|bestseller|wishlist|compare|share|cancel|close|view cart|go to cart|checkout|proceed|buy now)\b/i.test(
         label
       )
     ) {
@@ -100,6 +130,9 @@
     if (
       label === 'add to cart' ||
       label.startsWith('add to cart') ||
+      label === 'add to basket' ||
+      label.startsWith('add to basket') ||
+      label === 'add to bag' ||
       label === 'add item' ||
       label.startsWith('add item') ||
       label === 'add +' ||
@@ -1106,10 +1139,18 @@
       if (!snapshot.initialTitle && !snapshot.dpUrl) return;
 
       if (snapshot.isMainDetailPage || !snapshot.dpUrl || snapshot.dpUrl === window.location.href) {
-        void (async () => {
-          const details = await resolveProductDetails(snapshot);
-          sendForAnalysis(details);
-        })();
+        const extractedNow = extractIngredientsAndNutritionFromDoc(document);
+        const metaNow = extractBrandAndBarcodeFromDoc(document);
+        sendForAnalysis({
+          platform: snapshot.platform,
+          productTitle: snapshot.initialTitle,
+          productUrl: snapshot.dpUrl || window.location.href,
+          imageUrl: snapshot.imageUrl || extractProductImageFromDoc(document, null, snapshot.platform),
+          nutritionText: extractedNow.nutritionText,
+          ingredientsText: extractedNow.ingredientsText || snapshot.cardNotes,
+          brand: metaNow.brand,
+          barcode: metaNow.barcode,
+        });
         return;
       }
 
@@ -1140,13 +1181,47 @@
     true
   );
 
-  // Backup MutationObserver for Amazon "Added to Cart" drawer / smart wagon confirmation
+  // Backup form-submit & MutationObserver for Amazon "Added to Cart" drawer / smart wagon confirmation
   if (detectPlatform() === 'Amazon' && document.body) {
-    const atcObserver = new MutationObserver(() => {
-      const conf = document.querySelector(
-        '#NATC_SMART_WAGON_CONF_MSG_SUCCESS, #sw-atc-confirmation, #attach-added-to-cart-message, #huc-v2-order-row-confirm-text'
-      );
-      if (!conf) return;
+    document.addEventListener(
+      'submit',
+      (event) => {
+        const form = event.target;
+        if (!(form instanceof HTMLFormElement)) return;
+        if (form.id !== 'addToCart' && !/cart\/add/i.test(form.action || '')) return;
+        const title = extractProductTitleFromDoc(document, null, null, 'Amazon');
+        if (!title) return;
+        const extracted = extractIngredientsAndNutritionFromDoc(document);
+        const meta = extractBrandAndBarcodeFromDoc(document);
+        sendForAnalysis({
+          platform: 'Amazon',
+          productTitle: title,
+          productUrl: window.location.href,
+          imageUrl: extractProductImageFromDoc(document, null, 'Amazon'),
+          nutritionText: extracted.nutritionText,
+          ingredientsText: extracted.ingredientsText,
+          brand: meta.brand,
+          barcode: meta.barcode,
+        });
+      },
+      true
+    );
+
+    const confSelector =
+      '#NATC_SMART_WAGON_CONF_MSG_SUCCESS, #sw-atc-confirmation, #attach-added-to-cart-message, #huc-v2-order-row-confirm-text, #attach-desktop-sideSheet';
+    const atcObserver = new MutationObserver((mutations) => {
+      let triggered = false;
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          if (!(node instanceof Element)) continue;
+          if (node.matches(confSelector) || node.querySelector(confSelector)) {
+            triggered = true;
+            break;
+          }
+        }
+        if (triggered) break;
+      }
+      if (!triggered) return;
       const title = extractProductTitleFromDoc(document, null, null, 'Amazon');
       if (!title) return;
       const extracted = extractIngredientsAndNutritionFromDoc(document);

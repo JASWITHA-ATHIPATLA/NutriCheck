@@ -207,6 +207,7 @@ export interface CatalogProduct {
   fiber_g: number;
   ingredients: string;
   allergens: string[];
+  imageUrl?: string;
   storeUrl?: string;
   isCustom?: boolean;
 }

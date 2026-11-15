@@ -5,6 +5,7 @@ import type {
   RiskLevel,
   UserHealthProfile,
 } from '../types';
+import { CATALOG_PRODUCT_IMAGES } from './catalogImages';
 
 export const HEALTH_CONDITION_OPTIONS: {
   key: HealthCondition;
@@ -34,6 +35,7 @@ export const SEEDED_CATALOG_PRODUCTS: CatalogProduct[] = [
     fiber_g: 1.4,
     ingredients: 'Water, carrots, potatoes, green peas, corn, tomato paste, vegetable oil, iodized salt, onion powder, yeast extract, spices',
     allergens: [],
+    imageUrl: CATALOG_PRODUCT_IMAGES['canned-vegetable-soup'],
   },
   {
     id: 'chocolate-bar',
@@ -50,6 +52,7 @@ export const SEEDED_CATALOG_PRODUCTS: CatalogProduct[] = [
     fiber_g: 3.0,
     ingredients: 'Sugar, cocoa butter, milk solids, cocoa mass, soy lecithin, natural vanilla flavor',
     allergens: ['Milk', 'Soy'],
+    imageUrl: CATALOG_PRODUCT_IMAGES['chocolate-bar'],
   },
   {
     id: 'cola-soft-drink',
@@ -66,6 +69,7 @@ export const SEEDED_CATALOG_PRODUCTS: CatalogProduct[] = [
     fiber_g: 0.0,
     ingredients: 'Carbonated water, high fructose corn syrup, sugar, caramel color (E150d), phosphoric acid, natural flavors, caffeine',
     allergens: [],
+    imageUrl: CATALOG_PRODUCT_IMAGES['cola-soft-drink'],
   },
   {
     id: 'instant-noodles',
@@ -82,6 +86,7 @@ export const SEEDED_CATALOG_PRODUCTS: CatalogProduct[] = [
     fiber_g: 2.4,
     ingredients: 'Refined wheat flour (maida), palm oil, iodized salt, dehydrated vegetables, sugar, hydrolyzed vegetable protein, flavor enhancer (E621)',
     allergens: ['Wheat', 'Gluten'],
+    imageUrl: CATALOG_PRODUCT_IMAGES['instant-noodles'],
   },
   {
     id: 'low-fat-plain-yogurt',
@@ -98,6 +103,7 @@ export const SEEDED_CATALOG_PRODUCTS: CatalogProduct[] = [
     fiber_g: 0.0,
     ingredients: 'Pasteurized skim milk, active live yogurt cultures (L. bulgaricus, S. thermophilus)',
     allergens: ['Milk'],
+    imageUrl: CATALOG_PRODUCT_IMAGES['low-fat-plain-yogurt'],
   },
   {
     id: 'plain-oats',
@@ -114,6 +120,7 @@ export const SEEDED_CATALOG_PRODUCTS: CatalogProduct[] = [
     fiber_g: 10.1,
     ingredients: '100% Wholegrain Rolled Oats',
     allergens: ['Oats'],
+    imageUrl: CATALOG_PRODUCT_IMAGES['plain-oats'],
   },
   {
     id: 'roasted-unsalted-almonds',
@@ -130,6 +137,7 @@ export const SEEDED_CATALOG_PRODUCTS: CatalogProduct[] = [
     fiber_g: 10.8,
     ingredients: '100% Whole California Almonds (dry roasted, unsalted)',
     allergens: ['Tree nuts', 'Almonds'],
+    imageUrl: CATALOG_PRODUCT_IMAGES['roasted-unsalted-almonds'],
   },
   {
     id: 'salted-potato-chips',
@@ -146,6 +154,7 @@ export const SEEDED_CATALOG_PRODUCTS: CatalogProduct[] = [
     fiber_g: 4.2,
     ingredients: 'Potatoes, edible vegetable oil (palm olein), iodized salt',
     allergens: [],
+    imageUrl: CATALOG_PRODUCT_IMAGES['salted-potato-chips'],
   },
   {
     id: 'unsweetened-peanut-butter',
@@ -162,6 +171,7 @@ export const SEEDED_CATALOG_PRODUCTS: CatalogProduct[] = [
     fiber_g: 8.0,
     ingredients: 'Roasted peanuts (98%), peanut oil, salt',
     allergens: ['Peanuts'],
+    imageUrl: CATALOG_PRODUCT_IMAGES['unsweetened-peanut-butter'],
   },
   {
     id: 'whole-wheat-biscuits',
@@ -178,6 +188,7 @@ export const SEEDED_CATALOG_PRODUCTS: CatalogProduct[] = [
     fiber_g: 4.5,
     ingredients: 'Whole wheat flour (55%), sugar, vegetable fat (palm oil), invert syrup, milk solids, leavening agents, salt',
     allergens: ['Wheat', 'Milk'],
+    imageUrl: CATALOG_PRODUCT_IMAGES['whole-wheat-biscuits'],
   },
 ];
 

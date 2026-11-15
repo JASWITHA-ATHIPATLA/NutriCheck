@@ -1,6 +1,20 @@
 (function () {
   if (!chrome?.storage?.local) return;
 
+  function isNutriCheckOriginPage() {
+    try {
+      const hasRoot = Boolean(document.getElementById('root'));
+      const titleMatch = /nutricheck|healthguard|food/i.test(document.title || '');
+      return hasRoot || titleMatch;
+    } catch {
+      return false;
+    }
+  }
+
+  if (isNutriCheckOriginPage() && /^https?:\/\//i.test(window.location.origin)) {
+    chrome.storage.local.set({ lastActiveHealthGuardUrl: window.location.origin });
+  }
+
   function syncEventsToPage(events) {
     if (!Array.isArray(events)) return;
     window.postMessage(

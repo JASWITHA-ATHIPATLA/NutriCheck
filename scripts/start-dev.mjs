@@ -2,6 +2,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
+import { startNodeApiFallback } from './api-fallback.mjs';
 
 const API_HOST = '127.0.0.1';
 const API_PORT = 8001;
@@ -50,6 +51,7 @@ function findPythonWithUvicorn() {
 
 async function main() {
   const children = [];
+  let fallbackServer = null;
 
   const apiAlreadyRunning = await isPortOpen(API_HOST, API_PORT);
   if (!apiAlreadyRunning) {
@@ -70,9 +72,7 @@ async function main() {
       });
       children.push(apiProc);
     } else {
-      console.warn(
-        '[HealthGuard] Python with uvicorn not found. Activate your .venv and run `pip install -r requirements.txt`, or start FastAPI manually on port 8001.'
-      );
+      fallbackServer = startNodeApiFallback({ host: API_HOST, port: API_PORT });
     }
   }
 
@@ -91,6 +91,9 @@ async function main() {
   children.push(viteProc);
 
   const shutdown = () => {
+    if (fallbackServer) {
+      fallbackServer.close();
+    }
     for (const child of children) {
       if (!child.killed) {
         child.kill('SIGTERM');

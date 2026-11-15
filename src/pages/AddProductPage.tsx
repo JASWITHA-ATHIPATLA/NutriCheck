@@ -21,6 +21,7 @@ export function AddProductPage() {
   const [fiberG, setFiberG] = useState('');
   const [ingredients, setIngredients] = useState('');
   const [allergensInput, setAllergensInput] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
   const [storeUrl, setStoreUrl] = useState('');
 
   function handleSubmit(e: React.FormEvent) {
@@ -39,6 +40,7 @@ export function AddProductPage() {
       fiber_g: Math.max(0, Number(fiberG) || 0),
       ingredients: ingredients.trim() || 'Not specified',
       allergens: parseAllergiesInput(allergensInput),
+      imageUrl: imageUrl.trim() || undefined,
       storeUrl: storeUrl.trim() || undefined,
     });
     navigate(`/dashboard/${created.id}`);
@@ -265,18 +267,34 @@ export function AddProductPage() {
             />
           </div>
 
-          <div className="field">
-            <label htmlFor="add-prod-url" className="field-label">
-              Store product link (optional)
-            </label>
-            <input
-              id="add-prod-url"
-              type="url"
-              className="field-input"
-              placeholder="https://www.bigbasket.com/... or https://www.amazon.in/..."
-              value={storeUrl}
-              onChange={(e) => setStoreUrl(e.target.value)}
-            />
+          <div className="field-grid">
+            <div className="field">
+              <label htmlFor="add-prod-img" className="field-label">
+                Product image URL (optional)
+              </label>
+              <input
+                id="add-prod-img"
+                type="url"
+                className="field-input"
+                placeholder="https://..."
+                value={imageUrl}
+                onChange={(e) => setImageUrl(e.target.value)}
+              />
+            </div>
+
+            <div className="field">
+              <label htmlFor="add-prod-url" className="field-label">
+                Store product link (optional)
+              </label>
+              <input
+                id="add-prod-url"
+                type="url"
+                className="field-input"
+                placeholder="https://www.bigbasket.com/... or https://www.amazon.in/..."
+                value={storeUrl}
+                onChange={(e) => setStoreUrl(e.target.value)}
+              />
+            </div>
           </div>
 
           <button type="submit" className="btn-primary auth-submit-btn">

@@ -281,44 +281,64 @@ export function DashboardPage() {
 
               return (
                 <article key={product.id} className="card catalog-card">
-                  <div className="catalog-card-top">
-                    <div>
-                      <h3 className="catalog-card-title">{product.name}</h3>
-                      <p className="catalog-card-brand">
-                        {product.brand} · {product.category}
-                      </p>
-                    </div>
-                    <span className={`risk-tag ${badgeCls}`}>{check.riskLevel}</span>
-                  </div>
+                  <div>
+                    {product.imageUrl && (
+                      <div className="catalog-card-img-wrap">
+                        <img
+                          src={product.imageUrl}
+                          alt={product.name}
+                          className="catalog-card-img"
+                          loading="lazy"
+                          referrerPolicy="no-referrer"
+                          onError={(e) => {
+                            const wrap = (e.currentTarget as HTMLImageElement).parentElement;
+                            if (wrap) wrap.style.display = 'none';
+                          }}
+                        />
+                      </div>
+                    )}
 
-                  <div className="catalog-macro-row">
-                    <div className="catalog-macro-item">
-                      <span className="catalog-macro-lbl">Sugar</span>
-                      <span className="catalog-macro-val tabular">
-                        {product.sugar_g.toFixed(1)}g
-                      </span>
-                    </div>
-                    <div className="catalog-macro-item">
-                      <span className="catalog-macro-lbl">Sodium</span>
-                      <span className="catalog-macro-val tabular">
-                        {Math.round(product.sodium_mg)}mg
-                      </span>
-                    </div>
-                    <div className="catalog-macro-item">
-                      <span className="catalog-macro-lbl">Sat. fat</span>
-                      <span className="catalog-macro-val tabular">
-                        {product.saturated_fat_g.toFixed(1)}g
-                      </span>
+                    <div className="catalog-card-top">
+                      <div>
+                        <h3 className="catalog-card-title">{product.name}</h3>
+                        <p className="catalog-card-brand">
+                          {product.brand} · {product.category}
+                        </p>
+                      </div>
+                      <span className={`risk-tag ${badgeCls}`}>{check.riskLevel}</span>
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    className="btn-primary catalog-check-btn"
-                    onClick={() => navigate(`/dashboard/${product.id}`)}
-                  >
-                    View health check
-                  </button>
+                  <div className="catalog-card-footer">
+                    <div className="catalog-macro-row">
+                      <div className="catalog-macro-item">
+                        <span className="catalog-macro-lbl">Sugar</span>
+                        <span className="catalog-macro-val tabular">
+                          {product.sugar_g.toFixed(1)}g
+                        </span>
+                      </div>
+                      <div className="catalog-macro-item">
+                        <span className="catalog-macro-lbl">Sodium</span>
+                        <span className="catalog-macro-val tabular">
+                          {Math.round(product.sodium_mg)}mg
+                        </span>
+                      </div>
+                      <div className="catalog-macro-item">
+                        <span className="catalog-macro-lbl">Sat. fat</span>
+                        <span className="catalog-macro-val tabular">
+                          {product.saturated_fat_g.toFixed(1)}g
+                        </span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="btn-primary catalog-check-btn"
+                      onClick={() => navigate(`/dashboard/${product.id}`)}
+                    >
+                      View health check
+                    </button>
+                  </div>
                 </article>
               );
             })}

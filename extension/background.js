@@ -171,7 +171,8 @@ function inferPlatformName(url, explicit) {
 
 async function getHealthGuardUrl() {
   const stored = await chrome.storage.sync.get(['healthguardUrl']);
-  const raw = stored.healthguardUrl || DEFAULT_URL;
+  const local = await chrome.storage.local.get(['lastActiveHealthGuardUrl']);
+  const raw = stored.healthguardUrl || local.lastActiveHealthGuardUrl || DEFAULT_URL;
   return raw.replace(/\/+$/, '');
 }
 
@@ -916,15 +917,20 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       let eventData = null;
       try {
         const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 2800);
+        const timer = setTimeout(() => ctrl.abort(), 3200);
         const res = await fetch(`${baseUrl}/api/amazon/add-to-cart`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          mode: 'cors',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
           body: JSON.stringify(message.payload),
           signal: ctrl.signal,
         });
         clearTimeout(timer);
-        if (res.ok) {
+        const contentType = res.headers.get('content-type') || '';
+        if (res.ok && contentType.includes('application/json')) {
           const candidate = await res.json().catch(() => null);
           if (candidate && candidate.status === 'analyzed') {
             eventData = candidate;

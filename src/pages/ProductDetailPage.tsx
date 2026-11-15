@@ -262,6 +262,21 @@ export function ProductDetailPage() {
         {/* Right Nutrition + Ingredients + Online Grocery Store Card */}
         <aside className="detail-side-stack">
           <section className="card" aria-labelledby="nutrition-info-heading">
+            {product.imageUrl && (
+              <div className="detail-product-img-wrap">
+                <img
+                  src={product.imageUrl}
+                  alt={product.name}
+                  className="detail-product-img"
+                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    const wrap = (e.currentTarget as HTMLImageElement).parentElement;
+                    if (wrap) wrap.style.display = 'none';
+                  }}
+                />
+              </div>
+            )}
+
             <h2 id="nutrition-info-heading" className="card-title">
               Nutrition information
             </h2>

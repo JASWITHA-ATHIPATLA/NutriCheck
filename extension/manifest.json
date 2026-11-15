@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "NutriCheck – Food & Store Ingredient Analyzer",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Scans food ingredients and nutrition facts across Amazon, Flipkart, Swiggy Instamart, Zomato, and Blinkit and syncs easy summaries to NutriCheck.",
   "permissions": ["storage"],
   "host_permissions": [
@@ -10,6 +10,12 @@
     "https://*.amazon.co.uk/*",
     "https://*.amazon.ca/*",
     "https://*.amazon.de/*",
+    "https://*.amazon.ae/*",
+    "https://*.amazon.com.au/*",
+    "https://*.amazon.co.jp/*",
+    "https://*.amazon.fr/*",
+    "https://*.amazon.es/*",
+    "https://*.amazon.it/*",
     "https://*.flipkart.com/*",
     "https://*.swiggy.com/*",
     "https://*.zomato.com/*",
@@ -32,6 +38,12 @@
         "https://*.amazon.co.uk/*",
         "https://*.amazon.ca/*",
         "https://*.amazon.de/*",
+        "https://*.amazon.ae/*",
+        "https://*.amazon.com.au/*",
+        "https://*.amazon.co.jp/*",
+        "https://*.amazon.fr/*",
+        "https://*.amazon.es/*",
+        "https://*.amazon.it/*",
         "https://*.flipkart.com/*",
         "https://*.swiggy.com/*",
         "https://*.zomato.com/*",
@@ -49,6 +61,7 @@
         "https://*.run.app/*"
       ],
       "js": ["bridge.js"],
+      "all_frames": true,
       "run_at": "document_idle"
     }
   ],

@@ -396,6 +396,7 @@ function NutriCheckShell() {
                 <img
                   src={popupEvent.image_url}
                   alt={popupEvent.product_title}
+                  referrerPolicy="no-referrer"
                 />
               </div>
             )}

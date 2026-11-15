@@ -22,6 +22,7 @@ import {
   getAgeGroupLabel,
 } from '../utils/healthProfileEngine';
 import { scanPacketLocally } from '../utils/localNutritionEngine';
+import { CATALOG_PRODUCT_IMAGES } from '../utils/catalogImages';
 import type { AmazonCartEvent } from '../types';
 
 interface AmazonConnectViewProps {
@@ -55,8 +56,7 @@ const QUICK_STORE_PRODUCTS: QuickStoreProduct[] = [
     id: 'qs-oats',
     store: 'Amazon',
     title: 'Quaker Rolled Oats 1kg',
-    image_url:
-      'https://images.openfoodfacts.org/images/products/003/000/001/0402/front_en.104.200.jpg',
+    image_url: CATALOG_PRODUCT_IMAGES['plain-oats'],
     ingredients_text: 'Wholegrain Rolled Oats (100%)',
     nutrition_text: 'Calories 379, Sugars 1.0g, Fat 6.5g, Protein 13.2g, Sodium 4mg',
     product_url: 'https://www.amazon.in/s?k=Quaker+Rolled+Oats',
@@ -64,19 +64,17 @@ const QUICK_STORE_PRODUCTS: QuickStoreProduct[] = [
   {
     id: 'qs-dry-fruits',
     store: 'Flipkart',
-    title: 'Mixed Dry Fruits & Nuts 500g',
-    image_url:
-      'https://images.openfoodfacts.org/images/products/327/408/000/5003/front_en.3.200.jpg',
-    ingredients_text: 'Almonds, Cashews, Walnuts, Pistachios, Raisins, Dried Dates',
-    nutrition_text: 'Calories 465, Sugars 14.0g, Fat 28.5g, Protein 14.2g, Sodium 6mg',
-    product_url: 'https://www.flipkart.com/search?q=Mixed+Dry+Fruits',
+    title: 'Roasted California Almonds 500g',
+    image_url: CATALOG_PRODUCT_IMAGES['roasted-unsalted-almonds'],
+    ingredients_text: '100% Whole California Almonds (dry roasted, unsalted)',
+    nutrition_text: 'Calories 595, Sugars 4.4g, Fat 52.0g, Protein 21.2g, Sodium 1mg',
+    product_url: 'https://www.flipkart.com/search?q=Roasted+Almonds',
   },
   {
     id: 'qs-noodles',
     store: 'Swiggy Instamart',
     title: 'Maggi 2-Minute Masala Noodles',
-    image_url:
-      'https://images.openfoodfacts.org/images/products/890/105/800/0290/front_en.48.200.jpg',
+    image_url: CATALOG_PRODUCT_IMAGES['instant-noodles'],
     ingredients_text:
       'Refined Wheat Flour (Maida), Palm Oil, Iodized Salt, Spices, Sugar, Thickener, Flavor Enhancer',
     nutrition_text: 'Calories 427, Sugars 2.1g, Fat 15.7g, Protein 8.2g, Sodium 1120mg',
@@ -86,8 +84,7 @@ const QUICK_STORE_PRODUCTS: QuickStoreProduct[] = [
     id: 'qs-choc',
     store: 'Amazon',
     title: 'Cadbury Dairy Milk Chocolate Bar',
-    image_url:
-      'https://images.openfoodfacts.org/images/products/762/220/113/0268/front_en.34.200.jpg',
+    image_url: CATALOG_PRODUCT_IMAGES['chocolate-bar'],
     ingredients_text: 'Sugar, Milk Solids, Cocoa Butter, Cocoa Mass, Emulsifiers (Soy Lecithin)',
     nutrition_text: 'Calories 535, Sugars 51.5g, Fat 29.7g, Protein 7.6g, Sodium 79mg',
     product_url: 'https://www.amazon.in/s?k=Cadbury+Dairy+Milk',
@@ -236,6 +233,7 @@ export function AmazonConnectView({
                 <img
                   src={item.image_url}
                   alt={item.title}
+                  referrerPolicy="no-referrer"
                   onError={(e) => {
                     (e.currentTarget as HTMLImageElement).style.display = 'none';
                   }}
@@ -551,6 +549,7 @@ export function AmazonConnectView({
                             src={ev.image_url}
                             alt={ev.product_title}
                             className="store-product-thumb"
+                            referrerPolicy="no-referrer"
                             onError={(e) => {
                               (e.currentTarget as HTMLImageElement).style.display = 'none';
                             }}
