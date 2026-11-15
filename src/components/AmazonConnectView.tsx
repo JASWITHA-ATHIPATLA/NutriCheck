@@ -31,6 +31,27 @@ function getVerdictLabel(classification: 'Healthy' | 'Moderate' | 'Unhealthy'): 
   return 'Not Good';
 }
 
+function inferPlatformLabel(ev: AmazonCartEvent): string {
+  if (ev.source_platform) return ev.source_platform;
+  const hay = `${ev.product_url || ''} ${ev.source || ''}`.toLowerCase();
+  if (hay.includes('flipkart')) return 'Flipkart';
+  if (hay.includes('instamart')) return 'Swiggy Instamart';
+  if (hay.includes('swiggy')) return 'Swiggy';
+  if (hay.includes('zomato')) return 'Zomato';
+  if (hay.includes('blinkit')) return 'Blinkit';
+  if (hay.includes('amazon')) return 'Amazon';
+  return 'Online Store';
+}
+
+const SUPPORTED_STORES = [
+  'Amazon',
+  'Flipkart',
+  'Swiggy Instamart',
+  'Swiggy Food',
+  'Zomato',
+  'Blinkit',
+];
+
 export function AmazonConnectView({
   events,
   isSubmitting,
@@ -75,20 +96,27 @@ export function AmazonConnectView({
           <div className="card-header">
             <div>
               <h2 id="amazon-ext-heading" className="card-title">
-                Amazon Add-to-Cart Browser Extension
+                Online Store &amp; Food Extension (General)
               </h2>
               <p className="card-subtitle">
-                Automatically scans Amazon food ingredients &amp; calories on every Add to Cart click.
+                Checks ingredients and calories right on product pages and on every Add to Cart click.
               </p>
             </div>
-            <Puzzle size={20} color="#059669" />
+            <Puzzle size={20} color="#ca8a04" />
           </div>
 
           <div className="info-callout">
-            <strong>Works for all packed &amp; staple Amazon food items:</strong> Load the{' '}
-            <code>extension/</code> folder in Chrome/Edge and save your live URL (
-            <code>https://your-app.vercel.app</code> or <code>http://localhost:3000</code>). When you click{' '}
-            <strong>Add to Cart</strong> on Amazon, NutriCheck reads the product page ingredients &amp; nutrition facts, falls back across Open Food Facts, our 2,158-food dataset, and grocery staples (like rice, atta, dal, noodles, snacks), and syncs straight to this website.
+            <strong>Works across grocery stores &amp; food apps:</strong> Load the{' '}
+            <code>extension/</code> folder in Chrome/Edge and save your live URL. On any supported store, click{' '}
+            <strong>Check Ingredients · NutriCheck</strong> directly on a product page or click{' '}
+            <strong>Add / Add to Cart</strong> to see a simple summary card and sync full charts here.
+            <div className="store-chips-row" aria-label="Supported stores">
+              {SUPPORTED_STORES.map((store) => (
+                <span key={store} className="store-chip">
+                  {store}
+                </span>
+              ))}
+            </div>
           </div>
 
           <ol className="rule-list" style={{ marginBottom: '16px' }}>
@@ -96,15 +124,14 @@ export function AmazonConnectView({
               Open <code>chrome://extensions</code> in Chrome/Edge, enable{' '}
               <strong>Developer mode</strong>, and click{' '}
               <strong>Load unpacked</strong> on the <code>extension/</code>{' '}
-              folder (or click Reload ↻ if already loaded).
+              folder (or click Reload ↻ after updating).
             </li>
             <li>
               Click the <strong>NutriCheck</strong> extension icon, paste your
               active URL below, and click <strong>Save URL</strong>:
             </li>
             <li>
-              Keep Amazon and NutriCheck in the same Chrome browser — every{' '}
-              <strong>Add to Cart</strong> click syncs here automatically.
+              Browse Amazon, Flipkart, Swiggy Instamart, Zomato, or Blinkit in Chrome — ingredient checks appear right on the page and sync here automatically.
             </li>
           </ol>
 
@@ -125,10 +152,10 @@ export function AmazonConnectView({
           <div className="card-header">
             <div>
               <h2 id="amazon-paste-heading" className="card-title">
-                Analyze Any Amazon Food Item (Manual Intake)
+                Check Any Grocery Item or Restaurant Dish
               </h2>
               <p className="card-subtitle">
-                Enter an Amazon food title (like &ldquo;rice&rdquo; or &ldquo;Maggi Masala Noodles&rdquo;) and optional Amazon page ingredients/nutrition text.
+                Enter any item name (e.g., &ldquo;Mixed Dry Fruits&rdquo;, &ldquo;Masala Dosa&rdquo;, or &ldquo;Maggi Noodles&rdquo;) and optional label text.
               </p>
             </div>
           </div>
@@ -136,7 +163,7 @@ export function AmazonConnectView({
           <form className="form-stack" onSubmit={handleFormSubmit}>
             <div className="field">
               <label htmlFor="amz-title" className="field-label">
-                <span>Amazon Product Title</span>
+                <span>Product or Food Name</span>
                 <span className="field-unit">Required</span>
               </label>
               <input
@@ -144,7 +171,7 @@ export function AmazonConnectView({
                 type="text"
                 required
                 className="field-input"
-                placeholder="e.g., India Gate Basmati Rice, Rice, or Maggi Masala Noodles"
+                placeholder="e.g., India Gate Basmati Rice, Paneer Butter Masala, or Maggi"
                 value={productTitle}
                 onChange={(e) => setProductTitle(e.target.value)}
               />
@@ -152,14 +179,14 @@ export function AmazonConnectView({
 
             <div className="field">
               <label htmlFor="amz-ingredients" className="field-label">
-                <span>Ingredients Text (from Amazon page)</span>
+                <span>Ingredients Text (from product page)</span>
                 <span className="field-unit">Optional</span>
               </label>
               <textarea
                 id="amz-ingredients"
                 className="field-input field-textarea"
                 style={{ minHeight: '72px' }}
-                placeholder="e.g., Ingredients: Refined Wheat Flour (Maida), Palm Oil, Salt, Sugar, TBHQ"
+                placeholder="e.g., Ingredients: Wholegrain Rolled Oats, Almonds, Chia Seeds"
                 value={ingredientsText}
                 onChange={(e) => setIngredientsText(e.target.value)}
               />
@@ -167,14 +194,14 @@ export function AmazonConnectView({
 
             <div className="field">
               <label htmlFor="amz-nutrition" className="field-label">
-                <span>Nutrition Facts Text (from Amazon page)</span>
+                <span>Nutrition Facts Text (from product page)</span>
                 <span className="field-unit">Optional</span>
               </label>
               <textarea
                 id="amz-nutrition"
                 className="field-input field-textarea"
                 style={{ minHeight: '72px' }}
-                placeholder="e.g., Calories 356, Sugars 0.1g, Fat 0.6g, Protein 7.1g, Sodium 5mg (or leave blank for auto-lookup)"
+                placeholder="e.g., Calories 356, Sugars 0.1g, Fat 0.6g, Protein 7.1g, Sodium 5mg (leave blank for auto-lookup)"
                 value={nutritionText}
                 onChange={(e) => setNutritionText(e.target.value)}
               />
@@ -182,14 +209,14 @@ export function AmazonConnectView({
 
             <div className="field">
               <label htmlFor="amz-url" className="field-label">
-                <span>Amazon Product Link</span>
+                <span>Store Link</span>
                 <span className="field-unit">Optional</span>
               </label>
               <input
                 id="amz-url"
                 type="url"
                 className="field-input"
-                placeholder="https://www.amazon.in/dp/... or https://www.amazon.com/dp/..."
+                placeholder="https://www.amazon.in/... or flipkart.com / swiggy.com / zomato.com"
                 value={productUrl}
                 onChange={(e) => setProductUrl(e.target.value)}
               />
@@ -205,7 +232,7 @@ export function AmazonConnectView({
             <button type="submit" className="btn-primary" disabled={isSubmitting}>
               <Search size={16} />
               <span>
-                {isSubmitting ? 'Analyzing Item...' : 'Analyze Amazon Product'}
+                {isSubmitting ? 'Analyzing Food...' : 'Analyze Food Item'}
               </span>
             </button>
           </form>
@@ -216,11 +243,10 @@ export function AmazonConnectView({
         <div className="card-header">
           <div>
             <h2 id="amazon-feed-heading" className="card-title">
-              Live Amazon Cart Monitor ({events.length})
+              Live Store &amp; Food Monitor ({events.length})
             </h2>
             <p className="card-subtitle">
-              Updates automatically whenever you click Add to Cart on Amazon with
-              the extension active.
+              Updates automatically from Amazon, Flipkart, Swiggy Instamart, Zomato &amp; Blinkit.
             </p>
           </div>
           {events.length > 0 && (
@@ -236,11 +262,11 @@ export function AmazonConnectView({
 
         {events.length === 0 ? (
           <div className="empty-state" style={{ padding: '32px 16px' }}>
-            <h3 className="empty-title">Waiting for Amazon Add-to-Cart Clicks</h3>
+            <h3 className="empty-title">Waiting for Store Scans or Add-to-Cart Clicks</h3>
             <p className="empty-desc">
-              Click <strong>Add to Cart</strong> on any food product in Amazon
-              (with the Chrome extension loaded) or submit an item on the left to
-              see its Good, Moderate, or Not Good verdict, calories table, and ingredients here.
+              Click <strong>Check Ingredients</strong> or <strong>Add to Cart</strong> on
+              Amazon, Flipkart, Swiggy Instamart, or Zomato — or test any food on the left
+              to see its simple verdict, calories table, and pie chart here.
             </p>
           </div>
         ) : (
@@ -248,6 +274,7 @@ export function AmazonConnectView({
             {events.map((ev) => {
               const a = ev.analysis;
               const scan = ev.ingredient_scan;
+              const platform = inferPlatformLabel(ev);
               const badgeCls = !a
                 ? 'is-pending'
                 : a.classification === 'Healthy'
@@ -272,7 +299,7 @@ export function AmazonConnectView({
                     <div>
                       <div className="event-item-title">{ev.product_title}</div>
                       <div className="event-item-meta">
-                        Source: {ev.nutrition_source}
+                        {platform} · {ev.nutrition_source}
                         {ev.matched_food ? ` (${ev.matched_food})` : ''}
                       </div>
                     </div>
@@ -316,22 +343,24 @@ export function AmazonConnectView({
 
                   {scan && (
                     <div className="amz-ing-strip">
-                      <span className={`eval-pill ${scan.verdict === 'Good' ? 'is-good' : scan.verdict === 'Moderate' ? 'is-moderate' : 'is-high'}`}>
+                      <span
+                        className={`eval-pill ${
+                          scan.verdict === 'Good'
+                            ? 'is-good'
+                            : scan.verdict === 'Moderate'
+                            ? 'is-moderate'
+                            : 'is-high'
+                        }`}
+                      >
                         Ingredients: {scan.verdict} ({scan.score}/100)
                       </span>
                       <span className="amz-ing-counts">
                         {ingGoodCount} good · {ingModCount} caution · {ingBadCount} bad
                       </span>
-                      {scan.parsed_ingredients.length > 0 && (
-                        <div className="amz-ing-preview">
-                          Scanned: {scan.parsed_ingredients.slice(0, 6).join(', ')}
-                          {scan.parsed_ingredients.length > 6 ? '…' : ''}
-                        </div>
-                      )}
                     </div>
                   )}
 
-                  <p className="card-subtitle" style={{ color: '#374151', marginTop: 6 }}>
+                  <p className="card-subtitle" style={{ color: '#44403c', marginTop: 6 }}>
                     {a ? a.explanation : ev.message}
                   </p>
 
@@ -355,9 +384,7 @@ export function AmazonConnectView({
                           setProductUrl(ev.product_url || '');
                           setNutritionText('');
                           setIngredientsText(ev.ingredients_text || '');
-                          document
-                            .getElementById('amz-nutrition')
-                            ?.focus();
+                          document.getElementById('amz-nutrition')?.focus();
                         }}
                       >
                         Paste Label Here
@@ -371,7 +398,7 @@ export function AmazonConnectView({
                         rel="noreferrer"
                         className="event-link"
                       >
-                        Amazon Page <ExternalLink size={12} style={{ verticalAlign: 'middle' }} />
+                        Open {platform} <ExternalLink size={12} style={{ verticalAlign: 'middle' }} />
                       </a>
                     )}
 

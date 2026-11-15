@@ -82,6 +82,27 @@ const GROCERY_STAPLES: {
   { keywords: ['pickle', 'achar', 'achaar', 'papad'], name: 'Pickles / Papad (per 100g)', calories: 220, sugars: 2.0, fat: 11.0, protein: 4.5, sodium_mg: 2400 },
   { keywords: ['soan papdi', 'laddu', 'laddoo', 'rasgulla', 'gulab jamun', 'halwa', 'barfi', 'peda'], name: 'Indian Packaged Sweets (per 100g)', calories: 430, sugars: 46.0, fat: 18.0, protein: 4.5, sodium_mg: 45 },
   { keywords: ['ice cream', 'kulfi', 'gelato'], name: 'Ice Cream (per 100g)', calories: 207, sugars: 21.2, fat: 11.0, protein: 3.5, sodium_mg: 80 },
+  { keywords: ['chicken biryani', 'mutton biryani', 'hyderabadi biryani', 'dum biryani', 'biryani'], name: 'Biryani (per 100g)', calories: 168, sugars: 1.2, fat: 6.4, protein: 9.2, sodium_mg: 380 },
+  { keywords: ['veg biryani', 'pulao', 'pulav', 'jeera rice'], name: 'Veg Biryani / Pulao (per 100g)', calories: 142, sugars: 1.5, fat: 4.5, protein: 3.6, sodium_mg: 310 },
+  { keywords: ['paneer butter masala', 'paneer tikka masala', 'shahi paneer', 'kadai paneer', 'palak paneer'], name: 'Paneer Curry Dish (per 100g)', calories: 195, sugars: 3.8, fat: 14.5, protein: 7.4, sodium_mg: 440 },
+  { keywords: ['butter chicken', 'chicken curry', 'chicken tikka masala'], name: 'Creamy Chicken Curry (per 100g)', calories: 185, sugars: 3.2, fat: 11.2, protein: 14.5, sodium_mg: 450 },
+  { keywords: ['tandoori chicken', 'chicken tikka', 'paneer tikka', 'grilled chicken', 'kebab'], name: 'Grilled Tandoori / Tikka (per 100g)', calories: 168, sugars: 1.0, fat: 7.2, protein: 22.5, sodium_mg: 420 },
+  { keywords: ['masala dosa', 'plain dosa', 'rava dosa', 'dosa'], name: 'Dosa (South Indian Crepe, per 100g)', calories: 168, sugars: 1.4, fat: 4.2, protein: 4.3, sodium_mg: 290 },
+  { keywords: ['idli', 'idli sambar', 'medu vada'], name: 'Steamed Idli / Breakfast (per 100g)', calories: 118, sugars: 0.8, fat: 0.9, protein: 3.9, sodium_mg: 220 },
+  { keywords: ['sambar', 'dal tadka', 'dal makhani', 'rajma chawal', 'khichdi'], name: 'Dal / Sambar / Khichdi Meal (per 100g)', calories: 126, sugars: 1.8, fat: 4.2, protein: 5.8, sodium_mg: 320 },
+  { keywords: ['pizza', 'margherita', 'pepperoni'], name: 'Baked Cheese Pizza (per 100g)', calories: 266, sugars: 3.6, fat: 10.1, protein: 11.4, sodium_mg: 598 },
+  { keywords: ['burger', 'zinger', 'mcveggie', 'mcchicken', 'whopper'], name: 'Fast-Food Burger (per 100g)', calories: 272, sugars: 5.4, fat: 12.8, protein: 12.2, sodium_mg: 540 },
+  { keywords: ['french fries', 'peri peri fries', 'fries'], name: 'Deep-Fried French Fries (per 100g)', calories: 312, sugars: 0.3, fat: 14.7, protein: 3.4, sodium_mg: 410 },
+  { keywords: ['momos', 'dumpling', 'dimsum'], name: 'Steamed / Fried Momos (per 100g)', calories: 215, sugars: 1.8, fat: 6.5, protein: 7.8, sodium_mg: 460 },
+  { keywords: ['pav bhaji', 'chole bhature', 'vada pav', 'samosa', 'kachori', 'pakora'], name: 'Fried / Street Food Snack (per 100g)', calories: 295, sugars: 3.4, fat: 15.8, protein: 6.1, sodium_mg: 520 },
+  { keywords: ['chowmein', 'hakka noodles', 'fried rice', 'manchurian'], name: 'Indo-Chinese Stir-Fry (per 100g)', calories: 218, sugars: 3.2, fat: 9.2, protein: 5.5, sodium_mg: 560 },
+  { keywords: ['paratha', 'aloo paratha', 'naan', 'roti', 'chapati', 'kulcha'], name: 'Indian Flatbread / Paratha (per 100g)', calories: 275, sugars: 1.6, fat: 9.2, protein: 7.5, sodium_mg: 380 },
+  { keywords: ['shawarma', 'kathi roll', 'frankie', 'wrap', 'sandwich', 'sub'], name: 'Wrap / Roll / Sandwich (per 100g)', calories: 224, sugars: 3.2, fat: 8.6, protein: 10.8, sodium_mg: 465 },
+  { keywords: ['salad', 'sprouts', 'poke bowl', 'buddha bowl', 'quinoa bowl'], name: 'Fresh Salad / Protein Bowl (per 100g)', calories: 82, sugars: 2.6, fat: 3.4, protein: 5.2, sodium_mg: 140 },
+  { keywords: ['cold coffee', 'milkshake', 'thick shake', 'frappe', 'boba', 'falooda'], name: 'Sweetened Shake / Cold Coffee (per 250ml)', calories: 215, sugars: 28.0, fat: 7.2, protein: 5.0, sodium_mg: 115 },
+  { keywords: ['brownie', 'cheesecake', 'pastry', 'cupcake', 'muffin', 'waffle'], name: 'Bakery Dessert / Brownie / Pastry (per 100g)', calories: 405, sugars: 32.0, fat: 21.0, protein: 5.2, sodium_mg: 260 },
+  { keywords: ['dhokla', 'khandvi', 'upma', 'pongal'], name: 'Steamed Indian Breakfast (per 100g)', calories: 152, sugars: 2.8, fat: 4.5, protein: 5.2, sodium_mg: 270 },
+  { keywords: ['thali'], name: 'Balanced Indian Thali (per 100g)', calories: 148, sugars: 2.4, fat: 5.2, protein: 5.8, sodium_mg: 310 },
 ];
 
 const clip = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
@@ -320,13 +341,29 @@ export default async function handler(req: any, res: any) {
   }
   body = body || {};
 
-  const title = String(body.product_title || 'Amazon Item').trim();
+  const title = String(body.product_title || 'Store Item').trim();
+  const urlLower = String(body.product_url || '').toLowerCase();
+  const sourcePlatform =
+    String(body.source_platform || '').trim() ||
+    (urlLower.includes('flipkart')
+      ? 'Flipkart'
+      : urlLower.includes('instamart')
+      ? 'Swiggy Instamart'
+      : urlLower.includes('swiggy')
+      ? 'Swiggy'
+      : urlLower.includes('zomato')
+      ? 'Zomato'
+      : urlLower.includes('blinkit')
+      ? 'Blinkit'
+      : urlLower.includes('amazon')
+      ? 'Amazon'
+      : 'Online Store');
   const nutritionText = String(body.nutrition_text || '');
   const ingredientsText = String(body.ingredients_text || '');
   const combined = [ingredientsText, nutritionText].filter(Boolean).join('\n');
 
   let nutrition = parseNutritionText(combined);
-  let nutritionSource = nutrition ? 'Amazon Page Nutrition Facts' : '';
+  let nutritionSource = nutrition ? `${sourcePlatform} Page Nutrition Facts` : '';
   let matchedFood: string | null = null;
 
   if (!nutrition) {
@@ -343,7 +380,8 @@ export default async function handler(req: any, res: any) {
     return res.status(200).json({
       event_id: eventId,
       timestamp: new Date().toISOString(),
-      source: body.source || 'amazon_browser_extension',
+      source: body.source || 'store_browser_extension',
+      source_platform: sourcePlatform,
       status: 'needs_nutrition',
       product_title: title,
       product_url: body.product_url || null,
@@ -360,7 +398,8 @@ export default async function handler(req: any, res: any) {
   return res.status(200).json({
     event_id: eventId,
     timestamp: new Date().toISOString(),
-    source: body.source || 'amazon_browser_extension',
+    source: body.source || 'store_browser_extension',
+    source_platform: sourcePlatform,
     status: 'analyzed',
     product_title: title,
     product_url: body.product_url || null,

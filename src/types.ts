@@ -130,6 +130,7 @@ export interface AmazonCartEvent {
   analysis: PredictionResult | null;
   ingredients_text?: string | null;
   ingredient_scan?: PacketScanResult | null;
+  source_platform?: string;
 }
 
 export interface CatalogFoodItem {

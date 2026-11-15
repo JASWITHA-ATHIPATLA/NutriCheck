@@ -10,7 +10,7 @@ document.getElementById('save-btn').addEventListener('click', () => {
   const cleaned = (urlInput.value || DEFAULT_URL).trim().replace(/\/+$/, '');
   chrome.storage.sync.set({ healthguardUrl: cleaned }, () => {
     urlInput.value = cleaned;
-    statusEl.textContent = 'Saved! Ready on Amazon pages.';
+    statusEl.textContent = 'Saved! Ready on Amazon, Flipkart, Swiggy & Zomato.';
     setTimeout(() => {
       statusEl.textContent = '';
     }, 2500);

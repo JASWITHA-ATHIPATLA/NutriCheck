@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -31,8 +32,8 @@ function StatusIcon({ label }: { label: HealthLabel }) {
 
 function statusPillLabel(status?: 'good' | 'moderate' | 'high'): string {
   if (status === 'good') return 'Good';
-  if (status === 'moderate') return 'Moderate';
-  if (status === 'high') return 'High Concern';
+  if (status === 'moderate') return 'Caution';
+  if (status === 'high') return 'High';
   return 'Measured';
 }
 
@@ -43,6 +44,19 @@ export function AnalysisResult({
   onAddToCart,
   onQuickPreset,
 }: AnalysisResultProps) {
+  const hasIngredientData = Boolean(
+    ingredientScan &&
+      (ingredientScan.ingredient_findings.length > 0 ||
+        ingredientScan.parsed_ingredients.length > 0)
+  );
+  const [chartTab, setChartTab] = useState<'ingredients' | 'macros'>(
+    hasIngredientData ? 'ingredients' : 'macros'
+  );
+
+  useEffect(() => {
+    setChartTab(hasIngredientData ? 'ingredients' : 'macros');
+  }, [hasIngredientData, result?.food_name]);
+
   if (!result && !isAnalyzing) {
     return (
       <section className="card empty-state" aria-label="Health analysis output">
@@ -51,9 +65,9 @@ export function AnalysisResult({
         </div>
         <h2 className="empty-title">Ready to Analyze Nutrition</h2>
         <p className="empty-desc">
-          Select any food above, enter nutrition values on the left, or load a
-          dataset sample below to inspect its NutriCheck health score, calorie
-          pie chart, and nutrition table.
+          Pick any food above, enter nutrition numbers on the left, or load a
+          sample below to see its Good / Not Good verdict, calorie pie chart, and
+          easy-to-read table.
         </p>
         <div className="form-actions" style={{ justifyContent: 'center' }}>
           <button
@@ -172,11 +186,6 @@ export function AnalysisResult({
     },
   ];
 
-  const hasIngredientData = Boolean(
-    ingredientScan &&
-      (ingredientScan.ingredient_findings.length > 0 ||
-        ingredientScan.parsed_ingredients.length > 0)
-  );
   const ingGood = ingredientScan
     ? ingredientScan.ingredient_findings.filter((f) => f.rating === 'good').length
     : 0;
@@ -206,12 +215,14 @@ export function AnalysisResult({
       displayValue: `${ingMod} items`,
     },
     {
-      label: 'Bad / High Concern',
+      label: 'Bad / Additives',
       value: ingBad,
       color: '#dc2626',
       displayValue: `${ingBad} items`,
     },
   ];
+
+  const showingIngredientsChart = hasIngredientData && chartTab === 'ingredients';
 
   return (
     <section className="card" aria-labelledby="analysis-result-heading">
@@ -221,7 +232,7 @@ export function AnalysisResult({
             {result.food_name}
           </h2>
           <p className="result-meta-line">
-            Model: {result.model_used} · Confidence{' '}
+            {result.model_used} · Confidence{' '}
             <span className="tabular">{result.confidence}%</span>
           </p>
         </div>
@@ -230,6 +241,12 @@ export function AnalysisResult({
           <StatusIcon label={result.classification} />
           <span>{verdictText}</span>
         </div>
+      </div>
+
+      {/* Plain-English 1-sentence takeaway right up top so the answer is immediate */}
+      <div className="explanation-box" style={{ marginBottom: 4 }}>
+        <div className="explanation-heading">Plain-English Takeaway</div>
+        <p className="explanation-text">{result.explanation}</p>
       </div>
 
       <div className="score-visual-grid">
@@ -242,14 +259,57 @@ export function AnalysisResult({
           />
         </div>
 
-        <BreakdownPieChart
-          title="Calorie & Macro Breakdown"
-          subtitle="Share of calories from Protein, Fat, Sugars & Other Carbs"
-          slices={macroSlices}
-          centerValue={`${Math.round(result.nutrition.calories)}`}
-          centerLabel="kcal"
-          emptyMessage="Zero-calorie beverage or item."
-        />
+        <div>
+          {hasIngredientData && (
+            <div className="pie-card-header-row" style={{ marginBottom: 8 }}>
+              <span className="table-section-title" style={{ marginBottom: 0 }}>
+                Visual Breakdown
+              </span>
+              <div className="chart-switch-tabs" role="tablist" aria-label="Pie chart view">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={chartTab === 'ingredients'}
+                  className={`chart-switch-tab ${
+                    chartTab === 'ingredients' ? 'is-active' : ''
+                  }`}
+                  onClick={() => setChartTab('ingredients')}
+                >
+                  Good vs. Bad Ingredients
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={chartTab === 'macros'}
+                  className={`chart-switch-tab ${chartTab === 'macros' ? 'is-active' : ''}`}
+                  onClick={() => setChartTab('macros')}
+                >
+                  Calorie Breakdown
+                </button>
+              </div>
+            </div>
+          )}
+
+          {showingIngredientsChart ? (
+            <BreakdownPieChart
+              title="Good vs. Bad Ingredients"
+              subtitle="Share of whole-food vs refined & additive ingredients"
+              slices={ingredientPieSlices}
+              centerValue={`${ingTotal}`}
+              centerLabel="items"
+              emptyMessage="No flagged additives detected in the ingredient list."
+            />
+          ) : (
+            <BreakdownPieChart
+              title="Calorie & Macro Breakdown"
+              subtitle="Energy share from Protein, Fat, Sugars & Other Carbs"
+              slices={macroSlices}
+              centerValue={`${Math.round(result.nutrition.calories)}`}
+              centerLabel="kcal"
+              emptyMessage="Zero-calorie beverage or item."
+            />
+          )}
+        </div>
       </div>
 
       <div className="table-section">
@@ -261,7 +321,7 @@ export function AnalysisResult({
                 <th>Nutrient</th>
                 <th className="num">Quantity</th>
                 <th className="num">Energy / Ratio</th>
-                <th>Evaluation</th>
+                <th>Status</th>
               </tr>
             </thead>
             <tbody>
@@ -288,71 +348,54 @@ export function AnalysisResult({
         </div>
       </div>
 
-      {hasIngredientData && ingredientScan && (
-        <div className="table-section" style={{ borderTop: '1px solid var(--border-subtle)', marginTop: 14 }}>
-          <div className="table-section-title">
-            Amazon Page Ingredients Analysis ({ingredientScan.verdict} · {ingredientScan.score}/100)
-          </div>
-          <div style={{ marginBottom: 14 }}>
-            <BreakdownPieChart
-              title="Good vs. Bad Ingredients"
-              subtitle="Distribution of scanned ingredients from the Amazon product page"
-              slices={ingredientPieSlices}
-              centerValue={`${ingTotal}`}
-              centerLabel="flagged"
-              emptyMessage="No flagged additives detected in the ingredient list."
-            />
-          </div>
-
-          {ingredientScan.ingredient_findings.length > 0 && (
+      {hasIngredientData &&
+        ingredientScan &&
+        ingredientScan.ingredient_findings.length > 0 && (
+          <div className="table-section">
+            <div className="table-section-title">
+              What&apos;s Good vs. What to Watch ({ingredientScan.verdict} ·{' '}
+              <span className="tabular">{ingredientScan.score}</span>/100)
+            </div>
             <div className="data-table-wrap">
               <table className="data-table nutrition-table">
                 <thead>
                   <tr>
                     <th>Ingredient</th>
-                    <th>Classification</th>
-                    <th>Assessment</th>
+                    <th>Rating</th>
+                    <th>Why It Matters</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {ingredientScan.ingredient_findings.map((finding) => (
-                    <tr key={finding.ingredient}>
-                      <td>
-                        <strong>{finding.ingredient}</strong>
-                      </td>
-                      <td>
-                        <span className={`eval-pill is-${finding.rating}`}>
-                          {finding.rating === 'good'
-                            ? 'Good'
-                            : finding.rating === 'moderate'
-                            ? 'Caution'
-                            : 'Bad'}
-                        </span>
-                      </td>
-                      <td className="table-note-cell">{finding.reason}</td>
-                    </tr>
-                  ))}
+                  {[...ingredientScan.ingredient_findings]
+                    .sort((a, b) => {
+                      const ord =
+                        ingredientScan.verdict === 'Good'
+                          ? { good: 0, moderate: 1, high: 2 }
+                          : { high: 0, moderate: 1, good: 2 };
+                      return ord[a.rating] - ord[b.rating];
+                    })
+                    .map((finding) => (
+                      <tr key={finding.ingredient}>
+                        <td>
+                          <strong>{finding.ingredient}</strong>
+                        </td>
+                        <td>
+                          <span className={`eval-pill is-${finding.rating}`}>
+                            {finding.rating === 'good'
+                              ? 'Good'
+                              : finding.rating === 'moderate'
+                              ? 'Caution'
+                              : 'Bad'}
+                          </span>
+                        </td>
+                        <td className="table-note-cell">{finding.reason}</td>
+                      </tr>
+                    ))}
                 </tbody>
               </table>
             </div>
-          )}
-
-          {ingredientScan.parsed_ingredients.length > 0 && (
-            <p className="card-subtitle" style={{ marginTop: 10 }}>
-              <strong>Scanned Ingredients:</strong>{' '}
-              {ingredientScan.parsed_ingredients.slice(0, 16).join(', ')}
-              {ingredientScan.parsed_ingredients.length > 16
-                ? ` (+${ingredientScan.parsed_ingredients.length - 16} more)`
-                : ''}
-            </p>
-          )}
-        </div>
-      )}
-
-      <div className="explanation-box">
-        <div className="explanation-heading">Health Analysis Summary</div>
-        <p className="explanation-text">{result.explanation}</p>
-      </div>
+          </div>
+        )}
 
       <div className="result-footer-actions">
         <button
@@ -364,7 +407,7 @@ export function AnalysisResult({
           <span>Add to Cart (Demo)</span>
         </button>
         <span className="footer-hint">
-          Triggers an instant health alert in your NutriCheck cart.
+          Logs this item into your NutriCheck cart summary.
         </span>
       </div>
     </section>

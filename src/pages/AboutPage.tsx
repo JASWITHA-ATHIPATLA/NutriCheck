@@ -30,7 +30,8 @@ export function AboutPage() {
             refined wheat flour, palmolein oil, invert syrup, maltodextrin, and synthetic
             preservatives in small print on the back. NutriCheck gives everyday shoppers
             one place to scan a packet photo, search online packaged brands, or monitor
-            Amazon grocery clicks automatically.
+            food and grocery additions across Amazon, Flipkart, Swiggy Instamart, and
+            Zomato automatically.
           </p>
         </section>
 
@@ -53,7 +54,7 @@ export function AboutPage() {
               </li>
               <li>
                 <strong>Positive Density Credits:</strong> Rewards dietary fiber, protein
-                density, and low-energy whole foods.
+                density, whole nuts/seeds, and low-energy whole foods.
               </li>
             </ul>
           </section>
@@ -83,7 +84,8 @@ export function AboutPage() {
             <div>
               <h2 className="card-title">Try Scanning a Food Packet Now</h2>
               <p className="card-subtitle">
-                Upload a photo of any ingredients label or enter nutrition values directly.
+                Upload a photo of any ingredients label, connect your Chrome extension,
+                or inspect ML model benchmarks.
               </p>
             </div>
             <div className="form-actions" style={{ marginTop: 0 }}>
@@ -92,11 +94,18 @@ export function AboutPage() {
                 <ArrowRight size={15} />
               </Link>
               <Link
-                to="/analyzer"
+                to="/amazon"
                 className="btn-secondary"
                 style={{ textDecoration: 'none' }}
               >
-                <span>Open Food Analyzer</span>
+                <span>Store Connect</span>
+              </Link>
+              <Link
+                to="/models"
+                className="btn-secondary"
+                style={{ textDecoration: 'none' }}
+              >
+                <span>Models &amp; Data</span>
               </Link>
             </div>
           </div>

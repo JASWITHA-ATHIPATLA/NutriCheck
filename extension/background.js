@@ -70,6 +70,28 @@ const GROCERY_STAPLES = [
   { keywords: ['pickle', 'achaar', 'papad'], name: 'Pickles / Papad (per 100g)', calories: 220, sugars: 2.0, fat: 11.0, protein: 4.5, sodium_mg: 2400 },
   { keywords: ['soan papdi', 'laddu', 'laddoo', 'rasgulla', 'gulab jamun', 'halwa', 'barfi', 'peda'], name: 'Indian Packaged Sweets (per 100g)', calories: 430, sugars: 46.0, fat: 18.0, protein: 4.5, sodium_mg: 45 },
   { keywords: ['ice cream', 'kulfi', 'gelato'], name: 'Ice Cream (per 100g)', calories: 207, sugars: 21.2, fat: 11.0, protein: 3.5, sodium_mg: 80 },
+  // Popular Swiggy / Zomato / Quick-Commerce Dishes & Meals
+  { keywords: ['chicken biryani', 'mutton biryani', 'hyderabadi biryani', 'dum biryani', 'biryani'], name: 'Biryani (per 100g)', calories: 168, sugars: 1.2, fat: 6.4, protein: 9.2, sodium_mg: 380 },
+  { keywords: ['veg biryani', 'pulao', 'pulav', 'jeera rice'], name: 'Veg Biryani / Pulao (per 100g)', calories: 142, sugars: 1.5, fat: 4.5, protein: 3.6, sodium_mg: 310 },
+  { keywords: ['paneer butter masala', 'paneer tikka masala', 'shahi paneer', 'kadai paneer', 'palak paneer'], name: 'Paneer Curry Dish (per 100g)', calories: 195, sugars: 3.8, fat: 14.5, protein: 7.4, sodium_mg: 440 },
+  { keywords: ['butter chicken', 'chicken curry', 'chicken tikka masala'], name: 'Creamy Chicken Curry (per 100g)', calories: 185, sugars: 3.2, fat: 11.2, protein: 14.5, sodium_mg: 450 },
+  { keywords: ['tandoori chicken', 'chicken tikka', 'paneer tikka', 'grilled chicken', 'kebab'], name: 'Grilled Tandoori / Tikka (per 100g)', calories: 168, sugars: 1.0, fat: 7.2, protein: 22.5, sodium_mg: 420 },
+  { keywords: ['masala dosa', 'plain dosa', 'rava dosa', 'dosa'], name: 'Dosa (South Indian Crepe, per 100g)', calories: 168, sugars: 1.4, fat: 4.2, protein: 4.3, sodium_mg: 290 },
+  { keywords: ['idli', 'idli sambar', 'medu vada'], name: 'Steamed Idli / Breakfast (per 100g)', calories: 118, sugars: 0.8, fat: 0.9, protein: 3.9, sodium_mg: 220 },
+  { keywords: ['sambar', 'dal tadka', 'dal makhani', 'rajma chawal', 'khichdi'], name: 'Dal / Sambar / Khichdi Meal (per 100g)', calories: 126, sugars: 1.8, fat: 4.2, protein: 5.8, sodium_mg: 320 },
+  { keywords: ['pizza', 'margherita', 'pepperoni'], name: 'Baked Cheese Pizza (per 100g)', calories: 266, sugars: 3.6, fat: 10.1, protein: 11.4, sodium_mg: 598 },
+  { keywords: ['burger', 'zinger', 'mcveggie', 'mcchicken', 'whopper'], name: 'Fast-Food Burger (per 100g)', calories: 272, sugars: 5.4, fat: 12.8, protein: 12.2, sodium_mg: 540 },
+  { keywords: ['french fries', 'peri peri fries', 'fries'], name: 'Deep-Fried French Fries (per 100g)', calories: 312, sugars: 0.3, fat: 14.7, protein: 3.4, sodium_mg: 410 },
+  { keywords: ['momos', 'dumpling', 'dimsum'], name: 'Steamed / Fried Momos (per 100g)', calories: 215, sugars: 1.8, fat: 6.5, protein: 7.8, sodium_mg: 460 },
+  { keywords: ['pav bhaji', 'chole bhature', 'vada pav', 'samosa', 'kachori', 'pakora'], name: 'Fried / Street Food Snack (per 100g)', calories: 295, sugars: 3.4, fat: 15.8, protein: 6.1, sodium_mg: 520 },
+  { keywords: ['chowmein', 'hakka noodles', 'fried rice', 'manchurian'], name: 'Indo-Chinese Stir-Fry (per 100g)', calories: 218, sugars: 3.2, fat: 9.2, protein: 5.5, sodium_mg: 560 },
+  { keywords: ['paratha', 'aloo paratha', 'naan', 'roti', 'chapati', 'kulcha'], name: 'Indian Flatbread / Paratha (per 100g)', calories: 275, sugars: 1.6, fat: 9.2, protein: 7.5, sodium_mg: 380 },
+  { keywords: ['shawarma', 'kathi roll', 'frankie', 'wrap', 'sandwich', 'sub'], name: 'Wrap / Roll / Sandwich (per 100g)', calories: 224, sugars: 3.2, fat: 8.6, protein: 10.8, sodium_mg: 465 },
+  { keywords: ['salad', 'sprouts', 'poke bowl', 'buddha bowl', 'quinoa bowl'], name: 'Fresh Salad / Protein Bowl (per 100g)', calories: 82, sugars: 2.6, fat: 3.4, protein: 5.2, sodium_mg: 140 },
+  { keywords: ['cold coffee', 'milkshake', 'thick shake', 'frappe', 'boba', 'falooda'], name: 'Sweetened Shake / Cold Coffee (per 250ml)', calories: 215, sugars: 28.0, fat: 7.2, protein: 5.0, sodium_mg: 115 },
+  { keywords: ['brownie', 'cheesecake', 'pastry', 'cupcake', 'muffin', 'waffle'], name: 'Bakery Dessert / Brownie / Pastry (per 100g)', calories: 405, sugars: 32.0, fat: 21.0, protein: 5.2, sodium_mg: 260 },
+  { keywords: ['dhokla', 'khandvi', 'upma', 'pongal'], name: 'Steamed Indian Breakfast (per 100g)', calories: 152, sugars: 2.8, fat: 4.5, protein: 5.2, sodium_mg: 270 },
+  { keywords: ['thali'], name: 'Balanced Indian Thali (per 100g)', calories: 148, sugars: 2.4, fat: 5.2, protein: 5.8, sodium_mg: 310 },
 ];
 
 const GOOD_ING = [
@@ -94,6 +116,11 @@ const GOOD_ING = [
   ['flax', 'Flax Seeds', 'Rich in soluble fiber and plant omega-3 fats.'],
   ['olive oil', 'Olive Oil', 'Monounsaturated healthy cooking fat.'],
   ['turmeric', 'Turmeric', 'Natural spice with curcumin antioxidants.'],
+  ['paneer', 'Paneer', 'Rich source of dairy protein and calcium.'],
+  ['lentil', 'Lentils', 'High-fiber plant protein with slow glycemic release.'],
+  ['chickpea', 'Chickpeas', 'High-fiber legume protein.'],
+  ['yogurt', 'Yogurt', 'Probiotic dairy with protein and calcium.'],
+  ['spinach', 'Spinach', 'Leafy green rich in iron and vitamins.'],
 ];
 
 const MOD_ING = [
@@ -128,6 +155,18 @@ const BAD_ING = [
 
 function escapeRegExp(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function inferPlatformName(url, explicit) {
+  if (explicit) return explicit;
+  const u = (url || '').toLowerCase();
+  if (u.includes('flipkart')) return 'Flipkart';
+  if (u.includes('instamart')) return 'Swiggy Instamart';
+  if (u.includes('swiggy')) return 'Swiggy';
+  if (u.includes('zomato')) return 'Zomato';
+  if (u.includes('blinkit')) return 'Blinkit';
+  if (u.includes('amazon')) return 'Amazon';
+  return 'Online Store';
 }
 
 async function getHealthGuardUrl() {
@@ -206,7 +245,7 @@ function parseNutritionTextInWorker(text) {
 function scanIngredientsInWorker(productName, text, nutritionAnalysis) {
   if (!text || !text.trim()) return null;
   const segMatch = text.match(
-    /ingredients?\s*[:\-]?\s*([\s\S]+?)(?:\bnutrition|\ballergen|\bstorage|\bmanufactured|\bpacked by|\bbest before|\bnet weight|$)/i
+    /ingredients?(?:\s*\/\s*dish\s*notes)?\s*[:\-]?\s*([\s\S]+?)(?:\bnutrition|\ballergen|\bstorage|\bmanufactured|\bpacked by|\bbest before|\bnet weight|$)/i
   );
   const sourceText = segMatch
     ? segMatch[1]
@@ -377,8 +416,8 @@ function scoreNutritionInWorker(foodName, n) {
   const verdictWord = classification === 'Healthy' ? 'Good' : classification === 'Moderate' ? 'Moderate' : 'Not Good';
   const level = classification === 'Healthy' ? 'success' : classification === 'Moderate' ? 'warning' : 'danger';
   const explanation = wholeNut
-    ? `${foodName} is ${verdictWord} (${health_score}/100) — whole nuts/seeds/dry fruits rich in healthy unsaturated fats, plant protein (${round1(protein)}g), and very low sodium (${Math.round(sodium_mg)}mg).`
-    : `${foodName} is ${verdictWord} (${health_score}/100) across ${round1(n.calories)} kcal, ${round1(sugars)}g sugar, ${round1(fat)}g fat, ${round1(protein)}g protein, and ${Math.round(sodium_mg)}mg sodium.`;
+    ? `${foodName} is ${verdictWord} (${health_score}/100) — whole nuts & dry fruits rich in healthy fats and ${round1(protein)}g protein.`
+    : `${foodName} is ${verdictWord} (${health_score}/100) · ${Math.round(n.calories)} kcal, ${round1(sugars)}g sugar, ${round1(fat)}g fat, ${round1(protein)}g protein.`;
 
   return {
     food_name: foodName,
@@ -425,7 +464,7 @@ async function lookupStapleOrCatalogInWorker(title) {
     const p = bestStaple.profile;
     return {
       matched_food: p.name,
-      source: 'Grocery Staple Nutrition Profile',
+      source: 'Grocery & Dish Profile',
       nutrition: {
         calories: p.calories,
         sugars: p.sugars,
@@ -580,13 +619,14 @@ async function lookupOpenFoodFactsInWorker(title, barcode) {
 }
 
 async function analyzeInExtensionFallback(payload) {
-  const title = payload.product_title || 'Amazon Item';
+  const title = payload.product_title || 'Food Item';
+  const platform = inferPlatformName(payload.product_url, payload.source_platform);
   const combinedText = [payload.ingredients_text || '', payload.nutrition_text || '']
     .filter(Boolean)
     .join('\n');
 
   let nutrition = parseNutritionTextInWorker(combinedText);
-  let nutritionSource = nutrition ? 'Amazon Page Nutrition Facts' : '';
+  let nutritionSource = nutrition ? `${platform} Page Nutrition Facts` : '';
   let matchedFood = null;
   let capturedIngredients = payload.ingredients_text || '';
 
@@ -594,7 +634,7 @@ async function analyzeInExtensionFallback(payload) {
     const stapleOrCatalog = await lookupStapleOrCatalogInWorker(title);
     const titleWords = title.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').trim().split(/\s+/).filter(Boolean);
     const isPureStaple =
-      stapleOrCatalog?.source === 'Grocery Staple Nutrition Profile' && titleWords.length <= 2;
+      stapleOrCatalog?.source === 'Grocery & Dish Profile' && titleWords.length <= 2;
 
     const off = isPureStaple ? null : await lookupOpenFoodFactsInWorker(title, payload.barcode);
     let offIsRelevant = false;
@@ -641,13 +681,14 @@ async function analyzeInExtensionFallback(payload) {
     return {
       event_id: eventId,
       timestamp: new Date().toISOString(),
-      source: payload.source || 'amazon_browser_extension',
+      source: payload.source || 'store_browser_extension',
+      source_platform: platform,
       status: 'needs_nutrition',
       product_title: title,
       product_url: payload.product_url || null,
       nutrition_source: 'Nutrition Label Not Found on Page',
       matched_food: null,
-      message: `Captured "${title}" from Amazon Add to Cart. Open NutriCheck to enter label numbers or scan packet ingredients.`,
+      message: `Captured "${title}" from ${platform}. Open NutriCheck to enter label numbers or scan packet photo.`,
       analysis: null,
       ingredients_text: null,
       ingredient_scan: null,
@@ -656,7 +697,7 @@ async function analyzeInExtensionFallback(payload) {
 
   const finalAnalysis = analysis || scoreNutritionInWorker(title, baseNutrition);
   if (ingredientScan && !analysis) {
-    nutritionSource = 'Amazon Page Ingredients Scan';
+    nutritionSource = `${platform} Ingredients Scan`;
   } else if (ingredientScan && analysis) {
     nutritionSource = `${nutritionSource} + Ingredients Scan`;
   }
@@ -664,7 +705,8 @@ async function analyzeInExtensionFallback(payload) {
   return {
     event_id: eventId,
     timestamp: new Date().toISOString(),
-    source: payload.source || 'amazon_browser_extension',
+    source: payload.source || 'store_browser_extension',
+    source_platform: platform,
     status: 'analyzed',
     product_title: title,
     product_url: payload.product_url || null,
@@ -679,19 +721,21 @@ async function analyzeInExtensionFallback(payload) {
   };
 }
 
-function buildToastFromResponse({ ok, baseUrl, data, error, productTitle }) {
+function buildToastFromResponse({ ok, baseUrl, data, error, productTitle, platform }) {
+  const storeName = data?.source_platform || platform || 'Online Store';
+
   if (!ok || !data) {
     const fallbackQuery = new URLSearchParams({
-      item: productTitle || 'Amazon Item',
-      source: 'amazon',
+      item: productTitle || 'Food Item',
+      source: storeName.toLowerCase(),
     }).toString();
 
     return {
       level: 'info',
-      title: 'NutriCheck: Connection Issue',
-      message:
-        error ||
-        `Could not connect to NutriCheck at ${baseUrl}. Make sure your website is reachable.`,
+      verdict: 'Offline',
+      platform: storeName,
+      productName: productTitle || 'Food Item',
+      takeaway: error || `Could not reach NutriCheck at ${baseUrl}.`,
       score: null,
       baseUrl,
       query: fallbackQuery,
@@ -700,16 +744,16 @@ function buildToastFromResponse({ ok, baseUrl, data, error, productTitle }) {
 
   if (data.status === 'needs_nutrition' || !data.analysis) {
     const query = new URLSearchParams({
-      item: data.product_title || productTitle || 'Amazon Item',
-      source: 'amazon',
+      item: data.product_title || productTitle || 'Food Item',
+      source: storeName.toLowerCase(),
     }).toString();
 
     return {
       level: 'warning',
-      title: 'NutriCheck: Sent to Website (Needs Nutrition)',
-      message:
-        data.message ||
-        `Captured "${data.product_title}" for your NutriCheck website.`,
+      verdict: 'Needs Info',
+      platform: storeName,
+      productName: data.product_title || productTitle || 'Food Item',
+      takeaway: 'Label numbers were not on this page. Open NutriCheck to paste or scan the packet.',
       score: null,
       baseUrl,
       query,
@@ -718,6 +762,31 @@ function buildToastFromResponse({ ok, baseUrl, data, error, productTitle }) {
 
   const a = data.analysis;
   const verdict = a.classification === 'Healthy' ? 'Good' : a.classification === 'Moderate' ? 'Moderate' : 'Not Good';
+
+  const scan = data.ingredient_scan;
+  let ingredientSummary = null;
+  if (scan && Array.isArray(scan.ingredient_findings)) {
+    const goodCount = scan.ingredient_findings.filter((f) => f.rating === 'good').length;
+    const modCount = scan.ingredient_findings.filter((f) => f.rating === 'moderate').length;
+    const badCount = scan.ingredient_findings.filter((f) => f.rating === 'high').length;
+    const unflagged =
+      goodCount + modCount + badCount === 0 ? scan.parsed_ingredients?.length || 0 : 0;
+    const g = goodCount + unflagged;
+    const total = g + modCount + badCount;
+    if (total > 0) {
+      ingredientSummary = {
+        goodCount: g,
+        modCount,
+        badCount,
+        total,
+        highlights: scan.ingredient_findings.slice(0, 4).map((f) => ({
+          ingredient: f.ingredient,
+          rating: f.rating,
+        })),
+      };
+    }
+  }
+
   const query = new URLSearchParams({
     item: a.food_name,
     calories: String(a.nutrition.calories),
@@ -725,14 +794,23 @@ function buildToastFromResponse({ ok, baseUrl, data, error, productTitle }) {
     fat: String(a.nutrition.fat),
     protein: String(a.nutrition.protein),
     sodium_mg: String(a.nutrition.sodium_mg),
-    source: 'amazon',
+    source: storeName.toLowerCase(),
   }).toString();
 
   return {
     level: a.cart_alert.level,
-    title: `NutriCheck: ${verdict}`,
-    message: `${a.explanation} (${data.nutrition_source})`,
+    verdict,
+    platform: storeName,
+    productName: a.food_name,
+    takeaway: a.explanation,
     score: a.health_score,
+    macros: {
+      calories: a.nutrition.calories,
+      sugars: a.nutrition.sugars,
+      fat: a.nutrition.fat,
+      protein: a.nutrition.protein,
+    },
+    ingredientSummary,
     baseUrl,
     query,
   };
@@ -751,15 +829,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         sendResponse({ ok: false, ignored: true });
         return;
       }
-      const productTitle = rawTitle || 'Amazon Item';
+      const productTitle = rawTitle || 'Food Item';
+      const platform = inferPlatformName(message.payload?.product_url, message.payload?.source_platform);
 
       await saveToastState({
         level: 'info',
-        title: 'NutriCheck: Analyzing Amazon Item...',
-        message: `Scanning "${productTitle}" ingredients & calories, syncing to ${baseUrl}.`,
+        verdict: 'Checking...',
+        platform,
+        productName: productTitle,
+        takeaway: 'Scanning ingredients and nutrition profile...',
         score: null,
         baseUrl,
-        query: new URLSearchParams({ item: productTitle, source: 'amazon' }).toString(),
+        query: new URLSearchParams({ item: productTitle, source: platform.toLowerCase() }).toString(),
       });
 
       let eventData = null;
@@ -777,7 +858,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             }
           }
         } catch {
-          // Fallback below handles offline local backend and universal staples
+          // Fallback below
         }
       }
 
@@ -787,6 +868,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         );
       }
 
+      if (eventData && !eventData.source_platform) {
+        eventData.source_platform = platform;
+      }
+
       await saveEventToExtensionHistory(eventData);
 
       const toast = buildToastFromResponse({
@@ -794,6 +879,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         baseUrl,
         data: eventData,
         productTitle,
+        platform,
       });
       await saveToastState(toast);
       sendResponse({ ok: true, baseUrl, event: eventData, toast });

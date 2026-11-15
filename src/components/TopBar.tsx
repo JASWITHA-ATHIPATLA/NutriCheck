@@ -38,13 +38,7 @@ export function TopBar() {
             to="/amazon"
             className={({ isActive }) => `nav-tab ${isActive ? 'is-active' : ''}`}
           >
-            Amazon Connect
-          </NavLink>
-          <NavLink
-            to="/models"
-            className={({ isActive }) => `nav-tab ${isActive ? 'is-active' : ''}`}
-          >
-            Models &amp; Data
+            Store Connect
           </NavLink>
           <NavLink
             to="/about"

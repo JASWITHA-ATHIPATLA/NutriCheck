@@ -13,8 +13,8 @@ export function Footer() {
             <span className="brand-title footer-brand-title">NutriCheck</span>
           </Link>
           <p className="footer-desc">
-            Transparent food label inspection, packet ingredient scanning, and ML
-            nutrition scoring grounded in WHO and FDA profiling rules.
+            Transparent food label inspection, packet ingredient scanning, and
+            live food checks across Amazon, Flipkart, Swiggy Instamart, and Zomato.
           </p>
         </div>
 
@@ -35,7 +35,7 @@ export function Footer() {
           <div className="footer-col">
             <div className="footer-col-title">Integrations &amp; Science</div>
             <Link to="/amazon" className="footer-link">
-              Amazon Connect
+              Store Connect (Extension)
             </Link>
             <Link to="/models" className="footer-link">
               Models &amp; Data

@@ -475,6 +475,11 @@ export function ScanPacketPage() {
                   </div>
                 </div>
 
+                <div className="explanation-box" style={{ marginBottom: 4 }}>
+                  <div className="explanation-heading">Plain-English Verdict</div>
+                  <p className="explanation-text">{result.summary}</p>
+                </div>
+
                 <div className="score-visual-grid">
                   <div className="gauge-panel">
                     <NutritionGauge
@@ -486,18 +491,13 @@ export function ScanPacketPage() {
                   </div>
 
                   <BreakdownPieChart
-                    title="Good vs Bad Ingredients"
-                    subtitle="Ingredient quality breakdown detected on this packet"
+                    title="Good vs. Bad Ingredients"
+                    subtitle="Share of whole-food vs refined & additive ingredients"
                     slices={ingredientSlices}
                     centerValue={`${flaggedTotal || result.ingredients_count}`}
                     centerLabel={flaggedTotal ? 'flagged' : 'items'}
                     emptyMessage="Paste an ingredients list to view good vs bad ingredient shares."
                   />
-                </div>
-
-                <div className="explanation-box">
-                  <div className="explanation-heading">Verdict Summary</div>
-                  <p className="explanation-text">{result.summary}</p>
                 </div>
 
                 {nutRows.length > 0 && (
@@ -510,7 +510,7 @@ export function ScanPacketPage() {
                             <th>Nutrient</th>
                             <th className="num">Quantity</th>
                             <th className="num">Energy / Ratio</th>
-                            <th>Evaluation</th>
+                            <th>Status</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -524,9 +524,9 @@ export function ScanPacketPage() {
                                   {row.status === 'good'
                                     ? 'Good'
                                     : row.status === 'moderate'
-                                    ? 'Moderate'
+                                    ? 'Caution'
                                     : row.status === 'high'
-                                    ? 'High Concern'
+                                    ? 'High'
                                     : 'Measured'}
                                 </span>
                               </td>
@@ -540,14 +540,14 @@ export function ScanPacketPage() {
 
                 {result.ingredient_findings.length > 0 ? (
                   <div className="table-section">
-                    <div className="table-section-title">Good &amp; Bad Ingredients Breakdown</div>
+                    <div className="table-section-title">What&apos;s Good vs. What to Watch</div>
                     <div className="data-table-wrap">
                       <table className="data-table nutrition-table">
                         <thead>
                           <tr>
                             <th>Ingredient</th>
-                            <th>Category</th>
-                            <th>Health Note</th>
+                            <th>Rating</th>
+                            <th>Why It Matters</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -563,7 +563,7 @@ export function ScanPacketPage() {
                                 <td><strong>{f.ingredient}</strong></td>
                                 <td>
                                   <span className={`eval-pill is-${f.rating}`}>
-                                    {f.rating === 'good' ? 'Good' : f.rating === 'moderate' ? 'Moderate' : 'Bad'}
+                                    {f.rating === 'good' ? 'Good' : f.rating === 'moderate' ? 'Caution' : 'Bad'}
                                   </span>
                                 </td>
                                 <td className="table-note-cell">{f.reason}</td>
@@ -592,10 +592,10 @@ export function ScanPacketPage() {
                   </div>
                 )}
 
-                {result.parsed_ingredients.length > 0 && (
+                {result.ingredient_findings.length === 0 && result.parsed_ingredients.length > 0 && (
                   <div className="parsed-ingredients-box">
-                    <div className="explanation-heading">Extracted Packet Ingredients</div>
-                    <p className="card-subtitle" style={{ color: '#374151', marginTop: '4px' }}>
+                    <div className="explanation-heading">Detected Packet Ingredients</div>
+                    <p className="card-subtitle" style={{ color: '#44403c', marginTop: '4px' }}>
                       {result.parsed_ingredients.join(' · ')}
                     </p>
                   </div>

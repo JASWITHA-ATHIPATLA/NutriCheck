@@ -172,7 +172,20 @@ function NutriCheckShell() {
     });
   }
 
+  function inferStorePlatform(ev: AmazonCartEvent): string {
+    if (ev.source_platform) return ev.source_platform;
+    const hay = `${ev.product_url || ''} ${ev.source || ''}`.toLowerCase();
+    if (hay.includes('flipkart')) return 'Flipkart';
+    if (hay.includes('instamart')) return 'Swiggy Instamart';
+    if (hay.includes('swiggy')) return 'Swiggy';
+    if (hay.includes('zomato')) return 'Zomato';
+    if (hay.includes('blinkit')) return 'Blinkit';
+    if (hay.includes('amazon')) return 'Amazon';
+    return 'Store';
+  }
+
   function handleIncomingAmazonEvent(ev: AmazonCartEvent, showBanner = true) {
+    const storeName = inferStorePlatform(ev);
     if (ev.status === 'analyzed' && ev.analysis) {
       applyPredictionToForm(ev.analysis);
       setActiveIngredientScan(ev.ingredient_scan || null);
@@ -186,7 +199,7 @@ function NutriCheckShell() {
             : 'Not Good';
         setAmazonNotice({
           level: ev.analysis.cart_alert.level,
-          title: `Amazon Add-to-Cart Analyzed: ${verdictWord} (${ev.analysis.health_score}/100)`,
+          title: `${storeName} Item Checked: ${verdictWord} (${ev.analysis.health_score}/100)`,
           message: ev.message || `${ev.product_title} — ${ev.analysis.explanation}`,
           needsNutrition: false,
         });
@@ -203,10 +216,10 @@ function NutriCheckShell() {
     if (showBanner) {
       setAmazonNotice({
         level: 'warning',
-        title: `Amazon Item Captured: ${ev.product_title}`,
+        title: `${storeName} Item Captured: ${ev.product_title}`,
         message:
           ev.message ||
-          'Nutrition label numbers were not found on the Amazon page. Enter nutrition values below or paste label text to classify.',
+          `Nutrition label numbers were not found on the ${storeName} page. Enter nutrition values below or paste label text to classify.`,
         needsNutrition: true,
       });
     }
@@ -804,13 +817,13 @@ function NutriCheckShell() {
                   Enter Nutrition
                 </button>
               )}
-              {location.pathname !== '/amazon' && (
+              {location.pathname !== '/amazon' && location.pathname !== '/connect' && (
                 <button
                   type="button"
                   className="alert-dismiss-btn"
                   onClick={() => navigate('/amazon')}
                 >
-                  Open Amazon Feed
+                  Open Store Feed
                 </button>
               )}
               <button
@@ -895,10 +908,10 @@ function NutriCheckShell() {
               <div className="page-shell">
                 <div className="page-header">
                   <div>
-                    <h1 className="page-title">Amazon Add-to-Cart Integration</h1>
+                    <h1 className="page-title">Online Store &amp; Food Extension</h1>
                     <p className="page-subtitle">
-                      Intercept Amazon browser Add to Cart clicks via the Chrome
-                      extension or analyze a copied Amazon grocery title.
+                      Analyze products directly on Amazon, Flipkart, Swiggy Instamart,
+                      Zomato, and Blinkit or paste any food item below.
                     </p>
                   </div>
                 </div>
@@ -913,6 +926,10 @@ function NutriCheckShell() {
                 />
               </div>
             }
+          />
+          <Route
+            path="/connect"
+            element={<Navigate to="/amazon" replace />}
           />
           <Route
             path="/models"

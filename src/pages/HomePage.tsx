@@ -84,7 +84,7 @@ const TESTIMONIALS = [
   },
   {
     quote:
-      'Online grocery titles hide nutrition labels inside low-res product photos. The NutriCheck Amazon watcher checks every snack before checkout and caught two high-sodium instant noodle packs in one shopping run.',
+      'Online grocery and food apps hide ingredients and calories inside tiny product photos. The NutriCheck browser extension checks Amazon, Flipkart, Swiggy Instamart, and Zomato items automatically and spots palm oil or excess sodium right away.',
     name: 'Rohan Kulkarni',
     role: 'Product Engineer · Bengaluru',
   },
@@ -109,15 +109,15 @@ export function HomePage() {
         <div className="nc-hero-inner">
           <div className="nc-hero-copy">
             <p className="nc-hero-kicker">
-              WHO &amp; FDA Nutrient Profiling · Packet &amp; Label Scanner
+              WHO &amp; FDA Profiling · Packet &amp; Online Food Scanner
             </p>
             <h1 className="nc-hero-title">
               Know if any food packet is good for you—in seconds.
             </h1>
             <p className="nc-hero-desc">
-              Snap or upload any packaged food&apos;s ingredients and nutrition table.
-              NutriCheck reads the label, checks every additive and macro ratio, and
-              tells you clearly whether it is Good, Moderate, or Not Good.
+              Snap or upload any packaged food&apos;s ingredients label, or shop live on
+              Amazon, Flipkart, Swiggy Instamart, and Zomato. NutriCheck gives a
+              clear Good, Moderate, or Not Good verdict with a clean pie chart and table.
             </p>
 
             <div className="nc-hero-actions">
@@ -130,8 +130,8 @@ export function HomePage() {
                 <span>Scan Packet Ingredients</span>
               </button>
 
-              <Link to="/analyzer" className="nc-hero-secondary-link">
-                <span>Open Food Analyzer</span>
+              <Link to="/amazon" className="nc-hero-secondary-link">
+                <span>Connect Shopping Extension</span>
                 <ArrowRight size={15} />
               </Link>
             </div>
@@ -240,10 +240,11 @@ export function HomePage() {
               <div className="capability-row">
                 <div className="capability-num">03.</div>
                 <div>
-                  <h3 className="capability-title">Real-Time Amazon Cart Alerts</h3>
+                  <h3 className="capability-title">Live Amazon, Flipkart, Swiggy &amp; Zomato Checks</h3>
                   <p className="capability-desc">
-                    Connect Chrome with the NutriCheck extension to catch Add-to-Cart clicks
-                    on Amazon and display instant Good, Moderate, or Not Good alerts.
+                    Use the NutriCheck Chrome extension on Amazon, Flipkart, Swiggy
+                    Instamart, and Zomato to inspect product ingredients right on the page
+                    or sync every Add-to-Cart item automatically.
                   </p>
                 </div>
               </div>

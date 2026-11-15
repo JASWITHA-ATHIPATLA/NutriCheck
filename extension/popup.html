@@ -5,23 +5,44 @@
     <title>NutriCheck Settings</title>
     <style>
       body {
-        width: 310px;
+        width: 320px;
         margin: 0;
         padding: 16px;
         font-family: system-ui, -apple-system, sans-serif;
-        color: #111827;
+        color: #1c1917;
+        background: #fffef7;
+      }
+      .card {
         background: #ffffff;
+        border: 1px solid #efe5bd;
+        border-radius: 10px;
+        padding: 14px;
       }
       h1 {
         font-size: 16px;
         margin: 0 0 4px;
-        color: #14532d;
+        color: #1c1917;
       }
       p {
         font-size: 12.5px;
-        color: #4b5563;
-        margin: 0 0 12px;
+        color: #57534e;
+        margin: 0 0 10px;
         line-height: 1.45;
+      }
+      .stores {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        margin-bottom: 12px;
+      }
+      .store-tag {
+        font-size: 11px;
+        font-weight: 600;
+        padding: 2px 7px;
+        border-radius: 4px;
+        background: #fefce8;
+        border: 1px solid #efe5bd;
+        color: #854d0e;
       }
       label {
         display: block;
@@ -33,10 +54,12 @@
         width: 100%;
         box-sizing: border-box;
         padding: 8px 10px;
-        border: 1px solid #d1d5db;
+        border: 1px solid #e7d89c;
         border-radius: 6px;
         font-size: 13px;
         margin-bottom: 10px;
+        background: #ffffff;
+        color: #1c1917;
       }
       .row {
         display: flex;
@@ -47,42 +70,55 @@
         padding: 8px 10px;
         border-radius: 6px;
         font-size: 12.5px;
-        font-weight: 600;
+        font-weight: 700;
         cursor: pointer;
-        border: 1px solid #d1d5db;
+        border: 1px solid #e7d89c;
         background: #ffffff;
-        color: #111827;
+        color: #1c1917;
       }
       button.primary {
-        background: #059669;
-        border-color: #059669;
-        color: #ffffff;
+        background: #facc15;
+        border-color: #eab308;
+        color: #1c1917;
+      }
+      button.primary:hover {
+        background: #eab308;
       }
       #status {
         margin-top: 8px;
         font-size: 12px;
         color: #15803d;
+        font-weight: 600;
         min-height: 16px;
       }
     </style>
   </head>
   <body>
-    <h1>NutriCheck Amazon Watcher</h1>
-    <p>
-      Monitors Add to Cart clicks on Amazon food pages and sends them to your
-      NutriCheck analyzer.
-    </p>
-    <label for="hg-url">NutriCheck Website URL</label>
-    <input
-      id="hg-url"
-      type="url"
-      placeholder="http://localhost:3000"
-    />
-    <div class="row">
-      <button id="save-btn" class="primary" type="button">Save URL</button>
-      <button id="open-btn" type="button">Open Dashboard</button>
+    <div class="card">
+      <h1>NutriCheck Store Watcher</h1>
+      <p>
+        Scans packet ingredients and food items directly on product pages and
+        when you add items to cart.
+      </p>
+      <div class="stores">
+        <span class="store-tag">Amazon</span>
+        <span class="store-tag">Flipkart</span>
+        <span class="store-tag">Swiggy Instamart</span>
+        <span class="store-tag">Zomato</span>
+        <span class="store-tag">Blinkit</span>
+      </div>
+      <label for="hg-url">NutriCheck Website URL</label>
+      <input
+        id="hg-url"
+        type="url"
+        placeholder="http://localhost:3000"
+      />
+      <div class="row">
+        <button id="save-btn" class="primary" type="button">Save URL</button>
+        <button id="open-btn" type="button">Open Dashboard</button>
+      </div>
+      <div id="status"></div>
     </div>
-    <div id="status"></div>
     <script src="popup.js"></script>
   </body>
 </html>

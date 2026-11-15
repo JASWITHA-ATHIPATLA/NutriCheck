@@ -76,7 +76,8 @@ class AmazonAddToCartInput(BaseModel):
     fat: float | None = Field(default=None, ge=0, le=1000)
     protein: float | None = Field(default=None, ge=0, le=1000)
     sodium_mg: float | None = Field(default=None, ge=0, le=20000)
-    source: str = Field(default="amazon_extension", max_length=60)
+    source: str = Field(default="store_extension", max_length=60)
+    source_platform: str | None = Field(default=None, max_length=60)
 
 
 class NutrientFlag(BaseModel):
@@ -142,6 +143,7 @@ class AmazonCartEvent(BaseModel):
     analysis: PredictionResponse | None = None
     ingredients_text: str | None = None
     ingredient_scan: PacketScanResponse | None = None
+    source_platform: str | None = None
 
 
 def build_feature_frame(payload: FoodNutritionInput) -> tuple[pd.DataFrame, dict[str, float]]:
@@ -564,6 +566,27 @@ GROCERY_STAPLE_PROFILES: list[dict[str, Any]] = [
     {"keywords": ["soan papdi", "laddu", "laddoo", "rasgulla", "gulab jamun", "halwa", "barfi", "peda"], "name": "Indian Packaged Sweets (per 100g)", "calories": 430.0, "sugars": 46.0, "fat": 18.0, "protein": 4.5, "sodium_mg": 45.0},
     {"keywords": ["ice cream", "kulfi", "gelato"], "name": "Ice Cream (per 100g)", "calories": 207.0, "sugars": 21.2, "fat": 11.0, "protein": 3.5, "sodium_mg": 80.0},
     {"keywords": ["pickle", "achar", "achaar", "papad"], "name": "Pickles / Papad (per 100g)", "calories": 220.0, "sugars": 2.0, "fat": 11.0, "protein": 4.5, "sodium_mg": 2400.0},
+    {"keywords": ["chicken biryani", "mutton biryani", "hyderabadi biryani", "dum biryani", "biryani"], "name": "Biryani (per 100g)", "calories": 168.0, "sugars": 1.2, "fat": 6.4, "protein": 9.2, "sodium_mg": 380.0},
+    {"keywords": ["veg biryani", "pulao", "pulav", "jeera rice"], "name": "Veg Biryani / Pulao (per 100g)", "calories": 142.0, "sugars": 1.5, "fat": 4.5, "protein": 3.6, "sodium_mg": 310.0},
+    {"keywords": ["paneer butter masala", "paneer tikka masala", "shahi paneer", "kadai paneer", "palak paneer"], "name": "Paneer Curry Dish (per 100g)", "calories": 195.0, "sugars": 3.8, "fat": 14.5, "protein": 7.4, "sodium_mg": 440.0},
+    {"keywords": ["butter chicken", "chicken curry", "chicken tikka masala"], "name": "Creamy Chicken Curry (per 100g)", "calories": 185.0, "sugars": 3.2, "fat": 11.2, "protein": 14.5, "sodium_mg": 450.0},
+    {"keywords": ["tandoori chicken", "chicken tikka", "paneer tikka", "grilled chicken", "kebab"], "name": "Grilled Tandoori / Tikka (per 100g)", "calories": 168.0, "sugars": 1.0, "fat": 7.2, "protein": 22.5, "sodium_mg": 420.0},
+    {"keywords": ["masala dosa", "plain dosa", "rava dosa", "dosa"], "name": "Dosa (South Indian Crepe, per 100g)", "calories": 168.0, "sugars": 1.4, "fat": 4.2, "protein": 4.3, "sodium_mg": 290.0},
+    {"keywords": ["idli", "idli sambar", "medu vada"], "name": "Steamed Idli / Breakfast (per 100g)", "calories": 118.0, "sugars": 0.8, "fat": 0.9, "protein": 3.9, "sodium_mg": 220.0},
+    {"keywords": ["sambar", "dal tadka", "dal makhani", "rajma chawal", "khichdi"], "name": "Dal / Sambar / Khichdi Meal (per 100g)", "calories": 126.0, "sugars": 1.8, "fat": 4.2, "protein": 5.8, "sodium_mg": 320.0},
+    {"keywords": ["pizza", "margherita", "pepperoni"], "name": "Baked Cheese Pizza (per 100g)", "calories": 266.0, "sugars": 3.6, "fat": 10.1, "protein": 11.4, "sodium_mg": 598.0},
+    {"keywords": ["burger", "zinger", "mcveggie", "mcchicken", "whopper"], "name": "Fast-Food Burger (per 100g)", "calories": 272.0, "sugars": 5.4, "fat": 12.8, "protein": 12.2, "sodium_mg": 540.0},
+    {"keywords": ["french fries", "peri peri fries", "fries"], "name": "Deep-Fried French Fries (per 100g)", "calories": 312.0, "sugars": 0.3, "fat": 14.7, "protein": 3.4, "sodium_mg": 410.0},
+    {"keywords": ["momos", "dumpling", "dimsum"], "name": "Steamed / Fried Momos (per 100g)", "calories": 215.0, "sugars": 1.8, "fat": 6.5, "protein": 7.8, "sodium_mg": 460.0},
+    {"keywords": ["pav bhaji", "chole bhature", "vada pav", "samosa", "kachori", "pakora"], "name": "Fried / Street Food Snack (per 100g)", "calories": 295.0, "sugars": 3.4, "fat": 15.8, "protein": 6.1, "sodium_mg": 520.0},
+    {"keywords": ["chowmein", "hakka noodles", "fried rice", "manchurian"], "name": "Indo-Chinese Stir-Fry (per 100g)", "calories": 218.0, "sugars": 3.2, "fat": 9.2, "protein": 5.5, "sodium_mg": 560.0},
+    {"keywords": ["paratha", "aloo paratha", "naan", "roti", "chapati", "kulcha"], "name": "Indian Flatbread / Paratha (per 100g)", "calories": 275.0, "sugars": 1.6, "fat": 9.2, "protein": 7.5, "sodium_mg": 380.0},
+    {"keywords": ["shawarma", "kathi roll", "frankie", "wrap", "sandwich", "sub"], "name": "Wrap / Roll / Sandwich (per 100g)", "calories": 224.0, "sugars": 3.2, "fat": 8.6, "protein": 10.8, "sodium_mg": 465.0},
+    {"keywords": ["salad", "sprouts", "poke bowl", "buddha bowl", "quinoa bowl"], "name": "Fresh Salad / Protein Bowl (per 100g)", "calories": 82.0, "sugars": 2.6, "fat": 3.4, "protein": 5.2, "sodium_mg": 140.0},
+    {"keywords": ["cold coffee", "milkshake", "thick shake", "frappe", "boba", "falooda"], "name": "Sweetened Shake / Cold Coffee (per 250ml)", "calories": 215.0, "sugars": 28.0, "fat": 7.2, "protein": 5.0, "sodium_mg": 115.0},
+    {"keywords": ["brownie", "cheesecake", "pastry", "cupcake", "muffin", "waffle"], "name": "Bakery Dessert / Brownie / Pastry (per 100g)", "calories": 405.0, "sugars": 32.0, "fat": 21.0, "protein": 5.2, "sodium_mg": 260.0},
+    {"keywords": ["dhokla", "khandvi", "upma", "pongal"], "name": "Steamed Indian Breakfast (per 100g)", "calories": 152.0, "sugars": 2.8, "fat": 4.5, "protein": 5.2, "sodium_mg": 270.0},
+    {"keywords": ["thali"], "name": "Balanced Indian Thali (per 100g)", "calories": 148.0, "sugars": 2.4, "fat": 5.2, "protein": 5.8, "sodium_mg": 310.0},
 ]
 
 
@@ -1081,18 +1104,33 @@ def analyze_amazon_add_to_cart(payload: AmazonAddToCartInput) -> AmazonCartEvent
     if has_ingredients and combined_label_text:
         ingredient_scan = analyze_packet_text(title, combined_label_text, raise_on_empty=False)
 
+    url_lower = (payload.product_url or "").lower()
+    source_platform = (
+        (payload.source_platform or "").strip()
+        or (
+            "Flipkart" if "flipkart" in url_lower
+            else "Swiggy Instamart" if "instamart" in url_lower
+            else "Swiggy" if "swiggy" in url_lower
+            else "Zomato" if "zomato" in url_lower
+            else "Blinkit" if "blinkit" in url_lower
+            else "Amazon" if "amazon" in url_lower
+            else "Online Store"
+        )
+    )
+
     if nutrition_input is None and ingredient_scan is None:
         event = AmazonCartEvent(
             event_id=str(uuid.uuid4())[:8],
             timestamp=datetime.now(timezone.utc).isoformat(),
             source=payload.source,
+            source_platform=source_platform,
             status="needs_nutrition",
             product_title=title,
             product_url=payload.product_url,
             nutrition_source="Nutrition Label Not Found on Page",
             matched_food=None,
             message=(
-                f"Detected '{title}' from Amazon Add to Cart, but nutrition facts were not in the page HTML "
+                f"Detected '{title}' from {source_platform}, but nutrition facts were not in the page HTML "
                 "and no packaged-food match was found. Enter nutrition values or paste label text to classify."
             ),
             analysis=None,
@@ -1112,12 +1150,12 @@ def analyze_amazon_add_to_cart(payload: AmazonAddToCartInput) -> AmazonCartEvent
             protein=0.0,
             sodium_mg=0.0,
         )
-        nutrition_source = "Amazon Page Ingredients Scan"
+        nutrition_source = f"{source_platform} Ingredients Scan"
 
     analysis = run_ml_prediction(nutrition_input)
     if ingredient_scan is not None:
         if "Ingredients" not in nutrition_source:
-            nutrition_source = f"{nutrition_source} + Amazon Ingredients"
+            nutrition_source = f"{nutrition_source} + Ingredients Scan"
         if ingredient_scan.nutrition_analysis is None:
             ingredient_scan.nutrition_analysis = analysis
 
@@ -1125,6 +1163,7 @@ def analyze_amazon_add_to_cart(payload: AmazonAddToCartInput) -> AmazonCartEvent
         event_id=str(uuid.uuid4())[:8],
         timestamp=datetime.now(timezone.utc).isoformat(),
         source=payload.source,
+        source_platform=source_platform,
         status="analyzed",
         product_title=title,
         product_url=payload.product_url,

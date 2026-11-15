@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "NutriCheck – Amazon Food Health Analyzer",
-  "version": "1.1.0",
-  "description": "Detects Add to Cart clicks on Amazon food items and syncs nutrition analysis to your NutriCheck website (local or Vercel).",
+  "name": "NutriCheck – Food & Store Ingredient Analyzer",
+  "version": "1.2.0",
+  "description": "Scans food ingredients and nutrition facts across Amazon, Flipkart, Swiggy Instamart, Zomato, and Blinkit and syncs easy summaries to NutriCheck.",
   "permissions": ["storage"],
   "host_permissions": [
     "https://*.amazon.com/*",
@@ -10,6 +10,10 @@
     "https://*.amazon.co.uk/*",
     "https://*.amazon.ca/*",
     "https://*.amazon.de/*",
+    "https://*.flipkart.com/*",
+    "https://*.swiggy.com/*",
+    "https://*.zomato.com/*",
+    "https://*.blinkit.com/*",
     "https://*.openfoodfacts.org/*",
     "http://localhost:3000/*",
     "http://127.0.0.1:3000/*",
@@ -27,7 +31,11 @@
         "https://*.amazon.in/*",
         "https://*.amazon.co.uk/*",
         "https://*.amazon.ca/*",
-        "https://*.amazon.de/*"
+        "https://*.amazon.de/*",
+        "https://*.flipkart.com/*",
+        "https://*.swiggy.com/*",
+        "https://*.zomato.com/*",
+        "https://*.blinkit.com/*"
       ],
       "js": ["content.js"],
       "run_at": "document_idle"
@@ -46,6 +54,6 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "NutriCheck Settings"
+    "default_title": "NutriCheck Store Watcher"
   }
 }
