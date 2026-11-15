@@ -672,18 +672,19 @@
     card.id = 'nutricheck-floating-card';
     card.style.cssText = [
       'position:fixed',
-      'top:16px',
-      'right:16px',
+      'top:12px',
+      'right:12px',
       'z-index:2147483647',
-      'width:344px',
-      'max-width:calc(100vw - 24px)',
+      'width:min(344px, calc(100vw - 24px))',
+      'max-height:calc(100vh - 24px)',
+      'overflow-y:auto',
+      'box-sizing:border-box',
       'background:#ffffff',
       'border:1.5px solid #eab308',
       'border-radius:12px',
       'box-shadow:0 12px 32px rgba(28,25,23,0.16)',
       'font-family:system-ui,-apple-system,Segoe UI,sans-serif',
       'color:#1c1917',
-      'overflow:hidden',
     ].join(';');
 
     // Warm yellow top bar
@@ -692,7 +693,7 @@
       'background:#fefce8;border-bottom:1px solid #efe5bd;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;';
 
     const brandWrap = document.createElement('div');
-    brandWrap.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#854d0e;';
+    brandWrap.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#854d0e;min-width:0;overflow-wrap:anywhere;';
     brandWrap.textContent = `NutriCheck · ${platform || 'Store Check'}`;
     topBar.appendChild(brandWrap);
 
@@ -700,8 +701,9 @@
     closeBtn.type = 'button';
     closeBtn.textContent = '×';
     closeBtn.title = 'Close';
+    closeBtn.setAttribute('aria-label', 'Close NutriCheck card');
     closeBtn.style.cssText =
-      'background:transparent;border:none;color:#57534e;font-size:19px;cursor:pointer;line-height:1;padding:0 4px;';
+      'background:transparent;border:none;color:#57534e;font-size:20px;cursor:pointer;line-height:1;min-width:32px;min-height:32px;display:inline-flex;align-items:center;justify-content:center;padding:0;flex-shrink:0;';
     closeBtn.onclick = () => {
       card.remove();
       try {
@@ -881,9 +883,12 @@
     btn.textContent = 'Check Ingredients · NutriCheck';
     btn.style.cssText = [
       'position:fixed',
-      'bottom:20px',
-      'right:20px',
+      'bottom:14px',
+      'right:14px',
       'z-index:2147483646',
+      'max-width:calc(100vw - 28px)',
+      'min-height:42px',
+      'box-sizing:border-box',
       'background:#facc15',
       'color:#1c1917',
       'border:1.5px solid #ca8a04',

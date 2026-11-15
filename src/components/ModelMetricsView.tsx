@@ -141,31 +141,33 @@ export function ModelMetricsView({ report, error }: ModelMetricsViewProps) {
               Rows = Actual label, Columns = Predicted label (test set n=
               {report.train_test_split.test_size}).
             </p>
-            <table className="cm-table">
-              <thead>
-                <tr>
-                  <th>Actual \ Predicted</th>
-                  {report.class_labels.map((lbl) => (
-                    <th key={lbl}>{lbl}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {bestEntry.confusion_matrix.map((rowVals, rIdx) => (
-                  <tr key={report.class_labels[rIdx]}>
-                    <th>{report.class_labels[rIdx]}</th>
-                    {rowVals.map((val, cIdx) => (
-                      <td
-                        key={cIdx}
-                        className={`tabular ${rIdx === cIdx ? 'cm-diag' : ''}`}
-                      >
-                        {val}
-                      </td>
+            <div className="data-table-wrap">
+              <table className="cm-table">
+                <thead>
+                  <tr>
+                    <th>Actual \ Predicted</th>
+                    {report.class_labels.map((lbl) => (
+                      <th key={lbl}>{lbl}</th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {bestEntry.confusion_matrix.map((rowVals, rIdx) => (
+                    <tr key={report.class_labels[rIdx]}>
+                      <th>{report.class_labels[rIdx]}</th>
+                      {rowVals.map((val, cIdx) => (
+                        <td
+                          key={cIdx}
+                          className={`tabular ${rIdx === cIdx ? 'cm-diag' : ''}`}
+                        >
+                          {val}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </section>
         )}
 

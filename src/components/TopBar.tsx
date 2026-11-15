@@ -1,8 +1,15 @@
-import { Leaf, ScanLine } from 'lucide-react';
-import { Link, NavLink, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Leaf, Menu, ScanLine, X } from 'lucide-react';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 
 export function TopBar() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [location.pathname, location.search]);
 
   return (
     <header className="topbar">
@@ -57,8 +64,67 @@ export function TopBar() {
             <ScanLine size={15} />
             <span>Scan Packet</span>
           </button>
+
+          <button
+            type="button"
+            className="mobile-menu-btn"
+            aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+            aria-expanded={menuOpen}
+            aria-controls="mobile-nav-drawer"
+            onClick={() => setMenuOpen((prev) => !prev)}
+          >
+            {menuOpen ? <X size={20} /> : <Menu size={20} />}
+          </button>
         </div>
       </div>
+
+      {menuOpen && (
+        <nav
+          id="mobile-nav-drawer"
+          className="mobile-nav-drawer"
+          aria-label="Mobile navigation"
+        >
+          <NavLink
+            to="/"
+            end
+            className={({ isActive }) => `mobile-nav-link ${isActive ? 'is-active' : ''}`}
+          >
+            Home
+          </NavLink>
+          <NavLink
+            to="/scan"
+            className={({ isActive }) => `mobile-nav-link ${isActive ? 'is-active' : ''}`}
+          >
+            Scan Packet
+          </NavLink>
+          <NavLink
+            to="/analyzer"
+            className={({ isActive }) => `mobile-nav-link ${isActive ? 'is-active' : ''}`}
+          >
+            Food Analyzer
+          </NavLink>
+          <NavLink
+            to="/amazon"
+            className={({ isActive }) => `mobile-nav-link ${isActive ? 'is-active' : ''}`}
+          >
+            Store Connect
+          </NavLink>
+          <NavLink
+            to="/about"
+            className={({ isActive }) => `mobile-nav-link ${isActive ? 'is-active' : ''}`}
+          >
+            About
+          </NavLink>
+          <button
+            type="button"
+            className="mobile-nav-cta"
+            onClick={() => navigate('/scan')}
+          >
+            <ScanLine size={16} />
+            <span>Scan Food Packet</span>
+          </button>
+        </nav>
+      )}
     </header>
   );
 }
