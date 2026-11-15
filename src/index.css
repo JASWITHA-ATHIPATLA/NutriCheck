@@ -3983,3 +3983,249 @@ textarea {
   background-color: #e2e8f0;
   margin: 12px 0;
 }
+
+/* Store Connect Clean Vertical Flow */
+.sc-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.sc-info-card {
+  background-color: #ffffff;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  padding: 18px 20px;
+}
+
+.sc-info-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sc-info-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.sc-info-sub {
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.sc-info-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.sc-info-meta {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.sc-text-link,
+.sc-text-link-btn {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #146c43;
+  text-decoration: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.sc-text-link:hover,
+.sc-text-link-btn:hover {
+  text-decoration: underline;
+}
+
+.sc-explore-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sc-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sc-section-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 16.5px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.sc-section-count {
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.sc-explore-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.sc-product-card {
+  background-color: #ffffff;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.sc-product-img-box {
+  height: 164px;
+  border-radius: 10px;
+  background-color: #f8fafc;
+  border: 1px solid #eef2f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  overflow: hidden;
+}
+
+.sc-product-img-box img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.sc-product-title {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.3;
+}
+
+.sc-add-pill-btn {
+  margin-top: auto;
+  width: 100%;
+  border: none;
+  border-radius: 999px;
+  background-color: #009944;
+  color: #ffffff;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  padding: 11px 16px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.sc-add-pill-btn:hover:not(:disabled) {
+  background-color: #007d38;
+}
+
+.sc-add-pill-btn:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.sc-cart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.sc-cart-head-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sc-count-pill {
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+  background-color: #f1f5f9;
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
+.sc-empty-cart {
+  padding: 26px 16px 18px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.sc-empty-icon {
+  color: #64748b;
+}
+
+.sc-empty-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 15.5px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.sc-empty-desc {
+  margin: 0;
+  font-size: 13px;
+  color: #64748b;
+  max-width: 420px;
+  line-height: 1.45;
+}
+
+.sc-ext-drawer {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #e2e8f0;
+}
+
+@media (max-width: 980px) {
+  .sc-explore-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .sc-explore-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .sc-product-img-box {
+    height: 124px;
+  }
+
+  .sc-product-title {
+    font-size: 13.5px;
+  }
+
+  .sc-add-pill-btn {
+    padding: 9px 12px;
+    font-size: 13px;
+  }
+}

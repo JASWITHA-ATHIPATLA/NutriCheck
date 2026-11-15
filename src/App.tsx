@@ -517,9 +517,7 @@ function NutriCheckShell() {
                     <div>
                       <h1 className="page-title">Store Connect</h1>
                       <p className="page-subtitle">
-                        Added to cart products from Amazon, Flipkart, Swiggy Instamart,
-                        Zomato, and Blinkit with product images, ingredients, and
-                        personalized health alerts.
+                        Shop smarter. Make healthier choices.
                       </p>
                     </div>
                   </div>

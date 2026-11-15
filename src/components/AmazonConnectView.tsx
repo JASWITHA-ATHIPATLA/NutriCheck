@@ -11,9 +11,7 @@ import {
   Image as ImageIcon,
   Lightbulb,
   PieChart,
-  Puzzle,
-  ShoppingCart,
-  SlidersHorizontal,
+  ShoppingBasket,
   Trash2,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -48,6 +46,8 @@ interface QuickStoreProduct {
   id: string;
   store: 'Amazon' | 'Flipkart' | 'Swiggy Instamart' | 'Zomato';
   title: string;
+  badgeLabel: string;
+  badgeTone: 'is-good' | 'is-moderate' | 'is-poor';
   image_url: string;
   ingredients_text: string;
   nutrition_text: string;
@@ -59,6 +59,8 @@ const QUICK_STORE_PRODUCTS: QuickStoreProduct[] = [
     id: 'qs-oats',
     store: 'Amazon',
     title: 'Quaker Rolled Oats 1kg',
+    badgeLabel: 'Healthy choice',
+    badgeTone: 'is-good',
     image_url: CATALOG_PRODUCT_IMAGES['plain-oats'],
     ingredients_text: 'Wholegrain Rolled Oats (100%)',
     nutrition_text: 'Calories 379, Sugars 1.0g, Fat 6.5g, Protein 13.2g, Sodium 4mg',
@@ -67,7 +69,9 @@ const QUICK_STORE_PRODUCTS: QuickStoreProduct[] = [
   {
     id: 'qs-dry-fruits',
     store: 'Flipkart',
-    title: 'Roasted California Almonds 500g',
+    title: 'California Almonds 500g',
+    badgeLabel: 'Healthy choice',
+    badgeTone: 'is-good',
     image_url: CATALOG_PRODUCT_IMAGES['roasted-unsalted-almonds'],
     ingredients_text: '100% Whole California Almonds (dry roasted, unsalted)',
     nutrition_text: 'Calories 595, Sugars 4.4g, Fat 52.0g, Protein 21.2g, Sodium 1mg',
@@ -77,6 +81,8 @@ const QUICK_STORE_PRODUCTS: QuickStoreProduct[] = [
     id: 'qs-noodles',
     store: 'Swiggy Instamart',
     title: 'Maggi 2-Minute Masala Noodles',
+    badgeLabel: 'High sodium',
+    badgeTone: 'is-poor',
     image_url: CATALOG_PRODUCT_IMAGES['instant-noodles'],
     ingredients_text:
       'Refined Wheat Flour (Maida), Palm Oil, Iodized Salt, Spices, Sugar, Thickener, Flavor Enhancer',
@@ -86,7 +92,9 @@ const QUICK_STORE_PRODUCTS: QuickStoreProduct[] = [
   {
     id: 'qs-choc',
     store: 'Amazon',
-    title: 'Cadbury Dairy Milk Chocolate Bar',
+    title: 'Dairy Milk Chocolate Bar',
+    badgeLabel: 'High sugar',
+    badgeTone: 'is-poor',
     image_url: CATALOG_PRODUCT_IMAGES['chocolate-bar'],
     ingredients_text: 'Sugar, Milk Solids, Cocoa Butter, Cocoa Mass, Emulsifiers (Soy Lecithin)',
     nutrition_text: 'Calories 535, Sugars 51.5g, Fat 29.7g, Protein 7.6g, Sodium 79mg',
@@ -133,6 +141,7 @@ export function AmazonConnectView({
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [expandedChartId, setExpandedChartId] = useState<string | null>(null);
   const [addingQuickId, setAddingQuickId] = useState<string | null>(null);
+  const [showExtConfig, setShowExtConfig] = useState(false);
 
   const serverOrigin =
     typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
@@ -168,54 +177,49 @@ export function AmazonConnectView({
   }
 
   return (
-    <div>
+    <div className="sc-stack">
+      {/* 1. Personalized screening summary card */}
       {currentUser && (
-        <div
-          className="active-profile-bar"
-          role="region"
-          aria-label="Active health profile"
-          style={{ marginBottom: '20px' }}
-        >
-          <div className="active-profile-bar-copy">
-            <strong>Add-to-cart screening for {currentUser.fullName}</strong>
-            <span>
-              {' '}
-              · {getAgeGroupLabel(currentUser.age)} ({currentUser.age} yrs)
-              {activeConditionLabels.length > 0
-                ? ` · Conditions: ${activeConditionLabels.join(', ')}`
-                : ' · Standard healthy thresholds'}
+        <section className="sc-info-card" aria-label="Personalized screening">
+          <div className="sc-info-top">
+            <h2 className="sc-info-title">Personalized screening</h2>
+            <span className="pa-status-pill is-analyzed">Active</span>
+          </div>
+          <p className="sc-info-sub">
+            Screening based on your selected health profile.
+          </p>
+          <div className="sc-info-foot">
+            <span className="sc-info-meta">
+              {getAgeGroupLabel(currentUser.age)} · {currentUser.age} yrs ·{' '}
+              {activeConditionLabels.length === 1
+                ? '1 condition'
+                : `${activeConditionLabels.length} conditions`}
               {currentUser.allergies.length > 0
-                ? ` · Allergies: ${currentUser.allergies.join(', ')}`
+                ? ` · ${currentUser.allergies.length} ${currentUser.allergies.length === 1 ? 'allergy' : 'allergies'}`
                 : ''}
             </span>
+            <Link to="/profile" className="sc-text-link">
+              Edit profile →
+            </Link>
           </div>
-          <Link to="/profile" className="text-action-link" style={{ flexShrink: 0 }}>
-            <SlidersHorizontal size={14} />
-            <span>Edit health profile</span>
-          </Link>
-        </div>
+        </section>
       )}
 
-      {/* Quick Store Add-to-Cart Product Shelf */}
-      <section className="card" style={{ marginBottom: '24px' }} aria-labelledby="quick-store-heading">
-        <div className="card-header">
-          <div>
-            <h2 id="quick-store-heading" className="card-title">
-              Store Products — Add to Cart &amp; Screen
-            </h2>
-            <p className="card-subtitle">
-              Click Add to Cart on any store item to see the top popup alert, product photo, ingredients, and risk result.
-            </p>
-          </div>
+      {/* 2. Explore products section */}
+      <section className="sc-explore-section" aria-labelledby="quick-store-heading">
+        <div className="sc-section-head">
+          <h2 id="quick-store-heading" className="sc-section-title">
+            Explore products
+          </h2>
+          <span className="sc-section-count">
+            {QUICK_STORE_PRODUCTS.length} products
+          </span>
         </div>
 
-        <div className="quick-store-grid">
+        <div className="sc-explore-grid">
           {QUICK_STORE_PRODUCTS.map((item) => (
-            <div key={item.id} className="quick-store-card">
-              <div className="quick-store-top">
-                <span className="store-chip">{item.store}</span>
-              </div>
-              <div className="quick-store-img-box">
+            <div key={item.id} className="sc-product-card">
+              <div className="sc-product-img-box">
                 <img
                   src={item.image_url}
                   alt={item.title}
@@ -225,21 +229,19 @@ export function AmazonConnectView({
                   }}
                 />
               </div>
-              <div className="quick-store-ing-preview">
-                <strong>Ingredients:</strong> {item.ingredients_text}
+              <div className="sc-product-title">{item.title}</div>
+              <div>
+                <span className={`pa-score-chip ${item.badgeTone}`} style={{ marginTop: 0 }}>
+                  {item.badgeLabel}
+                </span>
               </div>
-              <div className="quick-store-title">{item.title}</div>
               <button
                 type="button"
-                className="btn-primary"
-                style={{ width: '100%', flex: 'none', padding: '9px 12px' }}
+                className="sc-add-pill-btn"
                 disabled={addingQuickId === item.id || isSubmitting}
                 onClick={() => handleQuickAdd(item)}
               >
-                <ShoppingCart size={14} />
-                <span>
-                  {addingQuickId === item.id ? 'Checking...' : 'Add to Cart'}
-                </span>
+                {addingQuickId === item.id ? 'Checking...' : 'Add to Cart'}
               </button>
             </div>
           ))}
@@ -247,74 +249,22 @@ export function AmazonConnectView({
       </section>
 
       {submitError && (
-        <div className="error-banner" role="alert" style={{ marginBottom: '16px' }}>
+        <div className="error-banner" role="alert">
           <AlertCircle size={16} />
           <span>{submitError}</span>
         </div>
       )}
 
-      <div className="two-col-grid">
-        <div className="result-column">
-          <section className="card" aria-labelledby="amazon-ext-heading">
-            <div className="card-header">
-              <div>
-                <h2 id="amazon-ext-heading" className="card-title">
-                  Chrome Extension Store Sync
-                </h2>
-                <p className="card-subtitle">
-                  Captures product photo, ingredients, and nutrition automatically when you click Add to Cart.
-                </p>
-              </div>
-              <Puzzle size={20} color="#146c43" />
-            </div>
-
-            <div className="info-callout">
-              <strong>Supported shopping apps:</strong> Load the{' '}
-              <code>extension/</code> folder in Chrome/Edge and save your live URL. Clicking{' '}
-              <strong>Add to Cart</strong> triggers an instant popup on the store page and syncs the product photo + ingredients here.
-              <div className="store-chips-row" aria-label="Supported stores">
-                {SUPPORTED_STORES.map((store) => (
-                  <span key={store} className="store-chip">
-                    {store}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            <ol className="rule-list" style={{ marginBottom: '14px' }}>
-              <li>
-                Open <code>chrome://extensions</code>, enable <strong>Developer mode</strong>, and click{' '}
-                <strong>Load unpacked</strong> on <code>extension/</code>.
-              </li>
-              <li>
-                Click the <strong>NutriCheck</strong> extension icon, paste this URL, and click <strong>Save URL</strong>:
-              </li>
-            </ol>
-
-            <div className="url-copy-box">
-              <div className="url-code">{serverOrigin}</div>
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={handleCopyOrigin}
-              >
-                {copiedUrl ? <Check size={14} /> : <Copy size={14} />}
-                <span>{copiedUrl ? 'Copied' : 'Copy URL'}</span>
-              </button>
-            </div>
-          </section>
-        </div>
-
-        <section className="card" aria-labelledby="amazon-feed-heading">
-          <div className="card-header">
-            <div>
-              <h2 id="amazon-feed-heading" className="card-title">
-                Added to Cart Products ({events.length})
-              </h2>
-              <p className="card-subtitle">
-                Synced from Amazon, Flipkart, Swiggy Instamart, Zomato, Blinkit, or added directly.
-              </p>
-            </div>
+      {/* 3. Your cart analysis card */}
+      <section className="card" aria-labelledby="amazon-feed-heading">
+        <div className="sc-cart-head">
+          <h2 id="amazon-feed-heading" className="sc-info-title">
+            Your cart analysis
+          </h2>
+          <div className="sc-cart-head-right">
+            <span className="sc-count-pill">
+              {events.length} {events.length === 1 ? 'product' : 'products'}
+            </span>
             {events.length > 0 && (
               <button
                 type="button"
@@ -325,17 +275,18 @@ export function AmazonConnectView({
               </button>
             )}
           </div>
+        </div>
 
-          {events.length === 0 ? (
-            <div className="empty-state" style={{ padding: '32px 16px' }}>
-              <h3 className="empty-title">No Added to Cart Products Yet</h3>
-              <p className="empty-desc">
-                Click <strong>Add to Cart</strong> on any store card above, or click{' '}
-                <strong>Add to Cart</strong> on Amazon / Flipkart / Swiggy with the extension active.
-              </p>
-            </div>
-          ) : (
-            <div className="event-card-list">
+        {events.length === 0 ? (
+          <div className="sc-empty-cart">
+            <ShoppingBasket size={34} className="sc-empty-icon" />
+            <h3 className="sc-empty-title">Your cart is empty</h3>
+            <p className="sc-empty-desc">
+              Add products to see their nutritional information and personalized health assessment.
+            </p>
+          </div>
+        ) : (
+          <div className="event-card-list">
               {events.map((ev) => {
                 const a = ev.analysis;
                 const scan = ev.ingredient_scan;
@@ -689,8 +640,64 @@ export function AmazonConnectView({
               })}
             </div>
           )}
-        </section>
-      </div>
+      </section>
+
+      {/* 4. Compact Chrome Extension card at the bottom */}
+      <section className="sc-info-card" aria-labelledby="amazon-ext-heading">
+        <div className="sc-info-top">
+          <h2 id="amazon-ext-heading" className="sc-info-title">
+            Chrome Extension
+          </h2>
+          <span className="pa-status-pill is-analyzed">Active</span>
+        </div>
+        <p className="sc-info-sub">
+          Automatically capture products from supported shopping websites.
+        </p>
+        <div className="sc-info-foot">
+          <span className="sc-info-meta">5 supported stores</span>
+          <button
+            type="button"
+            className="sc-text-link-btn"
+            onClick={() => setShowExtConfig((prev) => !prev)}
+          >
+            {showExtConfig ? 'Hide setup' : 'Configure →'}
+          </button>
+        </div>
+
+        {showExtConfig && (
+          <div className="sc-ext-drawer">
+            <div className="store-chips-row" aria-label="Supported stores" style={{ marginBottom: '12px' }}>
+              {SUPPORTED_STORES.map((store) => (
+                <span key={store} className="store-chip">
+                  {store}
+                </span>
+              ))}
+            </div>
+
+            <ol className="rule-list" style={{ marginBottom: '12px' }}>
+              <li>
+                Open <code>chrome://extensions</code>, enable <strong>Developer mode</strong>, and click{' '}
+                <strong>Load unpacked</strong> on <code>extension/</code>.
+              </li>
+              <li>
+                Click the <strong>NutriCheck</strong> extension icon, paste this URL, and click <strong>Save URL</strong>:
+              </li>
+            </ol>
+
+            <div className="url-copy-box">
+              <div className="url-code">{serverOrigin}</div>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={handleCopyOrigin}
+              >
+                {copiedUrl ? <Check size={14} /> : <Copy size={14} />}
+                <span>{copiedUrl ? 'Copied' : 'Copy URL'}</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
     </div>
   );
 }
