@@ -116,7 +116,7 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="page-shell">
+    <div className="page-shell dashboard-page-shell">
       {/* Unified Personalized Dashboard Hero & Wellness Showcase */}
       <section
         className="dashboard-editorial-card"
@@ -145,7 +145,7 @@ export function DashboardPage() {
           <div className="dashboard-editorial-head">
             <div className="dashboard-editorial-profile-top">
               <div className="dashboard-editorial-greeting">
-                <p className="section-kicker" style={{ marginBottom: '4px' }}>
+                <p className="section-kicker" style={{ marginBottom: '2px' }}>
                   YOUR FOOD DASHBOARD
                 </p>
                 <h1 className="dashboard-editorial-title">
@@ -181,28 +181,27 @@ export function DashboardPage() {
             </div>
           </div>
 
-          {/* Organic Cloud-Masked Kitchen Lifestyle Photo */}
-          <div className="dashboard-cloud-frame">
-            {!failedImages.kitchen ? (
-              <img
-                src={kitchenWellnessImg}
-                alt="Smiling person in a bright sunlit kitchen with fresh tomatoes, leafy greens, and citrus"
-                className="dashboard-cloud-img"
-                referrerPolicy="no-referrer"
-                onError={() =>
-                  setFailedImages((prev) => ({ ...prev, kitchen: true }))
-                }
-              />
-            ) : (
-              <div className="dashboard-img-fallback">
-                <Sparkles size={24} />
-                <span>Everyday Mindful Eating</span>
-              </div>
-            )}
-          </div>
-
-          {/* Bottom Split: Whole Food Bowl Visual + Interactive Pillars */}
+          {/* Full-Space Compact Media + Interactive Pillars Strip */}
           <div className="dashboard-editorial-bottom">
+            <div className="dashboard-cloud-frame">
+              {!failedImages.kitchen ? (
+                <img
+                  src={kitchenWellnessImg}
+                  alt="Smiling person in a bright sunlit kitchen with fresh tomatoes, leafy greens, and citrus"
+                  className="dashboard-cloud-img"
+                  referrerPolicy="no-referrer"
+                  onError={() =>
+                    setFailedImages((prev) => ({ ...prev, kitchen: true }))
+                  }
+                />
+              ) : (
+                <div className="dashboard-img-fallback">
+                  <Sparkles size={24} />
+                  <span>Everyday Mindful Eating</span>
+                </div>
+              )}
+            </div>
+
             <div className="dashboard-bowl-card">
               <div className="dashboard-bowl-thumb">
                 {!failedImages.bowl ? (
@@ -227,7 +226,11 @@ export function DashboardPage() {
               </p>
             </div>
 
-            <div className="dashboard-pillars-list" role="group" aria-label="Filter catalogue by nutrition pillar">
+            <div
+              className="dashboard-pillars-list"
+              role="group"
+              aria-label="Filter catalogue by nutrition pillar"
+            >
               {NUTRITION_PILLARS.map((pillar) => {
                 const isActive = activePillarId === pillar.id;
                 return (
