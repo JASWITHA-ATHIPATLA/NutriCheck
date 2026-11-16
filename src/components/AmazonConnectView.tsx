@@ -147,9 +147,12 @@ export function AmazonConnectView({
     typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
 
   const activeConditionLabels = currentUser
-    ? HEALTH_CONDITION_OPTIONS.filter((opt) =>
-        currentUser.conditions.includes(opt.key)
-      ).map((opt) => opt.label)
+    ? [
+        ...HEALTH_CONDITION_OPTIONS.filter((opt) =>
+          currentUser.conditions.includes(opt.key)
+        ).map((opt) => opt.label),
+        ...(currentUser.otherConditions || []),
+      ]
     : [];
 
   function handleCopyOrigin() {
@@ -198,9 +201,14 @@ export function AmazonConnectView({
                 ? ` · ${currentUser.allergies.length} ${currentUser.allergies.length === 1 ? 'allergy' : 'allergies'}`
                 : ''}
             </span>
-            <Link to="/profile" className="sc-text-link">
-              Edit profile →
-            </Link>
+            <div className="sc-info-links">
+              <Link to="/limits" className="sc-text-link">
+                Daily limits →
+              </Link>
+              <Link to="/profile" className="sc-text-link">
+                Edit profile →
+              </Link>
+            </div>
           </div>
         </section>
       )}

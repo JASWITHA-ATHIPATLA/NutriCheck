@@ -2958,7 +2958,7 @@ textarea {
   }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 920px) {
   .topbar-inner {
     padding: 0 16px;
     height: 58px;
@@ -3027,6 +3027,9 @@ textarea {
     font-weight: 700;
     cursor: pointer;
   }
+}
+
+@media (max-width: 760px) {
 
   /* Prevent iOS Safari input zoom */
   .field-input,
@@ -3637,6 +3640,12 @@ textarea {
   .home-pillars-grid,
   .quick-store-grid {
     grid-template-columns: 1fr;
+  }
+
+  .atc-top-popup {
+    top: 66px;
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 80px);
   }
 
   .atc-top-popup-body {
@@ -4526,3 +4535,162 @@ textarea {
   }
 }
 
+/* Dashboard Hero Actions & Store Connect Links */
+.dashboard-editorial-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sc-info-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+/* Login Health Conditions & Other Disease Panel */
+.login-disease-panel {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-muted);
+  overflow: hidden;
+}
+
+.login-disease-toggle {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: none;
+  background-color: var(--bg-subtle);
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 13.5px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.login-disease-toggle:hover {
+  color: #146c43;
+}
+
+.login-disease-body {
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.login-condition-grid {
+  gap: 8px;
+}
+
+/* Mobile-First Scanner Camera Framing & Preview Toolbar */
+.camera-frame-wrap {
+  position: relative;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background-color: #111827;
+}
+
+.camera-guide-hint {
+  padding: 7px 10px;
+  background-color: rgba(15, 23, 42, 0.86);
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.camera-actions {
+  flex-wrap: wrap;
+}
+
+.scan-preview-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  background-color: var(--bg-surface);
+  flex-wrap: wrap;
+}
+
+.scan-preview-meta {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: #146c43;
+}
+
+/* Daily Limits & Cart Comparison Route (/limits) */
+.limits-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 10px;
+}
+
+.data-table tr.is-active-profile {
+  background-color: #eaf1ee;
+}
+
+.limits-total-row td {
+  background-color: var(--bg-muted);
+  border-top: 2px solid var(--border-strong);
+  border-bottom: none;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.limits-total-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #146c43;
+}
+
+@media (max-width: 980px) {
+  .limits-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .camera-preview {
+    max-height: 52vh;
+    object-fit: cover;
+  }
+
+  .profile-header-actions {
+    width: 100%;
+  }
+
+  .profile-header-actions > a,
+  .profile-header-actions > button {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 600px) {
+  .limits-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-editorial-actions {
+    width: 100%;
+  }
+
+  .dashboard-editorial-actions > a {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}

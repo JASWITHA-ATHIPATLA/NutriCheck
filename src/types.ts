@@ -187,9 +187,30 @@ export interface UserHealthProfile {
   password: string;
   age: number;
   conditions: HealthCondition[];
+  otherConditions?: string[];
   allergies: string[];
   dietaryNotes: string;
   createdAt: string;
+}
+
+export interface NutrientBaselineLimit {
+  profileKey: string;
+  profileLabel: string;
+  audience: 'normal' | 'patient' | 'active';
+  caloriesDay: number;
+  caloriesPer100gMax: number;
+  sugarDayMaxG: number;
+  sugarPer100gMaxG: number;
+  fatDayMaxG: number;
+  fatPer100gNote: string;
+  satFatDayMaxG: number;
+  satFatPer100gMaxG: number;
+  proteinDayMinG: number;
+  proteinDayLabel: string;
+  fiberDayMinG: number;
+  sodiumDayMaxMg: number;
+  sodiumPer100gMaxMg: number;
+  keyFocus: string;
 }
 
 export interface CatalogProduct {

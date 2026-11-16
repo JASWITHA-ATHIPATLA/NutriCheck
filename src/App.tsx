@@ -20,6 +20,7 @@ import { AddProductPage } from './pages/AddProductPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { HomePage } from './pages/HomePage';
 import { LoginPage } from './pages/LoginPage';
+import { NutritionLimitsPage } from './pages/NutritionLimitsPage';
 import { ProductDetailPage } from './pages/ProductDetailPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { RegisterPage } from './pages/RegisterPage';
@@ -497,6 +498,14 @@ function NutriCheckShell() {
             element={
               <RequireAuth>
                 <ProfilePage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/limits"
+            element={
+              <RequireAuth>
+                <NutritionLimitsPage events={amazonEvents} />
               </RequireAuth>
             }
           />

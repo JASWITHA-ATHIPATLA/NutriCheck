@@ -32,8 +32,14 @@ const GROCERY_STAPLES = [
   { keywords: ['olive oil'], name: 'Extra Virgin Olive Oil (per tbsp 15ml)', calories: 119, sugars: 0.0, fat: 13.5, protein: 0.0, sodium_mg: 0 },
   { keywords: ['peanut butter', 'almond butter'], name: 'Nut / Peanut Butter (per 100g)', calories: 588, sugars: 9.2, fat: 50.0, protein: 25.1, sodium_mg: 420 },
   { keywords: ['mixed dry fruits', 'dry fruits', 'dry fruit', 'dryfruits', 'dryfruit', 'panchmewa', 'mixed nuts', 'trail mix', 'nut mix', 'nutmix'], name: 'Mixed Dry Fruits & Nuts (per 100g)', calories: 465, sugars: 14.0, fat: 28.5, protein: 14.2, sodium_mg: 6 },
-  { keywords: ['almonds', 'almond', 'badam', 'walnuts', 'walnut', 'akhrot', 'pistachios', 'pistachio', 'pista', 'cashews', 'cashew', 'kaju', 'peanuts', 'peanut', 'chia seeds', 'chia', 'flaxseeds', 'flax', 'makhana'], name: 'Nuts & Seeds (per 100g)', calories: 579, sugars: 4.4, fat: 49.9, protein: 21.2, sodium_mg: 4 },
+  { keywords: ['walnuts', 'walnut', 'akhrot'], name: 'Walnuts (Unsalted Whole, per 100g)', calories: 654, sugars: 2.6, fat: 65.2, protein: 15.2, sodium_mg: 2 },
+  { keywords: ['almonds', 'almond', 'badam'], name: 'Almonds (Unsalted Whole, per 100g)', calories: 579, sugars: 4.4, fat: 49.9, protein: 21.2, sodium_mg: 1 },
+  { keywords: ['pistachios', 'pistachio', 'pista', 'cashews', 'cashew', 'kaju', 'peanuts', 'peanut', 'chia seeds', 'chia', 'flaxseeds', 'flax', 'makhana'], name: 'Nuts & Seeds (per 100g)', calories: 579, sugars: 4.4, fat: 49.9, protein: 21.2, sodium_mg: 4 },
   { keywords: ['dates', 'datiles', 'khajoor', 'raisins', 'raisin', 'kishmish', 'anjeer', 'dried fig'], name: 'Dried Dates / Raisins / Figs (per 100g)', calories: 282, sugars: 63.0, fat: 0.4, protein: 2.5, sodium_mg: 3 },
+  { keywords: ['blueberries', 'blueberry'], name: 'Blueberries (Fresh Whole, per 100g)', calories: 57, sugars: 10.0, fat: 0.3, protein: 0.7, sodium_mg: 1 },
+  { keywords: ['strawberries', 'strawberry', 'raspberries', 'raspberry', 'blackberries', 'blackberry', 'cranberries', 'cranberry', 'berries', 'berry'], name: 'Fresh Berries (Whole, per 100g)', calories: 46, sugars: 7.5, fat: 0.4, protein: 1.0, sodium_mg: 1 },
+  { keywords: ['avocado', 'avocados'], name: 'Avocado (Fresh Whole, per 100g)', calories: 160, sugars: 0.7, fat: 14.7, protein: 2.0, sodium_mg: 7 },
+  { keywords: ['apple', 'apples', 'banana', 'bananas', 'orange', 'oranges', 'mango', 'grape', 'grapes', 'watermelon', 'kiwi', 'papaya', 'guava', 'pomegranate', 'pear', 'fruit'], name: 'Fresh Fruit (Whole, per 100g)', calories: 58, sugars: 11.2, fat: 0.2, protein: 0.7, sodium_mg: 1 },
   { keywords: ['honey'], name: 'Honey (per 100g)', calories: 304, sugars: 82.1, fat: 0.0, protein: 0.3, sodium_mg: 4 },
   { keywords: ['biryani'], name: 'Biryani (per 100g)', calories: 168, sugars: 1.2, fat: 6.4, protein: 9.2, sodium_mg: 380 },
   { keywords: ['dosa'], name: 'Dosa (South Indian Crepe, per 100g)', calories: 168, sugars: 1.4, fat: 4.2, protein: 4.3, sodium_mg: 290 },
@@ -57,6 +63,13 @@ const GOOD_ING = [
   ['peanut', 'Peanuts', 'Good source of protein and unsaturated fats.'],
   ['raisin', 'Raisins', 'Natural dried fruit rich in iron, potassium, and fiber.'],
   ['date', 'Dates', 'Natural whole fruit sweetener with fiber and minerals.'],
+  ['blueberry', 'Blueberries', 'Rich in anthocyanin antioxidants, fiber, and low glycemic load.'],
+  ['blueberries', 'Blueberries', 'Rich in anthocyanin antioxidants, fiber, and low glycemic load.'],
+  ['strawberry', 'Strawberries', 'Low-sugar berry rich in vitamin C and fiber.'],
+  ['raspberry', 'Raspberries', 'High-fiber berry supporting steady blood glucose.'],
+  ['blackberry', 'Blackberries', 'Antioxidant-rich low-GI berry.'],
+  ['berry', 'Berries', 'Antioxidant-rich whole fruit with dietary fiber.'],
+  ['avocado', 'Avocado', 'Heart-healthy monounsaturated fats and dietary fiber.'],
   ['chia', 'Chia Seeds', 'Rich in dietary fiber and omega-3 fats.'],
   ['olive oil', 'Olive Oil', 'Monounsaturated healthy cooking fat.'],
 ];
@@ -174,6 +187,10 @@ function scoreNutrition(foodName, n) {
   const hasJunk = /\b(chocolate|candy|bar|cookie|biscuit|cake|pastry|ice cream|fried|chips|namkeen|bhujia|caramel|syrup|salted|masala|butter|nutella|sauce)\b/i.test(lower);
   const wholeNut = hasNutSeed && !hasJunk && sodium_mg <= 180 && sugars <= 30;
 
+  const hasBerryFruit = /\b(blueberr(?:y|ies)|strawberr(?:y|ies)|raspberr(?:y|ies)|blackberr(?:y|ies)|cranberr(?:y|ies)|berr(?:y|ies)|avocados?|apples?|oranges?|pears?|guavas?|kiwis?|papayas?|pomegranates?|watermelon|fresh fruit)\b/i.test(lower);
+  const hasFruitJunk = /\b(dried|candied|chocolate|candy|cookie|biscuit|cake|muffin|pastry|pie|jam|jelly|marmalade|juice|nectar|sharbat|squash|syrup|soda|ice cream|yogurt|smoothie)\b/i.test(lower);
+  const wholeFruitBerry = !wholeNut && hasBerryFruit && !hasFruitJunk && sodium_mg <= 45 && sugars <= 16 && (fat <= 5 || /\bavocado\b/i.test(lower));
+
   let pen_sugar = clip((sugar_kcal_pct - 10) * 0.75, 0, 35) + clip((sugars - 20) * 0.4, 0, 10);
   let pen_fat = clip((fat_kcal_pct - 30) * 0.65, 0, 18);
   const pen_sod = clip((sodium_per_100kcal - 115) * 0.08, 0, 22) + clip((sodium_mg - 500) * 0.012, 0, 10);
@@ -186,6 +203,10 @@ function scoreNutrition(foodName, n) {
     pen_ed *= 0.25;
     pen_sugar *= 0.35;
     bon_whole += 8;
+  } else if (wholeFruitBerry) {
+    pen_sugar *= 0.12;
+    pen_fat *= 0.2;
+    bon_whole += 10;
   }
 
   const health_score = round1(clip(75 - pen_sugar - pen_fat - pen_sod - pen_ed + bon_prot + bon_whole, 0, 100));
@@ -205,6 +226,8 @@ function scoreNutrition(foodName, n) {
   const level = classification === 'Healthy' ? 'success' : classification === 'Moderate' ? 'warning' : 'danger';
   const explanation = wholeNut
     ? `${foodName} is ${verdictWord} (${health_score}/100) — whole nuts & dry fruits rich in healthy fats and ${round1(protein)}g protein.`
+    : wholeFruitBerry
+    ? `${foodName} is ${verdictWord} (${health_score}/100) — natural whole fruit/berry with dietary fiber, antioxidants, and low glycemic load.`
     : `${foodName} is ${verdictWord} (${health_score}/100) · ${Math.round(n.calories)} kcal, ${round1(sugars)}g sugar, ${round1(fat)}g fat, ${round1(protein)}g protein.`;
 
   return {
@@ -228,13 +251,13 @@ function scoreNutrition(foodName, n) {
       {
         nutrient: 'Sugar',
         value_display: `${round1(sugars)} g`,
-        status: wholeNut ? (sugars > 40 ? 'moderate' : 'good') : sugar_kcal_pct > 25 || sugars > 20 ? 'high' : sugar_kcal_pct > 10 || sugars > 10 ? 'moderate' : 'good',
-        note: `${round1(sugar_kcal_pct)}% of calories`,
+        status: wholeNut || wholeFruitBerry ? (sugars > 40 ? 'moderate' : 'good') : sugar_kcal_pct > 25 || sugars > 20 ? 'high' : sugar_kcal_pct > 10 || sugars > 10 ? 'moderate' : 'good',
+        note: wholeFruitBerry ? `${round1(sugar_kcal_pct)}% of kcal (natural intrinsic fruit sugar)` : `${round1(sugar_kcal_pct)}% of calories`,
       },
       {
         nutrient: 'Total Fat',
         value_display: `${round1(fat)} g`,
-        status: wholeNut ? 'good' : fat_kcal_pct > 45 ? 'high' : fat_kcal_pct > 30 ? 'moderate' : 'good',
+        status: wholeNut || wholeFruitBerry ? 'good' : fat_kcal_pct > 45 ? 'high' : fat_kcal_pct > 30 ? 'moderate' : 'good',
         note: `${round1(fat_kcal_pct)}% of calories`,
       },
       {
@@ -318,7 +341,13 @@ function scanIngredients(productName, text, nutritionAnalysis) {
     }
   }
 
-  if (findings.length === 0 && parsedIngredients.length < 1) return null;
+  const GENERAL_FOOD_RE = /\b(ingredients?|water|milk|cream|butter|cheese|yogurt|curd|whey|sugar|syrup|honey|salt|sodium|flour|wheat|maida|oats|rice|corn|starch|fiber|fibre|protein|fat|calories|energy|oil|palm|sunflower|olive|coconut|almond|walnut|cashew|pistachio|peanut|chia|flax|blueberry|blueberries|strawberry|strawberries|berry|berries|avocado|apple|banana|fruit|vegetable|tomato|potato|onion|garlic|cocoa|chocolate|vanilla|spice|herbs|vinegar|yeast|lecithin|emulsifier|preservative|flavor|flavour|sweetener|caffeine|allergen|contains|nutrition)\b/gi;
+  const vocabHits = (text.match(GENERAL_FOOD_RE) || []).length;
+  const plausibleWords = (sourceText.match(/[a-zA-Z]{3,}/g) || []).filter((w) => /[aeiouy]/i.test(w));
+  if (!nutritionAnalysis && findings.length === 0 && (vocabHits < 2 || plausibleWords.length < 2)) {
+    return null;
+  }
+  if (findings.length === 0 && parsedIngredients.length < 1 && !nutritionAnalysis) return null;
 
   ingScore = round1(clip(ingScore, 8, 98));
   const combinedScore = nutritionAnalysis
@@ -505,9 +534,27 @@ export function startNodeApiFallback({ host = '127.0.0.1', port = 8001 } = {}) {
     let ingredientsText = String(payload.ingredients_text || '').trim();
     let imageUrl = String(payload.image_url || '').trim();
 
+function inferDefaultIngredients(title) {
+  const lower = (title || '').toLowerCase();
+  if (/\b(rolled oats|oats|oatmeal)\b/.test(lower)) return '100% Wholegrain Rolled Oats';
+  if (/\b(brown rice)\b/.test(lower)) return '100% Wholegrain Brown Rice';
+  if (/\b(walnut|walnuts|akhrot)\b/.test(lower)) return '100% Whole Unsalted Walnuts';
+  if (/\b(almond|almonds|badam)\b/.test(lower)) return '100% Roasted / Natural California Almonds';
+  if (/\b(blueberry|blueberries)\b/.test(lower)) return '100% Fresh Whole Blueberries';
+  if (/\b(strawberry|strawberries|raspberry|raspberries|blackberry|blackberries|berries|berry)\b/.test(lower)) return '100% Fresh Whole Berries';
+  if (/\b(avocado|avocados)\b/.test(lower)) return '100% Fresh Whole Avocado';
+  if (/\b(mixed dry fruits|dry fruits|trail mix|nut mix)\b/.test(lower)) return 'Whole almonds, cashews, walnuts, raisins, pistachios';
+  if (/\b(cashew|pistachio|peanut)\b/.test(lower)) return 'Whole Tree Nuts / Peanuts';
+  return null;
+}
+
     if (!nutrition || !imageUrl || !ingredientsText) {
       const staple = lookupStapleOrCatalog(title, catalog);
-      const off = await lookupOpenFoodFacts(title);
+      const isWholeStaple =
+        staple?.source === 'Grocery & Dish Profile' &&
+        (/\b(walnuts?|akhrot|almonds?|badam|blueberr(?:y|ies)|strawberr(?:y|ies)|raspberr(?:y|ies)|blackberr(?:y|ies)|berr(?:y|ies)|avocados?)\b/i.test(title) &&
+          !/\b(chocolate|candy|cookie|biscuit|cake|muffin|jam|jelly|juice|syrup|salted|masala|butter|chips|dried)\b/i.test(title));
+      const off = isWholeStaple ? null : await lookupOpenFoodFacts(title);
 
       if (staple && !nutrition) {
         nutrition = staple.nutrition;
@@ -518,8 +565,12 @@ export function startNodeApiFallback({ host = '127.0.0.1', port = 8001 } = {}) {
         nutritionSource = off.source;
         matchedFood = off.matched_food;
       }
-      if (!ingredientsText && off?.ingredients_text) {
-        ingredientsText = off.ingredients_text;
+      if (!ingredientsText) {
+        if (staple) {
+          ingredientsText = inferDefaultIngredients(title) || '';
+        } else if (off?.ingredients_text) {
+          ingredientsText = off.ingredients_text;
+        }
       }
       if (!imageUrl && off?.image_url) {
         imageUrl = off.image_url;
@@ -584,15 +635,15 @@ export function startNodeApiFallback({ host = '127.0.0.1', port = 8001 } = {}) {
     const body = req.body || {};
     const productName = String(body.product_name || 'Scanned Food Packet').trim() || 'Scanned Food Packet';
     const rawText = String(body.raw_text || '').trim();
-    if (!rawText) {
-      res.status(422).json({ detail: 'Please enter or scan ingredients or nutrition text.' });
+    if (!rawText || rawText.length < 6) {
+      res.status(422).json({ detail: 'No readable food ingredients or nutrition facts detected. Point the camera clearly at the Ingredients or Nutrition Facts box.' });
       return;
     }
     const nutrition = parseNutritionText(rawText);
     const nutritionAnalysis = nutrition ? scoreNutrition(productName, nutrition) : null;
     const scan = scanIngredients(productName, rawText, nutritionAnalysis);
     if (!scan && !nutritionAnalysis) {
-      res.status(422).json({ detail: 'Could not detect ingredients or nutrition values from the text.' });
+      res.status(422).json({ detail: 'No readable food ingredients or nutrition facts detected. Ensure the camera is aimed at the packet Ingredients box rather than a face or background object.' });
       return;
     }
     if (scan) {

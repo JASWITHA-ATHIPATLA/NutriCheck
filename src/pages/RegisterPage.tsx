@@ -6,6 +6,7 @@ import type { HealthCondition } from '../types';
 import {
   HEALTH_CONDITION_OPTIONS,
   parseAllergiesInput,
+  parseCustomConditionsInput,
 } from '../utils/healthProfileEngine';
 
 export function RegisterPage() {
@@ -17,6 +18,8 @@ export function RegisterPage() {
   const [password, setPassword] = useState('');
   const [age, setAge] = useState('');
   const [conditions, setConditions] = useState<HealthCondition[]>([]);
+  const [hasOtherDisease, setHasOtherDisease] = useState(false);
+  const [otherDiseaseInput, setOtherDiseaseInput] = useState('');
   const [allergiesInput, setAllergiesInput] = useState('');
   const [dietaryNotes, setDietaryNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -30,12 +33,19 @@ export function RegisterPage() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (hasOtherDisease && !otherDiseaseInput.trim()) {
+      setError('Please enter your other disease name(s) or uncheck "Other disease".');
+      return;
+    }
     const res = register({
       fullName,
       email,
       password,
       age: Number(age),
       conditions,
+      otherConditions: hasOtherDisease
+        ? parseCustomConditionsInput(otherDiseaseInput)
+        : [],
       allergies: parseAllergiesInput(allergiesInput),
       dietaryNotes,
     });
@@ -55,7 +65,7 @@ export function RegisterPage() {
           <h1 className="page-title">Create your account</h1>
           <p className="page-subtitle">
             Your health profile is used to personalize food screening across products,
-            packet scans, and online grocery checks.
+            packet scans, daily limits, and online grocery checks.
           </p>
         </div>
 
@@ -146,7 +156,34 @@ export function RegisterPage() {
                   </label>
                 );
               })}
+
+              <label
+                className={`condition-option ${hasOtherDisease ? 'is-checked' : ''}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={hasOtherDisease}
+                  onChange={(e) => setHasOtherDisease(e.target.checked)}
+                />
+                <span>Other disease</span>
+              </label>
             </div>
+
+            {hasOtherDisease && (
+              <div className="field" style={{ marginTop: '10px' }}>
+                <label htmlFor="reg-other-disease" className="field-label">
+                  Specify other disease (comma-separated)
+                </label>
+                <input
+                  id="reg-other-disease"
+                  type="text"
+                  className="field-input"
+                  placeholder="e.g., High Cholesterol, PCOS, Thyroid, Celiac, Gout"
+                  value={otherDiseaseInput}
+                  onChange={(e) => setOtherDiseaseInput(e.target.value)}
+                />
+              </div>
+            )}
           </fieldset>
 
           <div className="field">

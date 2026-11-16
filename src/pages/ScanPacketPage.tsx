@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Camera,
   Loader2,
+  RefreshCw,
   ScanLine,
   ShieldAlert,
   SlidersHorizontal,
@@ -20,7 +21,10 @@ import {
   evaluateProfileAlertsForValues,
   getAgeGroupLabel,
 } from '../utils/healthProfileEngine';
-import { scanPacketLocally } from '../utils/localNutritionEngine';
+import {
+  scanPacketLocally,
+  validateFoodLabelText,
+} from '../utils/localNutritionEngine';
 import type { PacketScanResult } from '../types';
 
 const SAMPLE_PACKETS = [
@@ -44,6 +48,53 @@ const SAMPLE_PACKETS = [
   },
 ];
 
+async function preprocessImageForOcr(source: File | Blob): Promise<Blob> {
+  const objectUrl = URL.createObjectURL(source);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error('Could not decode photo for scanning.'));
+      el.src = objectUrl;
+    });
+
+    const maxDim = 1500;
+    const scale = Math.min(1, maxDim / Math.max(img.width || 1, img.height || 1));
+    const width = Math.max(1, Math.round((img.width || 800) * scale));
+    const height = Math.max(1, Math.round((img.height || 600) * scale));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return source;
+
+    ctx.drawImage(img, 0, 0, width, height);
+    const imgData = ctx.getImageData(0, 0, width, height);
+    const d = imgData.data;
+
+    // Mild grayscale contrast boost so printed packet text stands out cleanly on mobile photos
+    const contrast = 1.32;
+    for (let i = 0; i < d.length; i += 4) {
+      const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      const enhanced = Math.max(0, Math.min(255, (lum - 128) * contrast + 132));
+      d[i] = enhanced;
+      d[i + 1] = enhanced;
+      d[i + 2] = enhanced;
+    }
+    ctx.putImageData(imgData, 0, 0);
+
+    const processed = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob((b) => resolve(b), 'image/png', 0.92)
+    );
+    return processed || source;
+  } catch {
+    return source;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 export function ScanPacketPage() {
   const { currentUser } = useAuth();
   const [productName, setProductName] = useState('');
@@ -51,11 +102,13 @@ export function ScanPacketPage() {
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [ocrProgress, setOcrProgress] = useState<number | null>(null);
   const [ocrStatusText, setOcrStatusText] = useState<string | null>(null);
+  const [scanAccuracyPct, setScanAccuracyPct] = useState<number | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [result, setResult] = useState<PacketScanResult | null>(null);
 
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -71,11 +124,26 @@ export function ScanPacketPage() {
     };
   }, [imagePreviewUrl]);
 
-  async function analyzeText(nameToUse: string, textToUse: string) {
-    setIsScanning(true);
+  async function analyzeText(
+    nameToUse: string,
+    textToUse: string,
+    ocrConfidence?: number
+  ) {
     setErrorMessage(null);
+    setResult(null);
+
     const cleanName = nameToUse.trim() || 'Scanned Food Packet';
-    const cleanText = textToUse.trim();
+    const validation = validateFoodLabelText(textToUse, ocrConfidence);
+    if (!validation.valid) {
+      setErrorMessage(
+        validation.reason ||
+          'No readable food ingredients or nutrition label detected.'
+      );
+      return;
+    }
+
+    setIsScanning(true);
+    const cleanText = validation.cleanText;
     try {
       const res = await fetch('/api/scan-packet', {
         method: 'POST',
@@ -92,15 +160,20 @@ export function ScanPacketPage() {
       }
       if (res.status === 422) {
         const errBody = await res.json().catch(() => null);
-        throw new Error(errBody?.detail || 'Please provide clearer ingredients or nutrition label text.');
+        throw new Error(
+          errBody?.detail || 'No readable food ingredients or nutrition label detected.'
+        );
       }
-      // Static deployments (e.g. Vercel without Python API) fall back to local analyzer
       const localResult = scanPacketLocally(cleanName, cleanText);
       setResult(localResult);
     } catch (err) {
-      if (err instanceof TypeError || (err instanceof Error && /failed to fetch|network/i.test(err.message))) {
+      if (
+        err instanceof TypeError ||
+        (err instanceof Error && /failed to fetch|network/i.test(err.message))
+      ) {
         setResult(scanPacketLocally(cleanName, cleanText));
       } else {
+        setResult(null);
         setErrorMessage(
           err instanceof Error ? err.message : 'Unable to analyze packet text.'
         );
@@ -112,34 +185,70 @@ export function ScanPacketPage() {
 
   async function runOcrOnImageSource(source: File | Blob, labelName: string) {
     setErrorMessage(null);
+    setResult(null);
+    setScanAccuracyPct(null);
     setOcrProgress(0);
-    setOcrStatusText('Reading text from packet image...');
+    setOcrStatusText('Enhancing & reading packet label...');
     try {
-      const workerResult = await Tesseract.recognize(source, 'eng', {
+      const prepared = await preprocessImageForOcr(source);
+      const workerResult = await Tesseract.recognize(prepared, 'eng', {
         logger: (m) => {
           if (m.status === 'recognizing text' && typeof m.progress === 'number') {
             setOcrProgress(Math.round(m.progress * 100));
           }
         },
       });
-      const extracted = (workerResult?.data?.text || '').trim();
-      if (!extracted || extracted.length < 4) {
+
+      const confidence =
+        typeof workerResult?.data?.confidence === 'number'
+          ? workerResult.data.confidence
+          : undefined;
+      const words = (
+        workerResult?.data as { words?: Array<{ text: string; confidence: number }> } | undefined
+      )?.words;
+
+      let extracted = (workerResult?.data?.text || '').trim();
+      if (Array.isArray(words) && words.length > 0) {
+        // Filter out single-character low-confidence specks generated on faces/textures
+        const kept = words
+          .filter((w) => {
+            const t = (w.text || '').trim();
+            if (!t) return false;
+            if (t.length <= 2 && w.confidence < 58) return false;
+            return w.confidence >= 34;
+          })
+          .map((w) => w.text.trim())
+          .join(' ');
+        if (kept.length >= 6) {
+          extracted = kept;
+        }
+      }
+
+      if (typeof confidence === 'number') {
+        setScanAccuracyPct(Math.round(confidence));
+      }
+
+      const validation = validateFoodLabelText(extracted, confidence);
+      if (!validation.valid) {
+        setRawText('');
+        setResult(null);
         setErrorMessage(
-          'Could not read clear text from that photo. Try a sharper, well-lit photo of the Ingredients box or paste the text below.'
+          validation.reason ||
+            'Could not read clear ingredients from that image. Aim directly at the printed Ingredients or Nutrition Facts box.'
         );
         return;
       }
+
       setRawText(extracted);
       const inferredName = productName.trim() || labelName;
       if (!productName.trim()) {
         setProductName(inferredName);
       }
-      await analyzeText(inferredName, extracted);
+      await analyzeText(inferredName, extracted, confidence);
     } catch (err) {
+      setResult(null);
       setErrorMessage(
-        err instanceof Error
-          ? `OCR failed: ${err.message}`
-          : 'Failed to scan image text.'
+        err instanceof Error ? `OCR failed: ${err.message}` : 'Failed to scan image text.'
       );
     } finally {
       setOcrProgress(null);
@@ -150,11 +259,43 @@ export function ScanPacketPage() {
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
+    setResult(null);
+    setErrorMessage(null);
     if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
     setImagePreviewUrl(URL.createObjectURL(file));
     const cleanFileName = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
     void runOcrOnImageSource(file, cleanFileName || 'Scanned Food Packet');
     event.target.value = '';
+  }
+
+  async function openCameraStream(mode: 'environment' | 'user') {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: mode },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      });
+    } catch {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: false,
+      });
+    }
+    streamRef.current = stream;
+    setCameraOpen(true);
+    requestAnimationFrame(() => {
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    });
   }
 
   async function handleStartCamera() {
@@ -166,20 +307,23 @@ export function ScanPacketPage() {
       return;
     }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
-      });
-      streamRef.current = stream;
-      setCameraOpen(true);
-      requestAnimationFrame(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
-      });
+      await openCameraStream(facingMode);
     } catch {
       setErrorMessage(
         'Camera permission was denied or unavailable. Use Upload Packet Photo instead.'
       );
+    }
+  }
+
+  async function handleFlipCamera() {
+    const nextMode = facingMode === 'environment' ? 'user' : 'environment';
+    setFacingMode(nextMode);
+    if (cameraOpen) {
+      try {
+        await openCameraStream(nextMode);
+      } catch {
+        // ignore if device only has one camera
+      }
     }
   }
 
@@ -200,18 +344,29 @@ export function ScanPacketPage() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    canvas.toBlob((blob) => {
-      if (!blob) return;
-      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
-      setImagePreviewUrl(URL.createObjectURL(blob));
-      handleStopCamera();
-      void runOcrOnImageSource(blob, 'Camera Packet Capture');
-    }, 'image/jpeg', 0.92);
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) return;
+        if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+        setImagePreviewUrl(URL.createObjectURL(blob));
+        handleStopCamera();
+        void runOcrOnImageSource(blob, 'Camera Packet Capture');
+      },
+      'image/jpeg',
+      0.92
+    );
+  }
+
+  function handleClearPhoto() {
+    if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+    setImagePreviewUrl(null);
+    setScanAccuracyPct(null);
   }
 
   function handleFormSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!rawText.trim()) {
+      setResult(null);
       setErrorMessage('Upload a packet photo or enter/paste ingredients text first.');
       return;
     }
@@ -221,7 +376,8 @@ export function ScanPacketPage() {
   function handleSampleClick(sample: (typeof SAMPLE_PACKETS)[number]) {
     setProductName(sample.name);
     setRawText(sample.text);
-    setImagePreviewUrl(null);
+    setScanAccuracyPct(null);
+    handleClearPhoto();
     void analyzeText(sample.name, sample.text);
   }
 
@@ -234,9 +390,12 @@ export function ScanPacketPage() {
     : 'bad';
 
   const activeConditionLabels = currentUser
-    ? HEALTH_CONDITION_OPTIONS.filter((opt) =>
-        currentUser.conditions.includes(opt.key)
-      ).map((opt) => opt.label)
+    ? [
+        ...HEALTH_CONDITION_OPTIONS.filter((opt) =>
+          currentUser.conditions.includes(opt.key)
+        ).map((opt) => opt.label),
+        ...(currentUser.otherConditions || []),
+      ]
     : [];
 
   return (
@@ -245,7 +404,7 @@ export function ScanPacketPage() {
         <div>
           <h1 className="page-title">Scan Packet Ingredients</h1>
           <p className="page-subtitle">
-            Upload a photo of any food packet&apos;s back label, snap with your camera,
+            Upload a photo of any food packet&apos;s back label, snap with your rear camera,
             or paste the ingredients list to see how it fits your saved health profile.
           </p>
         </div>
@@ -281,7 +440,7 @@ export function ScanPacketPage() {
                 Packet Photo &amp; Label Reader
               </h2>
               <p className="card-subtitle">
-                Extracts ingredients and nutrition values directly in your browser.
+                Extracts ingredients &amp; nutrition text cleanly. Non-food photos or blurry shots are rejected automatically.
               </p>
             </div>
           </div>
@@ -291,10 +450,9 @@ export function ScanPacketPage() {
               ref={fileInputRef}
               type="file"
               accept="image/*"
-              capture="environment"
               onChange={handleFileChange}
               className="sr-only"
-              aria-label="Upload packet ingredients photo"
+              aria-label="Upload packet ingredients photo from device"
             />
             <button
               type="button"
@@ -319,13 +477,18 @@ export function ScanPacketPage() {
 
           {cameraOpen && (
             <div className="camera-box">
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                className="camera-preview"
-              />
+              <div className="camera-frame-wrap">
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="camera-preview"
+                />
+                <div className="camera-guide-hint" aria-hidden="true">
+                  Align the printed Ingredients or Nutrition Facts box inside frame
+                </div>
+              </div>
               <div className="camera-actions">
                 <button
                   type="button"
@@ -334,6 +497,14 @@ export function ScanPacketPage() {
                 >
                   <ScanLine size={16} />
                   <span>Capture &amp; Scan Packet</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={handleFlipCamera}
+                >
+                  <RefreshCw size={15} />
+                  <span>Switch Camera</span>
                 </button>
                 <button
                   type="button"
@@ -358,6 +529,22 @@ export function ScanPacketPage() {
 
           {imagePreviewUrl && (
             <div className="scan-preview-frame">
+              <div className="scan-preview-toolbar">
+                <span className="scan-preview-meta">
+                  {scanAccuracyPct !== null
+                    ? `OCR accuracy: ${scanAccuracyPct}%`
+                    : 'Packet image preview'}
+                </span>
+                <button
+                  type="button"
+                  className="cart-remove-btn"
+                  onClick={handleClearPhoto}
+                  aria-label="Remove uploaded image preview"
+                >
+                  <X size={14} />
+                  <span>Clear photo</span>
+                </button>
+              </div>
               <img
                 src={imagePreviewUrl}
                 alt="Uploaded food packet label preview"
@@ -407,7 +594,7 @@ export function ScanPacketPage() {
                 id="scan-raw-text"
                 className="field-input field-textarea"
                 style={{ minHeight: '132px' }}
-                placeholder="Upload a packet photo above or paste text here (e.g., Ingredients: Wholegrain Oats, Sugar, Palm Oil...)"
+                placeholder="Upload a clear back-label photo above or paste text here (e.g., Ingredients: Wholegrain Oats, Sugar, Palm Oil...)"
                 value={rawText}
                 onChange={(e) => setRawText(e.target.value)}
               />
@@ -440,8 +627,8 @@ export function ScanPacketPage() {
               <h2 className="empty-title">Upload or Scan a Packet Label</h2>
               <p className="empty-desc">
                 NutriCheck inspects every listed ingredient and any detected calories,
-                sugar, fat, protein, and sodium numbers to give you a clear Good,
-                Moderate, or Not Good verdict.
+                sugar, fat, protein, and sodium numbers. Non-food photos (faces, dark shots)
+                are blocked so you never get false ingredient results.
               </p>
             </section>
           ) : isScanning && !result ? (

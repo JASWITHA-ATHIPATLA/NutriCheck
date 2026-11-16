@@ -52,6 +52,12 @@ export function TopBar() {
                 Health Profile
               </NavLink>
               <NavLink
+                to="/limits"
+                className={({ isActive }) => `nav-tab ${isActive ? 'is-active' : ''}`}
+              >
+                Daily Limits
+              </NavLink>
+              <NavLink
                 to="/add-product"
                 className={({ isActive }) => `nav-tab ${isActive ? 'is-active' : ''}`}
               >
@@ -155,6 +161,12 @@ export function TopBar() {
                 className={({ isActive }) => `mobile-nav-link ${isActive ? 'is-active' : ''}`}
               >
                 Health Profile ({currentUser.fullName})
+              </NavLink>
+              <NavLink
+                to="/limits"
+                className={({ isActive }) => `mobile-nav-link ${isActive ? 'is-active' : ''}`}
+              >
+                Daily Limits &amp; Cart Table
               </NavLink>
               <NavLink
                 to="/add-product"

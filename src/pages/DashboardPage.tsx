@@ -69,9 +69,12 @@ export function DashboardPage() {
 
   const activeConditionLabels = useMemo(() => {
     if (!currentUser) return [];
-    return HEALTH_CONDITION_OPTIONS.filter((opt) =>
-      currentUser.conditions.includes(opt.key)
-    ).map((opt) => opt.label);
+    return [
+      ...HEALTH_CONDITION_OPTIONS.filter((opt) =>
+        currentUser.conditions.includes(opt.key)
+      ).map((opt) => opt.label),
+      ...(currentUser.otherConditions || []),
+    ];
   }, [currentUser]);
 
   const profileSuggestions = useMemo(() => {
@@ -153,14 +156,23 @@ export function DashboardPage() {
                 </h1>
               </div>
 
-              <Link
-                to="/profile"
-                className="btn-secondary dashboard-editorial-edit-btn"
-                style={{ textDecoration: 'none' }}
-              >
-                <SlidersHorizontal size={15} />
-                <span>Edit health profile</span>
-              </Link>
+              <div className="dashboard-editorial-actions">
+                <Link
+                  to="/limits"
+                  className="btn-secondary dashboard-editorial-edit-btn"
+                  style={{ textDecoration: 'none' }}
+                >
+                  <span>Daily limits</span>
+                </Link>
+                <Link
+                  to="/profile"
+                  className="btn-secondary dashboard-editorial-edit-btn"
+                  style={{ textDecoration: 'none' }}
+                >
+                  <SlidersHorizontal size={15} />
+                  <span>Edit health profile</span>
+                </Link>
+              </div>
             </div>
 
             <p className="dashboard-editorial-meta">

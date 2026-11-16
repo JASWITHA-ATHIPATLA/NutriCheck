@@ -1,6 +1,7 @@
 import type {
   CatalogProduct,
   HealthCondition,
+  NutrientBaselineLimit,
   PersonalizedCheckResult,
   RiskLevel,
   UserHealthProfile,
@@ -18,6 +19,236 @@ export const HEALTH_CONDITION_OPTIONS: {
   { key: 'kidney_disease', label: 'Kidney Disease', hint: 'Monitors sodium, protein & additives' },
   { key: 'obesity', label: 'Obesity', hint: 'Monitors calorie density & free sugars' },
 ];
+
+export const BASELINE_NUTRIENT_PROFILES: NutrientBaselineLimit[] = [
+  {
+    profileKey: 'normal',
+    profileLabel: 'Normal Healthy Adult',
+    audience: 'normal',
+    caloriesDay: 2000,
+    caloriesPer100gMax: 450,
+    sugarDayMaxG: 36,
+    sugarPer100gMaxG: 10,
+    fatDayMaxG: 65,
+    fatPer100gNote: '< 17g/100g (higher OK for unsalted whole nuts)',
+    satFatDayMaxG: 20,
+    satFatPer100gMaxG: 5,
+    proteinDayMinG: 55,
+    proteinDayLabel: '50–65 g',
+    fiberDayMinG: 28,
+    sodiumDayMaxMg: 2300,
+    sodiumPer100gMaxMg: 400,
+    keyFocus: 'Balanced whole foods; keep free sugars <10% kcal & sodium under 2,300 mg/day.',
+  },
+  {
+    profileKey: 'diabetes',
+    profileLabel: 'Diabetes Patient',
+    audience: 'patient',
+    caloriesDay: 1800,
+    caloriesPer100gMax: 400,
+    sugarDayMaxG: 25,
+    sugarPer100gMaxG: 5,
+    fatDayMaxG: 60,
+    fatPer100gNote: 'Prefer omega-3/MUFA fats (walnuts, almonds); avoid trans fat',
+    satFatDayMaxG: 15,
+    satFatPer100gMaxG: 4,
+    proteinDayMinG: 65,
+    proteinDayLabel: '60–80 g',
+    fiberDayMinG: 32,
+    sodiumDayMaxMg: 2000,
+    sodiumPer100gMaxMg: 300,
+    keyFocus: 'Limit added sugars (<=5g/100g); low-GI whole berries & walnuts are beneficial.',
+  },
+  {
+    profileKey: 'hypertension',
+    profileLabel: 'Hypertension (BP) Patient',
+    audience: 'patient',
+    caloriesDay: 1900,
+    caloriesPer100gMax: 420,
+    sugarDayMaxG: 25,
+    sugarPer100gMaxG: 8,
+    fatDayMaxG: 55,
+    fatPer100gNote: 'Low saturated fat; DASH-style plant & dairy fats',
+    satFatDayMaxG: 13,
+    satFatPer100gMaxG: 3,
+    proteinDayMinG: 60,
+    proteinDayLabel: '55–70 g',
+    fiberDayMinG: 30,
+    sodiumDayMaxMg: 1500,
+    sodiumPer100gMaxMg: 250,
+    keyFocus: 'Strict sodium cap (<=1,500 mg/day); avoid salted snacks, pickles & instant noodles.',
+  },
+  {
+    profileKey: 'heart_disease',
+    profileLabel: 'Heart Disease Patient',
+    audience: 'patient',
+    caloriesDay: 1850,
+    caloriesPer100gMax: 400,
+    sugarDayMaxG: 25,
+    sugarPer100gMaxG: 7,
+    fatDayMaxG: 55,
+    fatPer100gNote: 'Healthy PUFA/MUFA nuts OK in 30g portions; avoid palm/butter fat',
+    satFatDayMaxG: 13,
+    satFatPer100gMaxG: 3,
+    proteinDayMinG: 60,
+    proteinDayLabel: '55–70 g',
+    fiberDayMinG: 30,
+    sodiumDayMaxMg: 1800,
+    sodiumPer100gMaxMg: 250,
+    keyFocus: 'Keep saturated fat <=3g/100g and favor omega-3 walnuts, oats & fresh berries.',
+  },
+  {
+    profileKey: 'kidney_disease',
+    profileLabel: 'Kidney Care Patient',
+    audience: 'patient',
+    caloriesDay: 1800,
+    caloriesPer100gMax: 400,
+    sugarDayMaxG: 25,
+    sugarPer100gMaxG: 8,
+    fatDayMaxG: 55,
+    fatPer100gNote: 'Avoid phosphate additives & salty processed meats/snacks',
+    satFatDayMaxG: 15,
+    satFatPer100gMaxG: 4,
+    proteinDayMinG: 45,
+    proteinDayLabel: '45–55 g (mod)',
+    fiberDayMinG: 25,
+    sodiumDayMaxMg: 1500,
+    sodiumPer100gMaxMg: 220,
+    keyFocus: 'Strict sodium control & check phosphorus/potassium additives on labels.',
+  },
+  {
+    profileKey: 'obesity',
+    profileLabel: 'Weight / Obesity Care',
+    audience: 'patient',
+    caloriesDay: 1500,
+    caloriesPer100gMax: 350,
+    sugarDayMaxG: 20,
+    sugarPer100gMaxG: 5,
+    fatDayMaxG: 45,
+    fatPer100gNote: 'Keep total fat moderate; measure calorie-dense nuts to 28g/day',
+    satFatDayMaxG: 13,
+    satFatPer100gMaxG: 3.5,
+    proteinDayMinG: 70,
+    proteinDayLabel: '65–85 g',
+    fiberDayMinG: 30,
+    sodiumDayMaxMg: 2000,
+    sodiumPer100gMaxMg: 320,
+    keyFocus: 'Lower calorie density with high protein & fiber for steady satiety.',
+  },
+];
+
+export function computeUserPersonalLimits(
+  profile: UserHealthProfile | null
+): NutrientBaselineLimit {
+  const normal = BASELINE_NUTRIENT_PROFILES[0];
+  if (!profile) {
+    return {
+      ...normal,
+      profileKey: 'active',
+      profileLabel: 'Standard Adult Baseline',
+      audience: 'active',
+    };
+  }
+
+  const conditions = new Set<HealthCondition>(profile.conditions || []);
+  const otherJoined = (profile.otherConditions || []).join(' ').toLowerCase();
+  const age = profile.age || 30;
+
+  let caloriesDay = normal.caloriesDay;
+  let caloriesPer100gMax = normal.caloriesPer100gMax;
+  let sugarDayMaxG = normal.sugarDayMaxG;
+  let sugarPer100gMaxG = normal.sugarPer100gMaxG;
+  let fatDayMaxG = normal.fatDayMaxG;
+  let satFatDayMaxG = normal.satFatDayMaxG;
+  let satFatPer100gMaxG = normal.satFatPer100gMaxG;
+  let proteinDayMinG = normal.proteinDayMinG;
+  let fiberDayMinG = normal.fiberDayMinG;
+  let sodiumDayMaxMg = normal.sodiumDayMaxMg;
+  let sodiumPer100gMaxMg = normal.sodiumPer100gMaxMg;
+
+  if (age < 13) {
+    caloriesDay = 1600;
+    sugarDayMaxG = 22;
+    sodiumDayMaxMg = 1500;
+    proteinDayMinG = 35;
+  } else if (age < 20) {
+    caloriesDay = 2100;
+    sugarDayMaxG = 28;
+    sodiumDayMaxMg = 2000;
+  } else if (age >= 60) {
+    caloriesDay = 1750;
+    sodiumDayMaxMg = 1800;
+    sodiumPer100gMaxMg = 300;
+    proteinDayMinG = 60;
+  }
+
+  for (const row of BASELINE_NUTRIENT_PROFILES) {
+    if (conditions.has(row.profileKey as HealthCondition)) {
+      caloriesDay = Math.min(caloriesDay, row.caloriesDay);
+      caloriesPer100gMax = Math.min(caloriesPer100gMax, row.caloriesPer100gMax);
+      sugarDayMaxG = Math.min(sugarDayMaxG, row.sugarDayMaxG);
+      sugarPer100gMaxG = Math.min(sugarPer100gMaxG, row.sugarPer100gMaxG);
+      fatDayMaxG = Math.min(fatDayMaxG, row.fatDayMaxG);
+      satFatDayMaxG = Math.min(satFatDayMaxG, row.satFatDayMaxG);
+      satFatPer100gMaxG = Math.min(satFatPer100gMaxG, row.satFatPer100gMaxG);
+      fiberDayMinG = Math.max(fiberDayMinG, row.fiberDayMinG);
+      sodiumDayMaxMg = Math.min(sodiumDayMaxMg, row.sodiumDayMaxMg);
+      sodiumPer100gMaxMg = Math.min(sodiumPer100gMaxMg, row.sodiumPer100gMaxMg);
+      if (row.profileKey === 'kidney_disease') {
+        proteinDayMinG = Math.min(proteinDayMinG, 50);
+      } else {
+        proteinDayMinG = Math.max(proteinDayMinG, row.proteinDayMinG);
+      }
+    }
+  }
+
+  if (/cholesterol|hyperlipidemia|lipid/.test(otherJoined)) {
+    satFatDayMaxG = Math.min(satFatDayMaxG, 13);
+    satFatPer100gMaxG = Math.min(satFatPer100gMaxG, 3);
+    fiberDayMinG = Math.max(fiberDayMinG, 30);
+  }
+  if (/fatty liver|liver|pcos|prediabetes|insulin/.test(otherJoined)) {
+    sugarDayMaxG = Math.min(sugarDayMaxG, 25);
+    sugarPer100gMaxG = Math.min(sugarPer100gMaxG, 5);
+  }
+  if (/gout|uric acid/.test(otherJoined)) {
+    sugarDayMaxG = Math.min(sugarDayMaxG, 25);
+    sodiumDayMaxMg = Math.min(sodiumDayMaxMg, 1800);
+  }
+
+  const activeNames = [
+    ...HEALTH_CONDITION_OPTIONS.filter((o) => conditions.has(o.key)).map((o) => o.label),
+    ...(profile.otherConditions || []),
+  ];
+
+  return {
+    profileKey: 'active',
+    profileLabel: `${profile.fullName}'s Active Baseline`,
+    audience: 'active',
+    caloriesDay,
+    caloriesPer100gMax,
+    sugarDayMaxG,
+    sugarPer100gMaxG,
+    fatDayMaxG,
+    fatPer100gNote:
+      conditions.has('diabetes') || conditions.has('heart_disease')
+        ? 'Prioritize unsaturated omega-3/MUFA fats (walnuts, almonds); limit trans/palm oil'
+        : normal.fatPer100gNote,
+    satFatDayMaxG,
+    satFatPer100gMaxG,
+    proteinDayMinG,
+    proteinDayLabel: conditions.has('kidney_disease')
+      ? `${proteinDayMinG}–55 g (controlled)`
+      : `${proteinDayMinG}–${proteinDayMinG + 15} g`,
+    fiberDayMinG,
+    sodiumDayMaxMg,
+    sodiumPer100gMaxMg,
+    keyFocus:
+      activeNames.length > 0
+        ? `Strictest protective limits applied for ${activeNames.join(', ')} (${getAgeGroupLabel(age)}, ${age} yrs). Whole berries & unsalted walnuts remain safe within portions.`
+        : `Healthy ${getAgeGroupLabel(age).toLowerCase()} daily targets without medical restrictions.`,
+  };
+}
 
 export const SEEDED_CATALOG_PRODUCTS: CatalogProduct[] = [
   {
@@ -208,6 +439,62 @@ export function parseAllergiesInput(input: string): string[] {
     .filter((s) => s.length > 0 && !/^(none|nil|na|n\/a)$/i.test(s));
 }
 
+export function parseCustomConditionsInput(input: string): string[] {
+  return Array.from(
+    new Set(
+      input
+        .split(/[,;\n]+/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 1 && !/^(none|nil|na|n\/a|no)$/i.test(s))
+    )
+  );
+}
+
+interface WholeFoodContext {
+  isWholeNutOrSeed: boolean;
+  isWholeFreshBerryOrFruit: boolean;
+}
+
+function classifyWholeFoodContext(params: {
+  name: string;
+  ingredientsText?: string;
+  sugars: number;
+  fat: number;
+  sodium_mg: number;
+}): WholeFoodContext {
+  const hay = `${params.name || ''} ${params.ingredientsText || ''}`.toLowerCase();
+  const hasSweetenedOrJunk =
+    /\b(added sugar|cane sugar|brown sugar|corn syrup|hfcs|invert syrup|glucose syrup|maltodextrin|chocolate|candy|cookie|biscuit|cake|muffin|pastry|donut|waffle|ice cream|jam|jelly|marmalade|sharbat|squash|nectar|fruit juice|juice|soda|fried|chips|namkeen|bhujia|caramel|sugar coated|honey roasted|masala|nutella|palm oil|palmolein|maida|refined wheat flour)\b/i.test(
+      hay
+    ) ||
+    /\bsugars?\b(?!\s*free)/i.test((params.ingredientsText || '').toLowerCase());
+
+  const hasNutSeed = /\b(walnuts?|akhrot|almonds?|badam|pistachios?|pista|cashews?|kaju|peanuts?|hazelnuts?|pecans?|macadamias?|chia|flax(?:seeds?)?|pumpkin seeds?|sunflower seeds?|sesame|makhana|fox nuts?|mixed nuts?)\b/i.test(
+    params.name.toLowerCase()
+  );
+  const isWholeNutOrSeed =
+    hasNutSeed &&
+    !hasSweetenedOrJunk &&
+    params.sodium_mg <= 120 &&
+    params.sugars <= 8;
+
+  const hasBerryOrWholeFruit = /\b(blueberr(?:y|ies)|strawberr(?:y|ies)|raspberr(?:y|ies)|blackberr(?:y|ies)|cranberr(?:y|ies)|berr(?:y|ies)|avocado|apple|apples|orange|oranges|pear|pears|guava|kiwi|papaya|pomegranate|watermelon|fresh fruit)\b/i.test(
+    params.name.toLowerCase()
+  );
+  const isDried = /\b(dried|raisins?|dates?|khajoor|kishmish|candied|dehydrated|sweetened)\b/i.test(
+    hay
+  );
+  const isWholeFreshBerryOrFruit =
+    hasBerryOrWholeFruit &&
+    !isDried &&
+    !hasSweetenedOrJunk &&
+    params.sodium_mg <= 45 &&
+    params.sugars <= 16 &&
+    (params.fat <= 5 || /\bavocado\b/i.test(params.name));
+
+  return { isWholeNutOrSeed, isWholeFreshBerryOrFruit };
+}
+
 function findMatchingAllergens(
   userAllergies: string[],
   productAllergens: string[],
@@ -221,7 +508,12 @@ function findMatchingAllergens(
     const clean = raw.trim().toLowerCase();
     if (!clean) continue;
     const singular = clean.endsWith('s') && clean.length > 3 ? clean.slice(0, -1) : clean;
-    if (haystack.includes(clean) || haystack.includes(singular)) {
+    if (
+      haystack.includes(clean) ||
+      haystack.includes(singular) ||
+      ((clean.includes('tree nut') || clean === 'nuts') &&
+        /\b(almond|walnut|cashew|pistachio|pecan|hazelnut|macadamia)\b/.test(haystack))
+    ) {
       matches.push(raw.trim());
     }
   }
@@ -233,6 +525,8 @@ export function evaluateProductForProfile(
   profile: UserHealthProfile | null
 ): PersonalizedCheckResult {
   const conditions = new Set<HealthCondition>(profile?.conditions || []);
+  const otherConditions = profile?.otherConditions || [];
+  const otherJoined = otherConditions.join(' ').toLowerCase();
   const userAllergies = profile?.allergies || [];
   const age = profile?.age ?? 30;
   const ageGroupLabel = getAgeGroupLabel(age);
@@ -241,6 +535,14 @@ export function evaluateProductForProfile(
   const cautions: string[] = [];
   const triggeredConditions: string[] = [];
   let riskPoints = 0; // higher = worse risk
+
+  const wholeCtx = classifyWholeFoodContext({
+    name: product.name,
+    ingredientsText: product.ingredients,
+    sugars: product.sugar_g,
+    fat: product.fat_g,
+    sodium_mg: product.sodium_mg,
+  });
 
   // 1. Allergen check (strictest override)
   const matchedAllergens = findMatchingAllergens(
@@ -257,9 +559,17 @@ export function evaluateProductForProfile(
     );
   }
 
-  // 2. Diabetes screening
-  if (conditions.has('diabetes')) {
-    if (product.sugar_g >= 15) {
+  // 2. Diabetes screening (intrinsic natural fruit/berry sugars & whole nuts are protective!)
+  if (conditions.has('diabetes') || /pcos|prediabetes|insulin|fatty liver/.test(otherJoined)) {
+    if (wholeCtx.isWholeFreshBerryOrFruit) {
+      cautions.push(
+        `Whole berries/fresh fruit contain natural sugar bound with fiber & antioxidants (low glycemic impact)—a 100g–150g portion fits diabetes care well.`
+      );
+    } else if (wholeCtx.isWholeNutOrSeed) {
+      cautions.push(
+        `Whole unsalted nuts (such as walnuts/almonds) are very low-sugar & rich in omega-3s/fiber—recommended in ~28g (1 oz) portions for blood-sugar control.`
+      );
+    } else if (product.sugar_g >= 15) {
       riskPoints += 50;
       triggeredConditions.push('Diabetes');
       reasons.push('High sugar content may make blood-glucose management harder.');
@@ -316,9 +626,13 @@ export function evaluateProductForProfile(
     }
   }
 
-  // 5. Heart Disease screening
-  if (conditions.has('heart_disease')) {
-    if (product.saturated_fat_g >= 8 || (product.saturated_fat_g >= 5 && product.sodium_mg >= 400)) {
+  // 5. Heart Disease / Cholesterol screening
+  if (conditions.has('heart_disease') || /cholesterol|hyperlipidemia|lipid/.test(otherJoined)) {
+    if (wholeCtx.isWholeNutOrSeed) {
+      cautions.push(
+        'Whole nuts contain heart-protective polyunsaturated & monounsaturated fats (omega-3s)—keep daily intake around 28–30g.'
+      );
+    } else if (product.saturated_fat_g >= 8 || (product.saturated_fat_g >= 5 && product.sodium_mg >= 400)) {
       riskPoints += 45;
       triggeredConditions.push('Heart Disease');
       reasons.push(
@@ -335,7 +649,11 @@ export function evaluateProductForProfile(
 
   // 6. Obesity / Weight management screening
   if (conditions.has('obesity')) {
-    if (product.calories >= 450 && product.fiber_g < 6) {
+    if (wholeCtx.isWholeNutOrSeed) {
+      cautions.push(
+        `Whole nuts are calorie-dense (${product.calories} kcal per ${product.servingSize})—measure a small ~28g handful rather than eating by the 100g pack.`
+      );
+    } else if (product.calories >= 450 && product.fiber_g < 6) {
       riskPoints += 38;
       triggeredConditions.push('Obesity');
       reasons.push('Energy-dense food, portion size matters for weight management.');
@@ -345,25 +663,44 @@ export function evaluateProductForProfile(
       reasons.push(
         `High calorie density (${product.calories} kcal per ${product.servingSize})—measure small portions.`
       );
-    } else if (product.sugar_g >= 10 && product.fiber_g < 2) {
+    } else if (!wholeCtx.isWholeFreshBerryOrFruit && product.sugar_g >= 10 && product.fiber_g < 2) {
       riskPoints += 24;
       triggeredConditions.push('Obesity');
       reasons.push('Liquid/simple sugars add calories without promoting satiety.');
     }
   }
 
-  // 7. General WHO / FDA baseline (applies to everyone, and dominates when no conditions conflict)
-  if (product.sugar_g >= 22) {
-    riskPoints += 42;
-    if (!reasons.some((r) => /sugar/i.test(r))) {
-      reasons.push(`Very high sugar (${product.sugar_g.toFixed(1)} g per ${product.servingSize}).`);
-    }
-  } else if (product.sugar_g >= 10) {
-    riskPoints += 20;
-    if (!reasons.some((r) => /sugar/i.test(r))) {
-      reasons.push(
-        `Added sugars (${product.sugar_g.toFixed(1)} g) contribute noticeably to daily free-sugar allowance.`
-      );
+  // 6b. Custom "Other disease" targeted screening
+  if (/celiac|gluten/.test(otherJoined) && /\b(wheat|maida|barley|rye|gluten|semolina|rava|suji)\b/i.test(`${product.ingredients} ${product.allergens.join(' ')}`)) {
+    riskPoints += 75;
+    triggeredConditions.push('Celiac / Gluten Sensitivity');
+    reasons.push('Contains wheat/gluten ingredients flagged for your custom condition.');
+  }
+  if (/gerd|acid reflux|reflux|gastritis|ulcer/.test(otherJoined) && (/caffeine|carbonated|phosphoric|chilli|spicy/i.test(product.ingredients) || (!wholeCtx.isWholeNutOrSeed && product.fat_g >= 18))) {
+    riskPoints += 28;
+    triggeredConditions.push('Acid Reflux / GERD');
+    reasons.push('High fat, carbonation, or caffeine may aggravate acid reflux symptoms.');
+  }
+  if (/gout|uric acid/.test(otherJoined) && /high fructose corn syrup|corn syrup|yeast extract/i.test(product.ingredients)) {
+    riskPoints += 35;
+    triggeredConditions.push('Gout / Uric Acid');
+    reasons.push('Contains high-fructose corn syrup or yeast extract which can elevate uric acid.');
+  }
+
+  // 7. General WHO / FDA baseline
+  if (!wholeCtx.isWholeFreshBerryOrFruit && !wholeCtx.isWholeNutOrSeed) {
+    if (product.sugar_g >= 22) {
+      riskPoints += 42;
+      if (!reasons.some((r) => /sugar/i.test(r))) {
+        reasons.push(`Very high sugar (${product.sugar_g.toFixed(1)} g per ${product.servingSize}).`);
+      }
+    } else if (product.sugar_g >= 10) {
+      riskPoints += 20;
+      if (!reasons.some((r) => /sugar/i.test(r))) {
+        reasons.push(
+          `Added sugars (${product.sugar_g.toFixed(1)} g) contribute noticeably to daily free-sugar allowance.`
+        );
+      }
     }
   }
 
@@ -379,23 +716,28 @@ export function evaluateProductForProfile(
     }
   }
 
-  if (product.saturated_fat_g >= 10) {
-    riskPoints += 32;
-    if (!reasons.some((r) => /saturated fat/i.test(r))) {
-      reasons.push(`High saturated fat (${product.saturated_fat_g.toFixed(1)} g per ${product.servingSize}).`);
+  if (!wholeCtx.isWholeNutOrSeed) {
+    if (product.saturated_fat_g >= 10) {
+      riskPoints += 32;
+      if (!reasons.some((r) => /saturated fat/i.test(r))) {
+        reasons.push(`High saturated fat (${product.saturated_fat_g.toFixed(1)} g per ${product.servingSize}).`);
+      }
+    } else if (product.saturated_fat_g >= 4.5) {
+      riskPoints += 14;
     }
-  } else if (product.saturated_fat_g >= 4.5) {
-    riskPoints += 14;
   }
 
   // Protective factors
+  if (wholeCtx.isWholeFreshBerryOrFruit || wholeCtx.isWholeNutOrSeed) {
+    riskPoints -= 16;
+  }
   if (product.fiber_g >= 5 && product.sugar_g < 8) {
     riskPoints -= 12;
   }
   if (product.protein_g >= 10 && product.sugar_g < 8 && product.sodium_mg < 450) {
     riskPoints -= 10;
   }
-  if (product.fiber_g < 1.5 && product.protein_g < 3 && product.calories > 30) {
+  if (!wholeCtx.isWholeFreshBerryOrFruit && product.fiber_g < 1.5 && product.protein_g < 3 && product.calories > 30) {
     cautions.push('Low fiber may be less filling.');
   }
   if (
@@ -433,9 +775,19 @@ export function evaluateProductForProfile(
   }
 
   if (reasons.length === 0) {
-    reasons.push(
-      `Balanced nutrient profile with low sugar (${product.sugar_g.toFixed(1)} g) and safe sodium (${Math.round(product.sodium_mg)} mg) for ${profile ? profile.fullName : 'daily nutrition'}.`
-    );
+    if (wholeCtx.isWholeNutOrSeed) {
+      reasons.push(
+        `Whole unsalted nut/seed profile rich in healthy unsaturated fats, plant protein, and low sugar (${product.sugar_g.toFixed(1)} g) for ${profile ? profile.fullName : 'daily nutrition'}.`
+      );
+    } else if (wholeCtx.isWholeFreshBerryOrFruit) {
+      reasons.push(
+        `Natural whole fruit/berry rich in antioxidants, fiber, and low sodium (${Math.round(product.sodium_mg)} mg)—gentle on blood sugar in normal 100g servings.`
+      );
+    } else {
+      reasons.push(
+        `Balanced nutrient profile with low sugar (${product.sugar_g.toFixed(1)} g) and safe sodium (${Math.round(product.sodium_mg)} mg) for ${profile ? profile.fullName : 'daily nutrition'}.`
+      );
+    }
   }
 
   return {
@@ -474,6 +826,15 @@ export function evaluateProfileAlertsForValues(
   const suggestions: string[] = [];
   let level: 'good' | 'warning' | 'danger' = 'good';
   const conditions = new Set(profile.conditions);
+  const otherJoined = (profile.otherConditions || []).join(' ').toLowerCase();
+
+  const wholeCtx = classifyWholeFoodContext({
+    name: input.productName,
+    ingredientsText: input.ingredientsText,
+    sugars: input.sugars,
+    fat: input.fat ?? 0,
+    sodium_mg: input.sodium_mg,
+  });
 
   const matchedAllergens = findMatchingAllergens(
     profile.allergies,
@@ -491,18 +852,34 @@ export function evaluateProfileAlertsForValues(
     );
   }
 
-  if (conditions.has('diabetes') && input.sugars >= 12) {
-    level = 'danger';
-    alerts.push(
-      `Diabetes alert: ${input.sugars}g sugar may spike blood glucose.`
-    );
-    suggestions.push(
-      'Swap for unsweetened high-fiber options like Plain Oats or Unsalted Almonds.'
-    );
-  } else if (conditions.has('diabetes') && input.sugars >= 6) {
-    if (level !== 'danger') level = 'warning';
-    alerts.push(`Diabetes watch: ${input.sugars}g sugar—consume in modest portions.`);
-    suggestions.push('Pair with protein or fiber and keep serving size small.');
+  if (conditions.has('diabetes') || /pcos|prediabetes|insulin|fatty liver/.test(otherJoined)) {
+    if (wholeCtx.isWholeFreshBerryOrFruit) {
+      alerts.push(
+        `Diabetes-friendly whole berry/fruit: ${input.sugars}g natural fruit sugar with fiber & antioxidants (low glycemic load).`
+      );
+      suggestions.push(
+        'Great natural choice—enjoy a standard ~100g–150g fresh serving alongside nuts or plain yogurt.'
+      );
+    } else if (wholeCtx.isWholeNutOrSeed) {
+      alerts.push(
+        `Diabetes-friendly whole nut/seed: very low sugar (${input.sugars}g) with plant omega-3s & protein that help steady blood glucose.`
+      );
+      suggestions.push(
+        'Healthy everyday snack—keep to a smart ~28g (handful) daily portion.'
+      );
+    } else if (input.sugars >= 12) {
+      level = 'danger';
+      alerts.push(
+        `Diabetes alert: ${input.sugars}g sugar may spike blood glucose.`
+      );
+      suggestions.push(
+        'Swap for unsweetened high-fiber options like Plain Oats, Walnuts, or Fresh Blueberries.'
+      );
+    } else if (input.sugars >= 6) {
+      if (level !== 'danger') level = 'warning';
+      alerts.push(`Diabetes watch: ${input.sugars}g sugar—consume in modest portions.`);
+      suggestions.push('Pair with protein or fiber and keep serving size small.');
+    }
   }
 
   if (conditions.has('hypertension') && input.sodium_mg >= 400) {
@@ -526,27 +903,63 @@ export function evaluateProfileAlertsForValues(
     );
   }
 
-  if (conditions.has('heart_disease') && (input.fat ?? 0) >= 14) {
-    if (level === 'good') level = 'warning';
-    alerts.push(
-      `Heart care note: ${input.fat}g total fat—check saturated/trans fat percentages on pack.`
-    );
-    suggestions.push(
-      'Pick foods cooked without palm oil or hydrogenated fats.'
-    );
+  if (
+    (conditions.has('heart_disease') || /cholesterol|hyperlipidemia|lipid/.test(otherJoined)) &&
+    (input.fat ?? 0) >= 14
+  ) {
+    if (wholeCtx.isWholeNutOrSeed) {
+      alerts.push(
+        `Heart-protective unsaturated fats (${input.fat}g/100g in whole nuts)—rich in omega-3s rather than saturated trans fats.`
+      );
+      suggestions.push('Enjoy a 28–30g unsalted handful for cardiovascular support.');
+    } else {
+      if (level === 'good') level = 'warning';
+      alerts.push(
+        `Heart care note: ${input.fat}g total fat—check saturated/trans fat percentages on pack.`
+      );
+      suggestions.push(
+        'Pick foods cooked without palm oil or hydrogenated fats.'
+      );
+    }
   }
 
   if (conditions.has('obesity') && input.calories >= 420) {
-    if (level === 'good') level = 'warning';
-    alerts.push(
-      `Weight management note: energy-dense (${Math.round(input.calories)} kcal)—mind serving size.`
-    );
-    suggestions.push(
-      'Portion into small servings or choose higher-fiber, lower-calorie snacks.'
-    );
+    if (wholeCtx.isWholeNutOrSeed) {
+      alerts.push(
+        `Calorie-dense healthy nut (~${Math.round(input.calories)} kcal per 100g)—high satiety protein & fiber.`
+      );
+      suggestions.push('Measure a 28g portion (~170–185 kcal) instead of a full 100g pack.');
+    } else {
+      if (level === 'good') level = 'warning';
+      alerts.push(
+        `Weight management note: energy-dense (${Math.round(input.calories)} kcal)—mind serving size.`
+      );
+      suggestions.push(
+        'Portion into small servings or choose higher-fiber, lower-calorie snacks.'
+      );
+    }
   }
 
   if (
+    /celiac|gluten/.test(otherJoined) &&
+    /\b(wheat|maida|barley|rye|gluten|semolina|rava|suji)\b/i.test(input.ingredientsText || '')
+  ) {
+    level = 'danger';
+    alerts.push('Custom condition alert (Celiac/Gluten): contains wheat or gluten ingredients.');
+    suggestions.push('Choose certified gluten-free oats, rice, fruits, or plain nuts.');
+  }
+
+  if (
+    /gout|uric acid/.test(otherJoined) &&
+    /high fructose corn syrup|corn syrup|yeast extract/i.test(input.ingredientsText || '')
+  ) {
+    if (level !== 'danger') level = 'warning';
+    alerts.push('Custom condition watch (Gout/Uric Acid): contains corn syrup or yeast extract.');
+  }
+
+  if (
+    !wholeCtx.isWholeNutOrSeed &&
+    !wholeCtx.isWholeFreshBerryOrFruit &&
     level === 'good' &&
     typeof input.baseScore === 'number' &&
     input.baseScore < 45
@@ -554,6 +967,8 @@ export function evaluateProfileAlertsForValues(
     level = 'danger';
     alerts.push('High sugar, sodium, or ultra-processed ingredients detected on label.');
   } else if (
+    !wholeCtx.isWholeNutOrSeed &&
+    !wholeCtx.isWholeFreshBerryOrFruit &&
     level === 'good' &&
     typeof input.baseScore === 'number' &&
     input.baseScore < 70
@@ -566,12 +981,16 @@ export function evaluateProfileAlertsForValues(
     level === 'danger' ? 'HIGH RISK' : level === 'warning' ? 'MODERATE RISK' : 'LOW RISK';
 
   if (alerts.length === 0) {
+    const customLabel =
+      (profile.otherConditions || []).length > 0
+        ? ` (including ${profile.otherConditions!.join(', ')})`
+        : '';
     return {
       riskLevel: 'LOW RISK',
       level: 'good',
       headline: `LOW RISK · Safe choice for ${profile.fullName}`,
       alerts: [
-        'No allergen matches or high condition-specific nutrient flags detected for your profile.',
+        `No allergen matches or high condition-specific nutrient flags detected for your profile${customLabel}.`,
       ],
       suggestions: ['Suitable for regular inclusion within your daily calorie budget.'],
     };
@@ -583,7 +1002,9 @@ export function evaluateProfileAlertsForValues(
     headline:
       level === 'danger'
         ? `HIGH RISK · Caution for ${profile.fullName}`
-        : `MODERATE RISK · Watch portions (${profile.fullName})`,
+        : level === 'warning'
+        ? `MODERATE RISK · Watch portions (${profile.fullName})`
+        : `LOW RISK · Good choice for ${profile.fullName}`,
     alerts: Array.from(new Set(alerts)),
     suggestions: Array.from(new Set(suggestions)),
   };
@@ -602,7 +1023,7 @@ export function getProfileSuggestions(
 
   if (conditions.has('diabetes')) {
     tips.push(
-      'Diabetes focus: Favor foods under 5g sugar per 100g with 5g+ fiber (e.g., Plain Oats, Unsalted Almonds) to steady blood glucose.'
+      'Diabetes focus: Favor foods under 5g added sugar per 100g with 5g+ fiber (Plain Oats, Walnuts, Almonds) and low-GI fresh berries (Blueberries).'
     );
   }
   if (conditions.has('hypertension')) {
@@ -623,6 +1044,11 @@ export function getProfileSuggestions(
   if (conditions.has('obesity')) {
     tips.push(
       'Weight focus: Prioritize filling, high-fiber, protein-rich foods while keeping energy-dense sweets and chips occasional.'
+    );
+  }
+  if ((profile.otherConditions || []).length > 0) {
+    tips.push(
+      `Other conditions (${profile.otherConditions!.join(', ')}): Personalized label checks and daily limit thresholds are active.`
     );
   }
   if (profile.allergies.length > 0) {

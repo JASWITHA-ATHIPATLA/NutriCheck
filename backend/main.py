@@ -374,6 +374,13 @@ def _is_whole_nut_or_seed(name: str, sugars: float, sodium_mg: float) -> bool:
     return has_nut and not has_junk and sodium_mg <= 180.0 and sugars <= 30.0
 
 
+def _is_whole_fruit_or_berry(name: str, sugars: float, fat: float, sodium_mg: float) -> bool:
+    lower = (name or "").lower()
+    has_fruit = bool(re.search(r"\b(blueberr(?:y|ies)|strawberr(?:y|ies)|raspberr(?:y|ies)|blackberr(?:y|ies)|cranberr(?:y|ies)|berr(?:y|ies)|avocados?|apples?|oranges?|pears?|guavas?|kiwis?|papayas?|pomegranates?|watermelon|fresh fruit)\b", lower))
+    has_junk = bool(re.search(r"\b(dried|candied|chocolate|candy|cookie|biscuit|cake|muffin|pastry|pie|jam|jelly|marmalade|juice|nectar|sharbat|squash|syrup|soda|ice cream|yogurt|smoothie)\b", lower))
+    return has_fruit and not has_junk and sodium_mg <= 45.0 and sugars <= 16.0 and (fat <= 5.0 or "avocado" in lower)
+
+
 def run_ml_prediction(payload: FoodNutritionInput) -> PredictionResponse:
     features_df, nutrition_summary = build_feature_frame(payload)
     model_classes = list(MODEL.classes_)
@@ -395,10 +402,10 @@ def run_ml_prediction(payload: FoodNutritionInput) -> PredictionResponse:
     health_score = round(float(np.clip(health_score, 0.0, 100.0)), 1)
 
     food_name = payload.food_name.strip() or "Custom Food Item"
-    if _is_whole_nut_or_seed(food_name, nutrition_summary["sugars"], nutrition_summary["sodium_mg"]):
+    if _is_whole_nut_or_seed(food_name, nutrition_summary["sugars"], nutrition_summary["sodium_mg"]) or _is_whole_fruit_or_berry(food_name, nutrition_summary["sugars"], nutrition_summary["fat"], nutrition_summary["sodium_mg"]):
         pred_label = "Healthy"
-        health_score = max(health_score, 80.5)
-        confidence = max(confidence, 82.0)
+        health_score = max(health_score, 82.0)
+        confidence = max(confidence, 84.0)
 
     flags, explanation, cart_alert = generate_nutrient_flags_and_explanation(
         pred_label, health_score, food_name, nutrition_summary
@@ -545,7 +552,9 @@ GROCERY_STAPLE_PROFILES: list[dict[str, Any]] = [
     {"keywords": ["sunflower oil", "mustard oil", "groundnut oil", "coconut oil", "cooking oil", "refined oil", "oil"], "name": "Cooking Oil (per tbsp 15ml)", "calories": 120.0, "sugars": 0.0, "fat": 14.0, "protein": 0.0, "sodium_mg": 0.0},
     {"keywords": ["peanut butter", "almond butter"], "name": "Nut / Peanut Butter (per 100g)", "calories": 588.0, "sugars": 9.2, "fat": 50.0, "protein": 25.1, "sodium_mg": 420.0},
     {"keywords": ["mixed dry fruits", "dry fruits", "dry fruit", "dryfruits", "dryfruit", "panchmewa", "mixed nuts", "trail mix", "nut mix", "nutmix"], "name": "Mixed Dry Fruits & Nuts (per 100g)", "calories": 465.0, "sugars": 14.0, "fat": 28.5, "protein": 14.2, "sodium_mg": 6.0},
-    {"keywords": ["almonds", "almond", "badam", "walnuts", "walnut", "akhrot", "pistachios", "pistachio", "pista", "cashews", "cashew", "kaju", "peanuts", "peanut", "hazelnuts", "hazelnut", "pecans", "pecan", "macadamia", "chia seeds", "chia", "flaxseeds", "flax seeds", "flax", "pumpkin seeds", "pumpkin seed", "sunflower seeds", "sunflower seed", "makhana", "fox nut", "fox nuts"], "name": "Nuts & Seeds (per 100g)", "calories": 579.0, "sugars": 4.4, "fat": 49.9, "protein": 21.2, "sodium_mg": 4.0},
+    {"keywords": ["walnuts", "walnut", "akhrot"], "name": "Walnuts (Unsalted Whole, per 100g)", "calories": 654.0, "sugars": 2.6, "fat": 65.2, "protein": 15.2, "sodium_mg": 2.0},
+    {"keywords": ["almonds", "almond", "badam"], "name": "Almonds (Unsalted Whole, per 100g)", "calories": 579.0, "sugars": 4.4, "fat": 49.9, "protein": 21.2, "sodium_mg": 1.0},
+    {"keywords": ["pistachios", "pistachio", "pista", "cashews", "cashew", "kaju", "peanuts", "peanut", "hazelnuts", "hazelnut", "pecans", "pecan", "macadamia", "chia seeds", "chia", "flaxseeds", "flax seeds", "flax", "pumpkin seeds", "pumpkin seed", "sunflower seeds", "sunflower seed", "makhana", "fox nut", "fox nuts"], "name": "Nuts & Seeds (per 100g)", "calories": 579.0, "sugars": 4.4, "fat": 49.9, "protein": 21.2, "sodium_mg": 4.0},
     {"keywords": ["dates", "datiles", "khajoor", "raisins", "raisin", "kishmish", "anjeer", "dried fig", "dried figs", "dried apricot", "dried apricots"], "name": "Dried Dates / Raisins / Figs (per 100g)", "calories": 282.0, "sugars": 63.0, "fat": 0.4, "protein": 2.5, "sodium_mg": 3.0},
     {"keywords": ["honey"], "name": "Honey (per 100g)", "calories": 304.0, "sugars": 82.1, "fat": 0.0, "protein": 0.3, "sodium_mg": 4.0},
     {"keywords": ["jaggery", "gur", "sugar"], "name": "Sugar / Sweetener (per 100g)", "calories": 387.0, "sugars": 99.8, "fat": 0.0, "protein": 0.0, "sodium_mg": 1.0},
@@ -558,7 +567,10 @@ GROCERY_STAPLE_PROFILES: list[dict[str, Any]] = [
     {"keywords": ["salmon", "tuna", "fish", "prawns"], "name": "Fish / Seafood (per 100g)", "calories": 184.0, "sugars": 0.0, "fat": 8.1, "protein": 25.4, "sodium_mg": 62.0},
     {"keywords": ["turmeric", "cumin", "coriander", "garam masala", "masala", "pepper", "cinnamon", "spice", "seasoning"], "name": "Culinary Spices / Herbs (per 10g)", "calories": 31.0, "sugars": 0.3, "fat": 0.8, "protein": 1.1, "sodium_mg": 18.0},
     {"keywords": ["salt", "rock salt", "sea salt"], "name": "Culinary Salt (per 5g)", "calories": 0.0, "sugars": 0.0, "fat": 0.0, "protein": 0.0, "sodium_mg": 1938.0},
-    {"keywords": ["apple", "banana", "orange", "mango", "berry", "berries", "grape", "watermelon", "fruit"], "name": "Fresh Fruit (per 100g)", "calories": 58.0, "sugars": 11.2, "fat": 0.2, "protein": 0.7, "sodium_mg": 1.0},
+    {"keywords": ["blueberries", "blueberry"], "name": "Blueberries (Fresh Whole, per 100g)", "calories": 57.0, "sugars": 10.0, "fat": 0.3, "protein": 0.7, "sodium_mg": 1.0},
+    {"keywords": ["strawberries", "strawberry", "raspberries", "raspberry", "blackberries", "blackberry", "cranberries", "cranberry", "berries", "berry"], "name": "Fresh Berries (Whole, per 100g)", "calories": 46.0, "sugars": 7.5, "fat": 0.4, "protein": 1.0, "sodium_mg": 1.0},
+    {"keywords": ["avocado", "avocados"], "name": "Avocado (Fresh Whole, per 100g)", "calories": 160.0, "sugars": 0.7, "fat": 14.7, "protein": 2.0, "sodium_mg": 7.0},
+    {"keywords": ["apple", "apples", "banana", "bananas", "orange", "oranges", "mango", "grape", "grapes", "watermelon", "kiwi", "papaya", "guava", "pomegranate", "pear", "fruit"], "name": "Fresh Fruit (Whole, per 100g)", "calories": 58.0, "sugars": 11.2, "fat": 0.2, "protein": 0.7, "sodium_mg": 1.0},
     {"keywords": ["broccoli", "spinach", "carrot", "tomato", "onion", "potato", "beans", "peas", "vegetable"], "name": "Fresh Vegetable (per 100g)", "calories": 42.0, "sugars": 2.5, "fat": 0.3, "protein": 2.1, "sodium_mg": 22.0},
     {"keywords": ["poha", "suji", "rava", "sooji", "semolina", "dalia", "broken wheat", "vermicelli", "seviyan"], "name": "Wholesome Grain / Poha / Dalia / Suji (per 100g)", "calories": 356.0, "sugars": 1.0, "fat": 1.2, "protein": 9.8, "sodium_mg": 6.0},
     {"keywords": ["soya chunks", "soybean", "soybeans", "nutrela", "soya granules"], "name": "Soya Chunks / Plant Protein (per 100g)", "calories": 345.0, "sugars": 2.0, "fat": 0.5, "protein": 52.0, "sodium_mg": 12.0},
@@ -978,9 +990,17 @@ def _infer_default_ingredients(title: str) -> str | None:
         return "100% Aged Basmati / Rice Grain"
     if re.search(r"\b(mixed dry fruits|dry fruits|trail mix|nut mix)\b", lower):
         return "Whole almonds, cashews, walnuts, raisins, pistachios"
-    if re.search(r"\b(almond|badam)\b", lower):
+    if re.search(r"\b(walnut|walnuts|akhrot)\b", lower):
+        return "100% Whole Unsalted Walnuts"
+    if re.search(r"\b(almond|almonds|badam)\b", lower):
         return "100% Roasted / Natural California Almonds"
-    if re.search(r"\b(walnut|cashew|pistachio|peanut)\b", lower):
+    if re.search(r"\b(blueberry|blueberries)\b", lower):
+        return "100% Fresh Whole Blueberries"
+    if re.search(r"\b(strawberry|strawberries|raspberry|raspberries|blackberry|blackberries|berries|berry)\b", lower):
+        return "100% Fresh Whole Berries"
+    if re.search(r"\b(avocado|avocados)\b", lower):
+        return "100% Fresh Whole Avocado"
+    if re.search(r"\b(cashew|pistachio|peanut)\b", lower):
         return "Whole Tree Nuts / Peanuts"
     if re.search(r"\b(instant noodles|maggi|ramen|yippee|noodles)\b", lower):
         return "Refined wheat flour (maida), palm oil, iodized salt, sugar, maltodextrin, flavor enhancer (E621), TBHQ"
@@ -1089,7 +1109,12 @@ def analyze_amazon_add_to_cart(payload: AmazonAddToCartInput) -> AmazonCartEvent
                 sodium_mg=float(exact_local["sodium_mg"]),
             )
 
-    if nutrition_input is None and staple_match is not None and len(_clean_tokens(title)) <= 2:
+    is_whole_produce = (
+        staple_match is not None
+        and bool(re.search(r"\b(walnuts?|akhrot|almonds?|badam|blueberr(?:y|ies)|strawberr(?:y|ies)|raspberr(?:y|ies)|blackberr(?:y|ies)|berr(?:y|ies)|avocados?)\b", title, re.I))
+        and not bool(re.search(r"\b(chocolate|candy|cookie|biscuit|cake|muffin|jam|jelly|juice|syrup|salted|masala|butter|chips|dried)\b", title, re.I))
+    )
+    if nutrition_input is None and staple_match is not None and (is_whole_produce or len(_clean_tokens(title)) <= 2):
         nutrition_source = str(staple_match["source_group"])
         matched_food = str(staple_match["food"])
         nutrition_input = FoodNutritionInput(
@@ -1112,7 +1137,7 @@ def analyze_amazon_add_to_cart(payload: AmazonAddToCartInput) -> AmazonCartEvent
                 if staple_match is None or overlap_ratio >= 0.5:
                     nutrition_source = "Open Food Facts (Live Packaged Food DB)"
                     matched_food = str(best_off["food"])
-                    if not captured_ingredients and best_off.get("ingredients_text"):
+                    if not captured_ingredients and best_off.get("ingredients_text") and staple_match is None:
                         captured_ingredients = str(best_off["ingredients_text"])
                     if not captured_image and best_off.get("image_url"):
                         captured_image = str(best_off["image_url"])
@@ -1289,6 +1314,13 @@ BENEFICIAL_INGREDIENTS: list[tuple[str, str, str]] = [
     ("walnut", "Walnuts", "Source of plant omega-3 fats and antioxidants."),
     ("pistachio", "Pistachios", "Nutrient-dense tree nuts providing protein and fiber."),
     ("peanut", "Peanuts", "Good source of protein and unsaturated fats."),
+    ("blueberry", "Blueberries", "Rich in anthocyanin antioxidants, fiber, and low glycemic load."),
+    ("blueberries", "Blueberries", "Rich in anthocyanin antioxidants, fiber, and low glycemic load."),
+    ("strawberry", "Strawberries", "Low-sugar berry rich in vitamin C and fiber."),
+    ("raspberry", "Raspberries", "High-fiber berry supporting steady blood glucose."),
+    ("blackberry", "Blackberries", "Antioxidant-rich low-GI berry."),
+    ("berry", "Berries", "Antioxidant-rich whole fruit with dietary fiber."),
+    ("avocado", "Avocado", "Heart-healthy monounsaturated fats and dietary fiber."),
     ("flaxseed", "Flaxseeds", "Rich in omega-3 fatty acids and soluble fiber."),
     ("flax seed", "Flax Seeds", "Rich in omega-3 fatty acids and soluble fiber."),
     ("chia seed", "Chia Seeds", "High in dietary fiber, plant protein, and omega-3 fats."),
@@ -1474,6 +1506,19 @@ def analyze_packet_text(
                 good_hits += 1
                 ing_score += 7.0 if good_hits <= 3 else 3.0
 
+    general_vocab_hits = len(re.findall(
+        r"\b(ingredients?|water|milk|cream|butter|cheese|yogurt|curd|whey|sugar|syrup|honey|salt|sodium|flour|wheat|maida|oats|rice|corn|starch|fiber|fibre|protein|fat|calories|energy|oil|palm|sunflower|olive|coconut|almond|walnut|cashew|pistachio|peanut|chia|flax|blueberry|blueberries|strawberry|strawberries|berry|berries|avocado|apple|banana|fruit|vegetable|tomato|potato|onion|garlic|cocoa|chocolate|vanilla|spice|herbs|vinegar|yeast|lecithin|emulsifier|preservative|flavor|flavour|sweetener|caffeine|allergen|contains|nutrition)\b",
+        raw,
+        flags=re.IGNORECASE,
+    ))
+    plausible_words = [w for w in re.findall(r"[a-zA-Z]{3,}", ingredient_source_text) if re.search(r"[aeiouy]", w, re.I)]
+    if not findings and nutrition_analysis is None and (general_vocab_hits < 2 or len(plausible_words) < 2):
+        if raise_on_empty:
+            raise HTTPException(
+                status_code=422,
+                detail="No readable food ingredients or nutrition facts detected. Point the camera clearly at the Ingredients box rather than a face or background object.",
+            )
+        return None
     if not findings and nutrition_analysis is None and len(parsed_ingredients) < 1:
         if raise_on_empty:
             raise HTTPException(

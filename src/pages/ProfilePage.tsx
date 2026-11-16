@@ -7,6 +7,7 @@ import {
   HEALTH_CONDITION_OPTIONS,
   getAgeGroupLabel,
   parseAllergiesInput,
+  parseCustomConditionsInput,
 } from '../utils/healthProfileEngine';
 
 export function ProfilePage() {
@@ -17,6 +18,12 @@ export function ProfilePage() {
   const [age, setAge] = useState(currentUser ? String(currentUser.age) : '');
   const [conditions, setConditions] = useState<HealthCondition[]>(
     currentUser?.conditions || []
+  );
+  const [hasOtherDisease, setHasOtherDisease] = useState(
+    Boolean(currentUser?.otherConditions && currentUser.otherConditions.length > 0)
+  );
+  const [otherDiseaseInput, setOtherDiseaseInput] = useState(
+    currentUser?.otherConditions?.join(', ') || ''
   );
   const [allergiesInput, setAllergiesInput] = useState(
     currentUser?.allergies.join(', ') || ''
@@ -29,6 +36,9 @@ export function ProfilePage() {
       setFullName(currentUser.fullName);
       setAge(String(currentUser.age));
       setConditions(currentUser.conditions);
+      const otherList = currentUser.otherConditions || [];
+      setHasOtherDisease(otherList.length > 0);
+      setOtherDiseaseInput(otherList.join(', '));
       setAllergiesInput(currentUser.allergies.join(', '));
       setDietaryNotes(currentUser.dietaryNotes);
     }
@@ -74,6 +84,9 @@ export function ProfilePage() {
       fullName: fullName.trim() || currentUser.fullName,
       age: Number.isFinite(numericAge) && numericAge > 0 ? numericAge : currentUser.age,
       conditions,
+      otherConditions: hasOtherDisease
+        ? parseCustomConditionsInput(otherDiseaseInput)
+        : [],
       allergies: parseAllergiesInput(allergiesInput),
       dietaryNotes,
     });
@@ -94,6 +107,13 @@ export function ProfilePage() {
           </div>
 
           <div className="profile-header-actions">
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => navigate('/limits')}
+            >
+              Daily Limits
+            </button>
             <button
               type="button"
               className="btn-secondary"
@@ -122,7 +142,7 @@ export function ProfilePage() {
               <div>
                 <div className="cart-alert-title">Profile updated</div>
                 <p className="cart-alert-msg">
-                  All products in your Food Dashboard and packet scans now reflect your updated health profile.
+                  All products, Daily Limits, and packet scans now reflect your updated health profile.
                 </p>
               </div>
             </div>
@@ -192,7 +212,40 @@ export function ProfilePage() {
                   </label>
                 );
               })}
+
+              <label
+                className={`condition-option ${hasOtherDisease ? 'is-checked' : ''}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={hasOtherDisease}
+                  onChange={(e) => {
+                    setSavedBanner(false);
+                    setHasOtherDisease(e.target.checked);
+                  }}
+                />
+                <span>Other disease</span>
+              </label>
             </div>
+
+            {hasOtherDisease && (
+              <div className="field" style={{ marginTop: '10px' }}>
+                <label htmlFor="prof-other-disease" className="field-label">
+                  Other disease (comma-separated)
+                </label>
+                <input
+                  id="prof-other-disease"
+                  type="text"
+                  className="field-input"
+                  placeholder="e.g., High Cholesterol, PCOS, Thyroid, Celiac, Gout"
+                  value={otherDiseaseInput}
+                  onChange={(e) => {
+                    setSavedBanner(false);
+                    setOtherDiseaseInput(e.target.value);
+                  }}
+                />
+              </div>
+            )}
           </fieldset>
 
           <div className="field">

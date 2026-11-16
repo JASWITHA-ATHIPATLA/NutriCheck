@@ -20,6 +20,7 @@ interface RegisterInput {
   password: string;
   age: number;
   conditions: HealthCondition[];
+  otherConditions?: string[];
   allergies: string[];
   dietaryNotes: string;
 }
@@ -28,15 +29,25 @@ interface UpdateProfileInput {
   fullName: string;
   age: number;
   conditions: HealthCondition[];
+  otherConditions?: string[];
   allergies: string[];
   dietaryNotes: string;
+}
+
+interface LoginOverrides {
+  conditions?: HealthCondition[];
+  otherConditions?: string[];
 }
 
 interface AuthContextValue {
   currentUser: UserHealthProfile | null;
   products: CatalogProduct[];
   register: (input: RegisterInput) => { ok: boolean; error?: string };
-  login: (email: string, password: string) => { ok: boolean; error?: string };
+  login: (
+    email: string,
+    password: string,
+    overrides?: LoginOverrides
+  ) => { ok: boolean; error?: string };
   logout: () => void;
   updateProfile: (input: UpdateProfileInput) => void;
   addCustomProduct: (product: Omit<CatalogProduct, 'id' | 'isCustom'>) => CatalogProduct;
@@ -55,9 +66,21 @@ function readJsonStorage<T>(key: string, fallback: T): T {
   }
 }
 
+function normalizeUser(user: UserHealthProfile): UserHealthProfile {
+  return {
+    ...user,
+    conditions: Array.isArray(user.conditions) ? user.conditions : [],
+    otherConditions: Array.isArray(user.otherConditions) ? user.otherConditions : [],
+    allergies: Array.isArray(user.allergies) ? user.allergies : [],
+    dietaryNotes: user.dietaryNotes || '',
+  };
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [users, setUsers] = useState<UserHealthProfile[]>(() =>
-    typeof window !== 'undefined' ? readJsonStorage<UserHealthProfile[]>(USERS_STORAGE_KEY, []) : []
+    typeof window !== 'undefined'
+      ? readJsonStorage<UserHealthProfile[]>(USERS_STORAGE_KEY, []).map(normalizeUser)
+      : []
   );
 
   const [activeUserId, setActiveUserId] = useState<string | null>(() => {
@@ -135,6 +158,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       password: input.password,
       age: Math.round(input.age),
       conditions: input.conditions,
+      otherConditions: input.otherConditions || [],
       allergies: input.allergies,
       dietaryNotes: input.dietaryNotes.trim(),
       createdAt: new Date().toISOString(),
@@ -145,7 +169,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { ok: true };
   }
 
-  function login(email: string, password: string): { ok: boolean; error?: string } {
+  function login(
+    email: string,
+    password: string,
+    overrides?: LoginOverrides
+  ): { ok: boolean; error?: string } {
     const cleanEmail = email.trim().toLowerCase();
     const found = users.find((u) => u.email.toLowerCase() === cleanEmail);
     if (!found) {
@@ -154,6 +182,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (found.password !== password) {
       return { ok: false, error: 'Incorrect password. Please try again.' };
     }
+
+    const hasConditionOverrides =
+      (overrides?.conditions && overrides.conditions.length > 0) ||
+      (overrides?.otherConditions && overrides.otherConditions.length > 0);
+
+    if (hasConditionOverrides) {
+      const mergedConditions = Array.from(
+        new Set([...(found.conditions || []), ...(overrides?.conditions || [])])
+      );
+      const mergedOther = Array.from(
+        new Set([...(found.otherConditions || []), ...(overrides?.otherConditions || [])])
+      );
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id === found.id
+            ? {
+                ...u,
+                conditions: mergedConditions,
+                otherConditions: mergedOther,
+              }
+            : u
+        )
+      );
+    }
+
     setActiveUserId(found.id);
     return { ok: true };
   }
@@ -172,6 +225,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               fullName: input.fullName.trim() || u.fullName,
               age: Number.isFinite(input.age) ? Math.round(input.age) : u.age,
               conditions: input.conditions,
+              otherConditions: input.otherConditions ?? u.otherConditions ?? [],
               allergies: input.allergies,
               dietaryNotes: input.dietaryNotes.trim(),
             }
