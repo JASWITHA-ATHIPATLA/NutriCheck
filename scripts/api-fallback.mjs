@@ -1,6 +1,21 @@
+import 'dotenv/config';
 import express from 'express';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { connectMongoDB, getMongoStatus } from './db/mongodb.mjs';
+import {
+  getUserById,
+  loginUser,
+  registerUser,
+  updateUserProfile,
+} from './db/userStore.mjs';
+import {
+  clearCartEventsForUser,
+  deleteCartEventForUser,
+  getCartEventForUser,
+  listCartEventsForUser,
+  saveCartEventForUser,
+} from './db/cartStore.mjs';
 
 const GROCERY_STAPLES = [
   { keywords: ['brown rice', 'red rice', 'black rice', 'wild rice'], name: 'Brown Rice (Whole Grain, per 100g)', calories: 362, sugars: 0.7, fat: 2.7, protein: 7.5, sodium_mg: 4 },
@@ -136,31 +151,128 @@ function inferPlatformName(url, explicit) {
 
 function parseNutritionText(text) {
   if (!text || !text.trim()) return null;
-  const normalized = text.replace(/\s+/g, ' ').trim();
-  const calMatch = normalized.match(
-    /(?:calories|energy(?:\s*\(\s*kcal\s*\))?)\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*(?:kcal|cal)?/i
+
+  const cleanedRaw = text
+    .replace(/\r\n?/g, '\n')
+    .replace(/based on a?\s*[\d,]+\s*(?:kcal|calories?)\s*diet/gi, ' ')
+    .replace(/[\d,]+\s*(?:kcal|calories?)\s*diet/gi, ' ');
+
+  const normalized = cleanedRaw.replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
+  const hasLabelHeader = /\b(?:nutrition(?:al)?\s*(?:facts|information|values)|per\s*100\s*g|per\s*serving|energy\s*\(?\s*k?cal)\b/i.test(
+    cleanedRaw
   );
+
+  const calMatch =
+    normalized.match(
+      /(?:calories|energy)\s*\(\s*(?:k?cal|keal)\s*(?:\/\s*kj)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)/i
+    ) ||
+    normalized.match(
+      /(?:calories|energy)\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*(?:kcal|cal|keal)\b/i
+    ) ||
+    (hasLabelHeader
+      ? normalized.match(/(?:calories|energy)\s*[:|\-]?\s*(\d+(?:\.\d+)?)\b(?!\s*(?:%|kj\b|g\b|mg\b))/i)
+      : null);
+
   if (!calMatch) return null;
   const calories = parseFloat(calMatch[1]);
-  const grab = (re) => {
-    const m = normalized.match(re);
-    return m ? parseFloat(m[1]) : null;
+
+  const grabMacroGrams = (namePattern, allowBare = true) => {
+    const unitBefore = new RegExp(
+      `(?:${namePattern})\\s*\\(\\s*g(?:ms?)?\\s*\\)\\s*[:|\\-]?\\s*(\\d+(?:\\.\\d+)?)(?!\\s*%)`,
+      'i'
+    );
+    const mBefore = normalized.match(unitBefore);
+    if (mBefore) return parseFloat(mBefore[1]);
+
+    const unitAfter = new RegExp(
+      `(?:${namePattern})\\s*[:|\\-]?\\s*(\\d+(?:\\.\\d+)?)\\s*g(?:ms?)?\\b`,
+      'i'
+    );
+    const mAfter = normalized.match(unitAfter);
+    if (mAfter) return parseFloat(mAfter[1]);
+
+    if (allowBare && hasLabelHeader) {
+      const bare = new RegExp(
+        `(?:${namePattern})\\s*[:|\\-]?\\s*(\\d+(?:\\.\\d+)?)\\b(?!\\s*(?:%|mg\\b|kcal\\b))`,
+        'i'
+      );
+      const mBare = normalized.match(bare);
+      if (mBare) {
+        const val = parseFloat(mBare[1]);
+        if (val <= 105) return val;
+      }
+    }
+    return null;
   };
-  const sugars = grab(/(?:total\s+sugars?|of\s+which\s+sugars?|added\s+sugars?|sugars?)\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b/i);
-  const fat = grab(/(?:total\s+)?fat\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b/i);
-  const protein = grab(/protein\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b/i);
-  const carbs = grab(/(?:total\s+)?carbohydrate[s]?\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b/i);
+
+  const normalizedNoAdded = normalized.replace(/\badded\s+sugars?\b/gi, ' __added_sugar__ ');
+  let sugars = grabMacroGrams('\\btotal\\s+sugars?');
+  if (sugars === null) sugars = grabMacroGrams('\\bof\\s+which\\s+sugars?');
+  if (sugars === null) {
+    const mPlainBefore = normalizedNoAdded.match(/\bsugars?\s*\(\s*g(?:ms?)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)/i);
+    const mPlainAfter = normalizedNoAdded.match(/\bsugars?\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g(?:ms?)?\b/i);
+    if (mPlainBefore) sugars = parseFloat(mPlainBefore[1]);
+    else if (mPlainAfter) sugars = parseFloat(mPlainAfter[1]);
+    else if (hasLabelHeader) {
+      const mBare = normalizedNoAdded.match(/\bsugars?\s*[:|\-]?\s*(\d+(?:\.\d+)?)\b(?!\s*%)/i);
+      if (mBare && parseFloat(mBare[1]) <= 105) sugars = parseFloat(mBare[1]);
+    }
+  }
+  if (sugars === null) sugars = grabMacroGrams('\\badded\\s+sugars?');
+
+  const normalizedNoSubFats = normalized.replace(
+    /\b(?:saturated|sat\.?|trans|mono(?:unsaturated)?|poly(?:unsaturated)?|omega[\s\-\d]*fatty)\s+fat(?:ty\s+acids?)?\b/gi,
+    ' __sub_fat__ '
+  );
+  let fat = grabMacroGrams('\\btotal\\s+fat');
+  if (fat === null) {
+    const mFatBefore = normalizedNoSubFats.match(/\bfat\s*\(\s*g(?:ms?)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)/i);
+    const mFatAfter = normalizedNoSubFats.match(/\bfat\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g(?:ms?)?\b/i);
+    if (mFatBefore) fat = parseFloat(mFatBefore[1]);
+    else if (mFatAfter) fat = parseFloat(mFatAfter[1]);
+    else if (hasLabelHeader) {
+      const mBare = normalizedNoSubFats.match(/\bfat\s*[:|\-]?\s*(\d+(?:\.\d+)?)\b(?!\s*%)/i);
+      if (mBare && parseFloat(mBare[1]) <= 105) fat = parseFloat(mBare[1]);
+    }
+  }
+
+  const protein = grabMacroGrams('\\bproteins?');
+  const carbs = grabMacroGrams('(?:\\btotal\\s+)?\\bcarbohydrates?');
 
   let sodium_mg = null;
-  const sodMg = normalized.match(/sodium\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*mg\b/i);
-  const sodG = normalized.match(/sodium\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b/i);
-  const saltG = normalized.match(/salt\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b/i);
-  if (sodMg) sodium_mg = parseFloat(sodMg[1]);
-  else if (sodG) sodium_mg = parseFloat(sodG[1]) * 1000;
-  else if (saltG) sodium_mg = parseFloat(saltG[1]) * 393.4;
+  const sodMgBefore = normalized.match(/\bsodium\s*\(\s*mg\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)/i);
+  const sodMgAfter = normalized.match(/\bsodium\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*mg\b/i);
+  const sodGBefore = normalized.match(/\bsodium\s*\(\s*g(?:ms?)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)/i);
+  const sodGAfter = normalized.match(/\bsodium\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g(?:ms?)?\b/i);
+  const saltGBefore = normalized.match(/\bsalt\s*\(\s*g(?:ms?)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)/i);
+  const saltGAfter = normalized.match(/\bsalt\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g(?:ms?)?\b/i);
+  const sodBare = hasLabelHeader
+    ? normalized.match(/\bsodium\s*[:|\-]?\s*(\d+(?:\.\d+)?)\b(?!\s*(?:%|g\b))/i)
+    : null;
+
+  if (sodMgBefore) sodium_mg = parseFloat(sodMgBefore[1]);
+  else if (sodMgAfter) sodium_mg = parseFloat(sodMgAfter[1]);
+  else if (sodGBefore) sodium_mg = parseFloat(sodGBefore[1]) * 1000;
+  else if (sodGAfter) sodium_mg = parseFloat(sodGAfter[1]) * 1000;
+  else if (saltGBefore) sodium_mg = parseFloat(saltGBefore[1]) * 393.4;
+  else if (saltGAfter) sodium_mg = parseFloat(saltGAfter[1]) * 393.4;
+  else if (sodBare) sodium_mg = parseFloat(sodBare[1]);
 
   const foundCount = [sugars, fat, protein, sodium_mg, carbs].filter((v) => v !== null).length;
   if (foundCount < 1) return null;
+
+  // Guard against dropped decimal dot on sugars when carbohydrates are parsed (Total Sugars <= Total Carbohydrate)
+  if (
+    sugars !== null &&
+    carbs !== null &&
+    sugars > carbs &&
+    Number.isInteger(sugars) &&
+    sugars >= 10 &&
+    sugars <= 99
+  ) {
+    sugars = round1(sugars / 10);
+  }
+
   return {
     calories,
     sugars: sugars ?? 0,
@@ -487,13 +599,14 @@ async function lookupOpenFoodFacts(title) {
 
 export function startNodeApiFallback({ host = '127.0.0.1', port = 8001 } = {}) {
   const catalog = loadFoodCatalog();
-  let cartEvents = [];
+
+  void connectMongoDB();
 
   const app = express();
   app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, X-User-Id');
     if (req.method === 'OPTIONS') {
       res.status(204).end();
       return;
@@ -502,53 +615,149 @@ export function startNodeApiFallback({ host = '127.0.0.1', port = 8001 } = {}) {
   });
   app.use(express.json({ limit: '1mb' }));
 
-  app.get('/api/health', (_req, res) => {
-    res.json({ status: 'ok', engine: 'node-express' });
+  app.get('/api/health', async (_req, res) => {
+    await connectMongoDB();
+    res.json({
+      status: 'ok',
+      engine: 'node-express',
+      mongodb: getMongoStatus(),
+    });
   });
 
-  app.get('/api/amazon/cart-events', (_req, res) => {
-    res.json(cartEvents);
+  app.post('/api/auth/register', async (req, res) => {
+    try {
+      const result = await registerUser(req.body || {});
+      res.status(result.status || (result.ok ? 201 : 400)).json({
+        ok: result.ok,
+        ...(result.user ? { user: result.user } : {}),
+        ...(result.storage ? { storage: result.storage } : {}),
+        ...(result.error ? { error: result.error } : {}),
+      });
+    } catch (err) {
+      res.status(500).json({
+        ok: false,
+        error: err instanceof Error ? err.message : 'Unable to register user.',
+      });
+    }
   });
 
-  app.delete('/api/amazon/cart-events', (_req, res) => {
-    cartEvents = [];
-    res.json({ ok: true });
+  app.post('/api/auth/login', async (req, res) => {
+    try {
+      const result = await loginUser(req.body || {});
+      res.status(result.status || (result.ok ? 200 : 401)).json({
+        ok: result.ok,
+        ...(result.user ? { user: result.user } : {}),
+        ...(result.storage ? { storage: result.storage } : {}),
+        ...(result.error ? { error: result.error } : {}),
+      });
+    } catch (err) {
+      res.status(500).json({
+        ok: false,
+        error: err instanceof Error ? err.message : 'Unable to sign in.',
+      });
+    }
   });
 
-  app.delete('/api/amazon/cart-events/:id', (req, res) => {
-    cartEvents = cartEvents.filter((ev) => ev.event_id !== req.params.id);
-    res.json({ ok: true });
+  app.get('/api/auth/me/:id', async (req, res) => {
+    try {
+      const found = await getUserById(req.params.id);
+      if (!found) {
+        res.status(404).json({ ok: false, error: 'User not found.' });
+        return;
+      }
+      res.json({ ok: true, user: found.user, storage: found.storage });
+    } catch (err) {
+      res.status(500).json({
+        ok: false,
+        error: err instanceof Error ? err.message : 'Unable to load user.',
+      });
+    }
   });
 
-  app.post('/api/amazon/add-to-cart', async (req, res) => {
-    const payload = req.body || {};
-    const title = String(payload.product_title || '').trim() || 'Food Item';
-    const platform = inferPlatformName(payload.product_url, payload.source_platform);
-    const combinedText = [payload.ingredients_text || '', payload.nutrition_text || '']
-      .filter(Boolean)
-      .join('\n');
+  app.put('/api/users/:id/profile', async (req, res) => {
+    try {
+      const result = await updateUserProfile(req.params.id, req.body || {});
+      res.status(result.status || (result.ok ? 200 : 400)).json({
+        ok: result.ok,
+        ...(result.user ? { user: result.user } : {}),
+        ...(result.storage ? { storage: result.storage } : {}),
+        ...(result.error ? { error: result.error } : {}),
+      });
+    } catch (err) {
+      res.status(500).json({
+        ok: false,
+        error: err instanceof Error ? err.message : 'Unable to update profile.',
+      });
+    }
+  });
 
-    let nutrition = parseNutritionText(combinedText);
-    let nutritionSource = nutrition ? `${platform} Page Nutrition Facts` : '';
+  const getRequestUserId = (req, payload = {}) => {
+    const raw =
+      payload?.user_id ||
+      payload?.userId ||
+      req.query?.userId ||
+      req.query?.user_id ||
+      req.headers['x-user-id'] ||
+      '';
+    return String(raw).trim();
+  };
+
+  function inferDefaultIngredients(title) {
+    const lower = (title || '').toLowerCase();
+    if (/\b(rolled oats|oats|oatmeal)\b/.test(lower)) return '100% Wholegrain Rolled Oats';
+    if (/\b(brown rice)\b/.test(lower)) return '100% Wholegrain Brown Rice';
+    if (/\b(walnut|walnuts|akhrot)\b/.test(lower)) return '100% Whole Unsalted Walnuts';
+    if (/\b(almond|almonds|badam)\b/.test(lower)) return '100% Roasted / Natural California Almonds';
+    if (/\b(blueberry|blueberries)\b/.test(lower)) return '100% Fresh Whole Blueberries';
+    if (/\b(strawberry|strawberries|raspberry|raspberries|blackberry|blackberries|berries|berry)\b/.test(lower)) return '100% Fresh Whole Berries';
+    if (/\b(avocado|avocados)\b/.test(lower)) return '100% Fresh Whole Avocado';
+    if (/\b(mixed dry fruits|dry fruits|trail mix|nut mix)\b/.test(lower)) return 'Whole almonds, cashews, walnuts, raisins, pistachios';
+    if (/\b(cashew|pistachio|peanut)\b/.test(lower)) return 'Whole Tree Nuts / Peanuts';
+    return null;
+  }
+
+  async function buildAnalyzedCartEvent(payload, { existingEvent = null, skipGenericFallback = false } = {}) {
+    const title = String(payload.product_title || existingEvent?.product_title || '').trim() || 'Food Item';
+    const platform = inferPlatformName(
+      payload.product_url ?? existingEvent?.product_url,
+      payload.source_platform ?? existingEvent?.source_platform
+    );
+    const ingredientsInput =
+      payload.ingredients_text !== undefined
+        ? String(payload.ingredients_text || '').trim()
+        : String(existingEvent?.ingredients_text || '').trim();
+    const nutritionTextInput = String(payload.nutrition_text || '').trim();
+    const combinedText = [ingredientsInput, nutritionTextInput].filter(Boolean).join('\n');
+
+    const hasExplicitNumbers =
+      payload.calories != null &&
+      payload.sugars != null &&
+      payload.fat != null &&
+      payload.protein != null &&
+      payload.sodium_mg != null;
+
+    let nutrition = hasExplicitNumbers
+      ? {
+          calories: Number(payload.calories),
+          sugars: Number(payload.sugars),
+          fat: Number(payload.fat),
+          protein: Number(payload.protein),
+          sodium_mg: Number(payload.sodium_mg),
+        }
+      : parseNutritionText(combinedText);
+
+    let nutritionSource = hasExplicitNumbers
+      ? 'Back of Packet (Verified)'
+      : nutrition
+      ? payload.source === 'packet_back_scan'
+        ? 'Back of Packet (Scanned)'
+        : `${platform} Page Nutrition Facts`
+      : '';
     let matchedFood = null;
-    let ingredientsText = String(payload.ingredients_text || '').trim();
-    let imageUrl = String(payload.image_url || '').trim();
+    let ingredientsText = ingredientsInput;
+    let imageUrl = String(payload.image_url ?? existingEvent?.image_url ?? '').trim();
 
-function inferDefaultIngredients(title) {
-  const lower = (title || '').toLowerCase();
-  if (/\b(rolled oats|oats|oatmeal)\b/.test(lower)) return '100% Wholegrain Rolled Oats';
-  if (/\b(brown rice)\b/.test(lower)) return '100% Wholegrain Brown Rice';
-  if (/\b(walnut|walnuts|akhrot)\b/.test(lower)) return '100% Whole Unsalted Walnuts';
-  if (/\b(almond|almonds|badam)\b/.test(lower)) return '100% Roasted / Natural California Almonds';
-  if (/\b(blueberry|blueberries)\b/.test(lower)) return '100% Fresh Whole Blueberries';
-  if (/\b(strawberry|strawberries|raspberry|raspberries|blackberry|blackberries|berries|berry)\b/.test(lower)) return '100% Fresh Whole Berries';
-  if (/\b(avocado|avocados)\b/.test(lower)) return '100% Fresh Whole Avocado';
-  if (/\b(mixed dry fruits|dry fruits|trail mix|nut mix)\b/.test(lower)) return 'Whole almonds, cashews, walnuts, raisins, pistachios';
-  if (/\b(cashew|pistachio|peanut)\b/.test(lower)) return 'Whole Tree Nuts / Peanuts';
-  return null;
-}
-
-    if (!nutrition || !imageUrl || !ingredientsText) {
+    if (!skipGenericFallback && (!nutrition || !imageUrl || !ingredientsText)) {
       const staple = lookupStapleOrCatalog(title, catalog);
       const isWholeStaple =
         staple?.source === 'Grocery & Dish Profile' &&
@@ -558,11 +767,11 @@ function inferDefaultIngredients(title) {
 
       if (staple && !nutrition) {
         nutrition = staple.nutrition;
-        nutritionSource = staple.source;
+        nutritionSource = `${staple.source} (Estimated)`;
         matchedFood = staple.matched_food;
       } else if (off && !nutrition) {
         nutrition = off.nutrition;
-        nutritionSource = off.source;
+        nutritionSource = `${off.source} (Estimated)`;
         matchedFood = off.matched_food;
       }
       if (!ingredientsText) {
@@ -577,58 +786,141 @@ function inferDefaultIngredients(title) {
       }
     }
 
+    if (!nutrition && existingEvent?.analysis?.nutrition && skipGenericFallback) {
+      nutrition = existingEvent.analysis.nutrition;
+      nutritionSource = existingEvent.nutrition_source || 'Back of Packet (Verified)';
+    }
+
     const baseNutrition = nutrition || { calories: 150, sugars: 0, fat: 0, protein: 0, sodium_mg: 0 };
     const analysis = nutrition ? scoreNutrition(title, baseNutrition) : null;
     const ingredientScan = ingredientsText ? scanIngredients(title, ingredientsText, analysis) : null;
+    const eventId =
+      existingEvent?.event_id ||
+      `api-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
-    const eventId = `api-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-    let ev;
     if (!analysis && !ingredientScan) {
-      ev = {
+      return {
         event_id: eventId,
-        timestamp: new Date().toISOString(),
-        source: payload.source || 'store_browser_extension',
+        timestamp: existingEvent?.timestamp || new Date().toISOString(),
+        source: payload.source || existingEvent?.source || 'store_browser_extension',
         source_platform: platform,
         status: 'needs_nutrition',
         product_title: title,
-        product_url: payload.product_url || null,
+        product_url: payload.product_url ?? existingEvent?.product_url ?? null,
         image_url: imageUrl || null,
         nutrition_source: 'Nutrition Label Not Found on Page',
         matched_food: null,
-        message: `Captured "${title}" from ${platform}. Enter label numbers or paste ingredients to check.`,
+        message: `Captured "${title}" from ${platform}. Enter back-of-packet label numbers or scan the packet.`,
         analysis: null,
         ingredients_text: ingredientsText || null,
         ingredient_scan: null,
       };
-    } else {
-      const finalAnalysis = analysis || scoreNutrition(title, baseNutrition);
-      if (ingredientScan && !analysis) {
-        nutritionSource = `${platform} Ingredients Scan`;
-      } else if (ingredientScan && analysis) {
-        nutritionSource = `${nutritionSource} + Ingredients Scan`;
-      }
-      ev = {
-        event_id: eventId,
-        timestamp: new Date().toISOString(),
-        source: payload.source || 'store_browser_extension',
-        source_platform: platform,
-        status: 'analyzed',
-        product_title: title,
-        product_url: payload.product_url || null,
-        image_url: imageUrl || null,
-        nutrition_source: nutritionSource || 'Analyzed',
-        matched_food: matchedFood,
-        message: ingredientScan
-          ? `${finalAnalysis.explanation} Scanned ingredients (${ingredientScan.verdict}).`
-          : finalAnalysis.explanation,
-        analysis: finalAnalysis,
-        ingredients_text: ingredientsText || null,
-        ingredient_scan: ingredientScan,
-      };
     }
 
-    cartEvents = [ev, ...cartEvents].slice(0, 30);
-    res.json(ev);
+    const finalAnalysis = analysis || scoreNutrition(title, baseNutrition);
+    if (ingredientScan && !analysis) {
+      nutritionSource = `${platform} Ingredients Scan`;
+    } else if (ingredientScan && analysis && !nutritionSource.includes('Ingredients Scan')) {
+      nutritionSource = `${nutritionSource} + Ingredients Scan`;
+    }
+
+    return {
+      event_id: eventId,
+      timestamp: existingEvent?.timestamp || new Date().toISOString(),
+      source: payload.source || existingEvent?.source || 'store_browser_extension',
+      source_platform: platform,
+      status: 'analyzed',
+      product_title: title,
+      product_url: payload.product_url ?? existingEvent?.product_url ?? null,
+      image_url: imageUrl || null,
+      nutrition_source: nutritionSource || 'Analyzed',
+      matched_food: matchedFood,
+      message: ingredientScan
+        ? `${finalAnalysis.explanation} Scanned ingredients (${ingredientScan.verdict}).`
+        : finalAnalysis.explanation,
+      analysis: finalAnalysis,
+      ingredients_text: ingredientsText || null,
+      ingredient_scan: ingredientScan,
+    };
+  }
+
+  app.get('/api/amazon/cart-events', async (req, res) => {
+    try {
+      const userId = getRequestUserId(req);
+      if (!userId) {
+        res.json([]);
+        return;
+      }
+      const events = await listCartEventsForUser(userId);
+      res.json(events);
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Unable to load cart.' });
+    }
+  });
+
+  app.delete('/api/amazon/cart-events', async (req, res) => {
+    try {
+      const userId = getRequestUserId(req);
+      if (userId) {
+        await clearCartEventsForUser(userId);
+      }
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Unable to clear cart.' });
+    }
+  });
+
+  app.delete('/api/amazon/cart-events/:id', async (req, res) => {
+    try {
+      const userId = getRequestUserId(req);
+      if (userId) {
+        await deleteCartEventForUser(userId, req.params.id);
+      }
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Unable to delete cart item.' });
+    }
+  });
+
+  app.post('/api/amazon/add-to-cart', async (req, res) => {
+    try {
+      const payload = req.body || {};
+      const userId = getRequestUserId(req, payload);
+      const ev = await buildAnalyzedCartEvent(payload);
+      const saved = await saveCartEventForUser(userId, ev);
+      res.json(saved);
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Unable to add item.' });
+    }
+  });
+
+  app.put('/api/amazon/cart-events/:id', async (req, res) => {
+    try {
+      const payload = req.body || {};
+      const userId = getRequestUserId(req, payload);
+      if (!userId) {
+        res.status(400).json({ ok: false, error: 'Missing userId for cart update.' });
+        return;
+      }
+      const existingEvent = await getCartEventForUser(userId, req.params.id);
+      const ev = await buildAnalyzedCartEvent(
+        {
+          ...payload,
+          source: payload.source || 'packet_back_verified',
+        },
+        {
+          existingEvent: existingEvent || { event_id: req.params.id },
+          skipGenericFallback: true,
+        }
+      );
+      const saved = await saveCartEventForUser(userId, ev);
+      res.json(saved);
+    } catch (err) {
+      res.status(500).json({
+        ok: false,
+        error: err instanceof Error ? err.message : 'Unable to update cart item.',
+      });
+    }
   });
 
   app.post('/api/scan-packet', (req, res) => {

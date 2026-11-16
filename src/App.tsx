@@ -29,22 +29,34 @@ import { evaluateProfileAlertsForValues } from './utils/healthProfileEngine';
 import { analyzeAmazonItemLocally } from './utils/localNutritionEngine';
 import type { AmazonCartEvent } from './types';
 
-const AMAZON_STORAGE_KEY = 'nutricheck_amazon_events_v1';
+const LEGACY_AMAZON_STORAGE_KEY = 'nutricheck_amazon_events_v1';
 
-function readStoredAmazonEvents(): AmazonCartEvent[] {
+function getAmazonStorageKey(userId: string): string {
+  return `${LEGACY_AMAZON_STORAGE_KEY}_${userId}`;
+}
+
+function readStoredAmazonEvents(userId: string | null | undefined): AmazonCartEvent[] {
+  if (!userId) return [];
   try {
-    const raw = window.localStorage.getItem(AMAZON_STORAGE_KEY);
+    // Clean up legacy shared global key so items never leak across accounts
+    window.localStorage.removeItem(LEGACY_AMAZON_STORAGE_KEY);
+    const raw = window.localStorage.getItem(getAmazonStorageKey(userId));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((ev) => ev && (!ev.user_id || ev.user_id === userId));
   } catch {
     return [];
   }
 }
 
-function writeStoredAmazonEvents(events: AmazonCartEvent[]) {
+function writeStoredAmazonEvents(userId: string | null | undefined, events: AmazonCartEvent[]) {
+  if (!userId) return;
   try {
-    window.localStorage.setItem(AMAZON_STORAGE_KEY, JSON.stringify(events.slice(0, 30)));
+    window.localStorage.setItem(
+      getAmazonStorageKey(userId),
+      JSON.stringify(events.slice(0, 30))
+    );
   } catch {
     // ignore quota errors
   }
@@ -89,9 +101,12 @@ function NutriCheckShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const { currentUser } = useAuth();
+  const activeUserId = currentUser?.id || null;
 
   const [amazonEvents, setAmazonEvents] = useState<AmazonCartEvent[]>(() =>
-    typeof window !== 'undefined' ? readStoredAmazonEvents() : []
+    typeof window !== 'undefined' && activeUserId
+      ? readStoredAmazonEvents(activeUserId)
+      : []
   );
   const [isSubmittingAmazon, setIsSubmittingAmazon] = useState(false);
   const [amazonError, setAmazonError] = useState<string | null>(null);
@@ -102,19 +117,24 @@ function NutriCheckShell() {
   const backendAvailableRef = useRef<boolean>(true);
   const popupTimerRef = useRef<number | null>(null);
 
-  function mergeAmazonEvents(incoming: AmazonCartEvent[]) {
-    if (!incoming.length) return;
+  function mergeAmazonEvents(incoming: AmazonCartEvent[], userId: string | null) {
+    if (!incoming.length || !userId) return;
+    const userFiltered = incoming
+      .filter((ev) => ev?.event_id && (!ev.user_id || ev.user_id === userId))
+      .map((ev) => ({ ...ev, user_id: ev.user_id || userId }));
+    if (!userFiltered.length) return;
+
     setAmazonEvents((prev) => {
       const byId = new Map<string, AmazonCartEvent>();
-      for (const ev of [...incoming, ...prev]) {
-        if (ev?.event_id && !byId.has(ev.event_id)) {
+      for (const ev of [...userFiltered, ...prev]) {
+        if (ev?.event_id && (!ev.user_id || ev.user_id === userId) && !byId.has(ev.event_id)) {
           byId.set(ev.event_id, ev);
         }
       }
       const merged = Array.from(byId.values())
         .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''))
         .slice(0, 30);
-      writeStoredAmazonEvents(merged);
+      writeStoredAmazonEvents(userId, merged);
       return merged;
     });
   }
@@ -129,26 +149,49 @@ function NutriCheckShell() {
     }, 18000);
   }
 
+  // Sync active user ID to Chrome extension bridge & reload per-user cart whenever user logs in/switches/logs out
   useEffect(() => {
     let cancelled = false;
+
+    seenEventIdsRef.current = new Set();
+    initializedEventsRef.current = false;
+    setPopupEvent(null);
+    setAmazonError(null);
+
+    window.postMessage(
+      { type: 'NUTRICHECK_SET_ACTIVE_USER', userId: activeUserId },
+      window.location.origin
+    );
+
+    if (!activeUserId) {
+      setAmazonEvents([]);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const initialStored = readStoredAmazonEvents(activeUserId);
+    initialStored.forEach((ev) => seenEventIdsRef.current.add(ev.event_id));
+    setAmazonEvents(initialStored);
 
     const params = new URLSearchParams(window.location.search);
     const itemName = params.get('item') || params.get('food');
     const urlImage = params.get('image_url') || undefined;
     const urlIngredients = params.get('ingredients') || undefined;
 
-    const initialStored = readStoredAmazonEvents();
-    initialStored.forEach((ev) => seenEventIdsRef.current.add(ev.event_id));
-
     async function loadInitialEvents() {
+      if (!activeUserId) return;
       try {
-        const eventsRes = await fetch('/api/amazon/cart-events').catch(() => null);
+        const eventsRes = await fetch(
+          `/api/amazon/cart-events?userId=${encodeURIComponent(activeUserId)}`,
+          { headers: { 'X-User-Id': activeUserId } }
+        ).catch(() => null);
         backendAvailableRef.current = Boolean(eventsRes && eventsRes.ok);
 
         let loadedEvents: AmazonCartEvent[] = [...initialStored];
         if (!cancelled && eventsRes?.ok) {
           const apiEvents: AmazonCartEvent[] = await eventsRes.json();
-          mergeAmazonEvents(apiEvents);
+          mergeAmazonEvents(apiEvents, activeUserId);
           loadedEvents = apiEvents.length > 0 ? apiEvents : initialStored;
         }
 
@@ -184,21 +227,24 @@ function NutriCheckShell() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [activeUserId]);
 
-  // Listen to real-time Chrome Extension tab bridge sync (works on Vercel & localhost)
+  // Listen to real-time Chrome Extension tab bridge sync strictly for the active user
   useEffect(() => {
     function handleBridgeMessage(event: MessageEvent) {
       if (event.origin !== window.location.origin) return;
       const msg = event.data;
       if (!msg || msg.type !== 'NUTRICHECK_AMAZON_SYNC' || !Array.isArray(msg.events)) return;
+      if (!activeUserId) return;
 
-      const incoming = msg.events as AmazonCartEvent[];
+      const incoming = (msg.events as AmazonCartEvent[]).filter(
+        (ev) => ev?.event_id && ev.user_id && ev.user_id === activeUserId
+      );
       if (incoming.length === 0) return;
 
-      const unseen = incoming.filter((ev) => ev?.event_id && !seenEventIdsRef.current.has(ev.event_id));
-      incoming.forEach((ev) => ev?.event_id && seenEventIdsRef.current.add(ev.event_id));
-      mergeAmazonEvents(incoming);
+      const unseen = incoming.filter((ev) => !seenEventIdsRef.current.has(ev.event_id));
+      incoming.forEach((ev) => seenEventIdsRef.current.add(ev.event_id));
+      mergeAmazonEvents(incoming, activeUserId);
 
       if (unseen.length > 0) {
         triggerTopPopup(unseen[0]);
@@ -206,16 +252,25 @@ function NutriCheckShell() {
     }
 
     window.addEventListener('message', handleBridgeMessage);
-    window.postMessage({ type: 'NUTRICHECK_REQUEST_SYNC' }, window.location.origin);
+    if (activeUserId) {
+      window.postMessage(
+        { type: 'NUTRICHECK_REQUEST_SYNC', userId: activeUserId },
+        window.location.origin
+      );
+    }
     return () => window.removeEventListener('message', handleBridgeMessage);
-  }, []);
+  }, [activeUserId]);
 
-  // Poll backend for live store extension events when local Python backend is running
+  // Poll backend strictly for active user's Store Connect events
   useEffect(() => {
+    if (!activeUserId) return;
     const timer = window.setInterval(async () => {
       if (!backendAvailableRef.current) return;
       try {
-        const res = await fetch('/api/amazon/cart-events');
+        const res = await fetch(
+          `/api/amazon/cart-events?userId=${encodeURIComponent(activeUserId)}`,
+          { headers: { 'X-User-Id': activeUserId } }
+        );
         if (!res.ok) {
           if (res.status === 404 || res.status === 405) {
             backendAvailableRef.current = false;
@@ -223,7 +278,7 @@ function NutriCheckShell() {
           return;
         }
         const latest: AmazonCartEvent[] = await res.json();
-        mergeAmazonEvents(latest);
+        mergeAmazonEvents(latest, activeUserId);
 
         if (!initializedEventsRef.current) {
           latest.forEach((ev) => seenEventIdsRef.current.add(ev.event_id));
@@ -244,7 +299,7 @@ function NutriCheckShell() {
     }, 2000);
 
     return () => window.clearInterval(timer);
-  }, []);
+  }, [activeUserId]);
 
   async function handleAnalyzeAmazonText(payload: {
     product_title: string;
@@ -254,6 +309,7 @@ function NutriCheckShell() {
     image_url?: string;
     source_platform?: string;
   }) {
+    if (!activeUserId) return;
     setIsSubmittingAmazon(true);
     setAmazonError(null);
     try {
@@ -261,9 +317,13 @@ function NutriCheckShell() {
       if (backendAvailableRef.current) {
         const res = await fetch('/api/amazon/add-to-cart', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'X-User-Id': activeUserId,
+          },
           body: JSON.stringify({
             ...payload,
+            user_id: activeUserId,
             source: 'amazon_web_intake',
           }),
         }).catch(() => null);
@@ -279,9 +339,13 @@ function NutriCheckShell() {
       }
 
       if (!ev) {
-        ev = await analyzeAmazonItemLocally(payload);
+        ev = await analyzeAmazonItemLocally({
+          ...payload,
+          user_id: activeUserId,
+        });
       }
 
+      ev.user_id = activeUserId;
       if (payload.image_url && !ev.image_url) {
         ev.image_url = payload.image_url;
       }
@@ -290,7 +354,7 @@ function NutriCheckShell() {
       }
 
       seenEventIdsRef.current.add(ev.event_id);
-      mergeAmazonEvents([ev]);
+      mergeAmazonEvents([ev], activeUserId);
       triggerTopPopup(ev);
     } catch (err) {
       setAmazonError(
@@ -301,30 +365,126 @@ function NutriCheckShell() {
     }
   }
 
+  async function handleUpdateAmazonEvent(
+    eventId: string,
+    payload: {
+      product_title: string;
+      ingredients_text?: string;
+      nutrition_text?: string;
+      calories?: number;
+      sugars?: number;
+      fat?: number;
+      protein?: number;
+      sodium_mg?: number;
+      image_url?: string;
+      product_url?: string;
+      source_platform?: string;
+    }
+  ) {
+    if (!activeUserId) return;
+    const existing = amazonEvents.find((e) => e.event_id === eventId);
+    const mergedPayload = {
+      product_title: payload.product_title || existing?.product_title || 'Food Item',
+      ingredients_text: payload.ingredients_text,
+      nutrition_text: payload.nutrition_text,
+      calories: payload.calories,
+      sugars: payload.sugars,
+      fat: payload.fat,
+      protein: payload.protein,
+      sodium_mg: payload.sodium_mg,
+      image_url: payload.image_url || existing?.image_url || undefined,
+      product_url: payload.product_url || existing?.product_url || undefined,
+      source_platform: payload.source_platform || existing?.source_platform || undefined,
+      user_id: activeUserId,
+    };
+
+    let updated: AmazonCartEvent | null = null;
+    if (backendAvailableRef.current) {
+      const res = await fetch(
+        `/api/amazon/cart-events/${encodeURIComponent(eventId)}?userId=${encodeURIComponent(activeUserId)}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-User-Id': activeUserId,
+          },
+          body: JSON.stringify(mergedPayload),
+        }
+      ).catch(() => null);
+      if (res?.ok) {
+        updated = (await res.json()) as AmazonCartEvent;
+      }
+    }
+
+    if (!updated) {
+      updated = await analyzeAmazonItemLocally({
+        ...mergedPayload,
+        event_id: eventId,
+        user_id: activeUserId,
+        skipGenericFallback: true,
+      });
+    }
+
+    updated.user_id = activeUserId;
+    if (existing?.image_url && !updated.image_url) updated.image_url = existing.image_url;
+    if (existing?.product_url && !updated.product_url) updated.product_url = existing.product_url;
+    if (existing?.source_platform && !updated.source_platform) {
+      updated.source_platform = existing.source_platform;
+    }
+
+    const finalUpdated = updated;
+    setAmazonEvents((prev) => {
+      const existsInPrev = prev.some((e) => e.event_id === eventId);
+      const next = existsInPrev
+        ? prev.map((e) => (e.event_id === eventId ? finalUpdated : e))
+        : [finalUpdated, ...prev];
+      writeStoredAmazonEvents(activeUserId, next);
+      return next;
+    });
+
+    if (popupEvent?.event_id === eventId) {
+      setPopupEvent(finalUpdated);
+    }
+
+    window.postMessage(
+      { type: 'NUTRICHECK_UPDATE_AMAZON_EVENT', event: finalUpdated },
+      window.location.origin
+    );
+  }
+
   async function handleDeleteAmazonEvent(eventId: string) {
+    if (!activeUserId) return;
     setAmazonEvents((prev) => {
       const next = prev.filter((e) => e.event_id !== eventId);
-      writeStoredAmazonEvents(next);
+      writeStoredAmazonEvents(activeUserId, next);
       return next;
     });
     if (popupEvent?.event_id === eventId) {
       setPopupEvent(null);
     }
     window.postMessage(
-      { type: 'NUTRICHECK_DELETE_AMAZON_EVENT', eventId },
+      { type: 'NUTRICHECK_DELETE_AMAZON_EVENT', eventId, userId: activeUserId },
       window.location.origin
     );
-    await fetch(`/api/amazon/cart-events/${eventId}`, { method: 'DELETE' }).catch(
-      () => {}
-    );
+    await fetch(
+      `/api/amazon/cart-events/${encodeURIComponent(eventId)}?userId=${encodeURIComponent(activeUserId)}`,
+      { method: 'DELETE', headers: { 'X-User-Id': activeUserId } }
+    ).catch(() => {});
   }
 
   async function handleClearAmazonEvents() {
+    if (!activeUserId) return;
     setAmazonEvents([]);
     setPopupEvent(null);
-    writeStoredAmazonEvents([]);
-    window.postMessage({ type: 'NUTRICHECK_CLEAR_AMAZON_EVENTS' }, window.location.origin);
-    await fetch('/api/amazon/cart-events', { method: 'DELETE' }).catch(() => {});
+    writeStoredAmazonEvents(activeUserId, []);
+    window.postMessage(
+      { type: 'NUTRICHECK_CLEAR_AMAZON_EVENTS', userId: activeUserId },
+      window.location.origin
+    );
+    await fetch(
+      `/api/amazon/cart-events?userId=${encodeURIComponent(activeUserId)}`,
+      { method: 'DELETE', headers: { 'X-User-Id': activeUserId } }
+    ).catch(() => {});
   }
 
   const showTopPopup = Boolean(currentUser && popupEvent);
@@ -513,7 +673,7 @@ function NutriCheckShell() {
             path="/scan"
             element={
               <RequireAuth>
-                <ScanPacketPage />
+                <ScanPacketPage onSavePacketToStoreConnect={handleUpdateAmazonEvent} />
               </RequireAuth>
             }
           />
@@ -535,6 +695,7 @@ function NutriCheckShell() {
                     isSubmitting={isSubmittingAmazon}
                     submitError={amazonError}
                     onAnalyzeAmazonText={handleAnalyzeAmazonText}
+                    onUpdateEvent={handleUpdateAmazonEvent}
                     onDeleteEvent={handleDeleteAmazonEvent}
                     onClearEvents={handleClearAmazonEvents}
                   />

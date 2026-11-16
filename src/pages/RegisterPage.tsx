@@ -23,6 +23,7 @@ export function RegisterPage() {
   const [allergiesInput, setAllergiesInput] = useState('');
   const [dietaryNotes, setDietaryNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   function toggleCondition(key: HealthCondition) {
     setConditions((prev) =>
@@ -30,32 +31,37 @@ export function RegisterPage() {
     );
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     if (hasOtherDisease && !otherDiseaseInput.trim()) {
       setError('Please enter your other disease name(s) or uncheck "Other disease".');
       return;
     }
-    const res = register({
-      fullName,
-      email,
-      password,
-      age: Number(age),
-      conditions,
-      otherConditions: hasOtherDisease
-        ? parseCustomConditionsInput(otherDiseaseInput)
-        : [],
-      allergies: parseAllergiesInput(allergiesInput),
-      dietaryNotes,
-    });
+    setSubmitting(true);
+    try {
+      const res = await register({
+        fullName,
+        email,
+        password,
+        age: Number(age),
+        conditions,
+        otherConditions: hasOtherDisease
+          ? parseCustomConditionsInput(otherDiseaseInput)
+          : [],
+        allergies: parseAllergiesInput(allergiesInput),
+        dietaryNotes,
+      });
 
-    if (!res.ok) {
-      setError(res.error || 'Unable to create account.');
-      return;
+      if (!res.ok) {
+        setError(res.error || 'Unable to create account.');
+        return;
+      }
+
+      navigate('/dashboard');
+    } finally {
+      setSubmitting(false);
     }
-
-    navigate('/dashboard');
   }
 
   return (
@@ -220,8 +226,8 @@ export function RegisterPage() {
             </div>
           )}
 
-          <button type="submit" className="btn-primary auth-submit-btn">
-            Register and continue
+          <button type="submit" className="btn-primary auth-submit-btn" disabled={submitting}>
+            {submitting ? 'Creating account...' : 'Register and continue'}
           </button>
         </form>
 

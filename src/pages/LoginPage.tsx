@@ -22,6 +22,7 @@ export function LoginPage() {
   const [hasOtherDisease, setHasOtherDisease] = useState(false);
   const [otherDiseaseInput, setOtherDiseaseInput] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   function toggleCondition(key: HealthCondition) {
     setConditions((prev) =>
@@ -46,43 +47,57 @@ export function LoginPage() {
     return overrides;
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     if (hasOtherDisease && !otherDiseaseInput.trim()) {
       setError('Please enter your other disease name(s) or uncheck "Other disease".');
       return;
     }
-    const res = login(email, password, buildLoginOverrides());
-    if (!res.ok) {
-      setError(res.error || 'Sign in failed.');
-      return;
+    setSubmitting(true);
+    try {
+      const res = await login(email, password, buildLoginOverrides());
+      if (!res.ok) {
+        setError(res.error || 'Sign in failed.');
+        return;
+      }
+      navigate(targetAfterLogin, { replace: true });
+    } finally {
+      setSubmitting(false);
     }
-    navigate(targetAfterLogin, { replace: true });
   }
 
-  function handleQuickDemoLogin() {
+  async function handleQuickDemoLogin() {
     setError(null);
-    const demoEmail = 'demo@nutricheck.app';
-    const demoPass = 'demo1234';
-    const overrides = buildLoginOverrides();
-    const firstTry = login(demoEmail, demoPass, overrides);
-    if (!firstTry.ok) {
-      register({
-        fullName: 'Haribabu Demo',
-        email: demoEmail,
-        password: demoPass,
-        age: 40,
-        conditions:
-          conditions.length > 0
-            ? conditions
-            : ['diabetes', 'kidney_disease', 'obesity'],
-        otherConditions: overrides.otherConditions || [],
-        allergies: ['milk'],
-        dietaryNotes: 'Watch added sugars and excess sodium.',
-      });
+    setSubmitting(true);
+    try {
+      const demoEmail = 'demo@nutricheck.app';
+      const demoPass = 'demo1234';
+      const overrides = buildLoginOverrides();
+      const firstTry = await login(demoEmail, demoPass, overrides);
+      if (!firstTry.ok) {
+        const regRes = await register({
+          fullName: 'Haribabu Demo',
+          email: demoEmail,
+          password: demoPass,
+          age: 40,
+          conditions:
+            conditions.length > 0
+              ? conditions
+              : ['diabetes', 'kidney_disease', 'obesity'],
+          otherConditions: overrides.otherConditions || [],
+          allergies: ['milk'],
+          dietaryNotes: 'Watch added sugars and excess sodium.',
+        });
+        if (!regRes.ok) {
+          setError(regRes.error || 'Unable to launch demo profile.');
+          return;
+        }
+      }
+      navigate(targetAfterLogin, { replace: true });
+    } finally {
+      setSubmitting(false);
     }
-    navigate(targetAfterLogin, { replace: true });
   }
 
   return (
@@ -198,15 +213,16 @@ export function LoginPage() {
             </div>
           )}
 
-          <button type="submit" className="btn-primary auth-submit-btn">
+          <button type="submit" className="btn-primary auth-submit-btn" disabled={submitting}>
             <LogIn size={16} />
-            <span>Sign in</span>
+            <span>{submitting ? 'Signing in...' : 'Sign in'}</span>
           </button>
 
           <button
             type="button"
             className="btn-secondary"
-            onClick={handleQuickDemoLogin}
+            disabled={submitting}
+            onClick={() => void handleQuickDemoLogin()}
           >
             Try Sample Profile (Diabetes, Kidney Care &amp; Milk Allergy)
           </button>

@@ -11,8 +11,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import Tesseract from 'tesseract.js';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { BreakdownPieChart } from '../components/BreakdownPieChart';
 import { NutritionGauge } from '../components/NutritionGauge';
 import { useAuth } from '../context/AuthContext';
@@ -22,10 +21,28 @@ import {
   getAgeGroupLabel,
 } from '../utils/healthProfileEngine';
 import {
+  parseNutritionTextClient,
   scanPacketLocally,
   validateFoodLabelText,
 } from '../utils/localNutritionEngine';
+import { extractIngredientsSegment, runPacketImageOcr } from '../utils/packetOcr';
 import type { PacketScanResult } from '../types';
+
+export interface ScanPacketPageProps {
+  onSavePacketToStoreConnect?: (
+    eventId: string,
+    payload: {
+      product_title: string;
+      ingredients_text?: string;
+      nutrition_text?: string;
+      calories?: number;
+      sugars?: number;
+      fat?: number;
+      protein?: number;
+      sodium_mg?: number;
+    }
+  ) => Promise<void>;
+}
 
 const SAMPLE_PACKETS = [
   {
@@ -48,62 +65,19 @@ const SAMPLE_PACKETS = [
   },
 ];
 
-async function preprocessImageForOcr(source: File | Blob): Promise<Blob> {
-  const objectUrl = URL.createObjectURL(source);
-  try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const el = new Image();
-      el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error('Could not decode photo for scanning.'));
-      el.src = objectUrl;
-    });
-
-    const maxDim = 1500;
-    const scale = Math.min(1, maxDim / Math.max(img.width || 1, img.height || 1));
-    const width = Math.max(1, Math.round((img.width || 800) * scale));
-    const height = Math.max(1, Math.round((img.height || 600) * scale));
-
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return source;
-
-    ctx.drawImage(img, 0, 0, width, height);
-    const imgData = ctx.getImageData(0, 0, width, height);
-    const d = imgData.data;
-
-    // Mild grayscale contrast boost so printed packet text stands out cleanly on mobile photos
-    const contrast = 1.32;
-    for (let i = 0; i < d.length; i += 4) {
-      const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-      const enhanced = Math.max(0, Math.min(255, (lum - 128) * contrast + 132));
-      d[i] = enhanced;
-      d[i + 1] = enhanced;
-      d[i + 2] = enhanced;
-    }
-    ctx.putImageData(imgData, 0, 0);
-
-    const processed = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob((b) => resolve(b), 'image/png', 0.92)
-    );
-    return processed || source;
-  } catch {
-    return source;
-  } finally {
-    URL.revokeObjectURL(objectUrl);
-  }
-}
-
-export function ScanPacketPage() {
+export function ScanPacketPage({ onSavePacketToStoreConnect }: ScanPacketPageProps) {
   const { currentUser } = useAuth();
-  const [productName, setProductName] = useState('');
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const linkedEventId = searchParams.get('eventId');
+  const [productName, setProductName] = useState(() => searchParams.get('item') || '');
   const [rawText, setRawText] = useState('');
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [ocrProgress, setOcrProgress] = useState<number | null>(null);
   const [ocrStatusText, setOcrStatusText] = useState<string | null>(null);
   const [scanAccuracyPct, setScanAccuracyPct] = useState<number | null>(null);
   const [isScanning, setIsScanning] = useState(false);
+  const [isSavingToStore, setIsSavingToStore] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [result, setResult] = useState<PacketScanResult | null>(null);
 
@@ -190,39 +164,10 @@ export function ScanPacketPage() {
     setOcrProgress(0);
     setOcrStatusText('Enhancing & reading packet label...');
     try {
-      const prepared = await preprocessImageForOcr(source);
-      const workerResult = await Tesseract.recognize(prepared, 'eng', {
-        logger: (m) => {
-          if (m.status === 'recognizing text' && typeof m.progress === 'number') {
-            setOcrProgress(Math.round(m.progress * 100));
-          }
-        },
+      const { extractedText: extracted, confidence } = await runPacketImageOcr(source, {
+        onProgress: (pct) => setOcrProgress(pct),
+        onStatus: (status) => setOcrStatusText(status),
       });
-
-      const confidence =
-        typeof workerResult?.data?.confidence === 'number'
-          ? workerResult.data.confidence
-          : undefined;
-      const words = (
-        workerResult?.data as { words?: Array<{ text: string; confidence: number }> } | undefined
-      )?.words;
-
-      let extracted = (workerResult?.data?.text || '').trim();
-      if (Array.isArray(words) && words.length > 0) {
-        // Filter out single-character low-confidence specks generated on faces/textures
-        const kept = words
-          .filter((w) => {
-            const t = (w.text || '').trim();
-            if (!t) return false;
-            if (t.length <= 2 && w.confidence < 58) return false;
-            return w.confidence >= 34;
-          })
-          .map((w) => w.text.trim())
-          .join(' ');
-        if (kept.length >= 6) {
-          extracted = kept;
-        }
-      }
 
       if (typeof confidence === 'number') {
         setScanAccuracyPct(Math.round(confidence));
@@ -379,6 +324,31 @@ export function ScanPacketPage() {
     setScanAccuracyPct(null);
     handleClearPhoto();
     void analyzeText(sample.name, sample.text);
+  }
+
+  async function handleSaveToStoreConnect() {
+    if (!linkedEventId || !result || !onSavePacketToStoreConnect) return;
+    setIsSavingToStore(true);
+    try {
+      const nut = result.nutrition_analysis?.nutrition || parseNutritionTextClient(rawText);
+      const cleanIng =
+        extractIngredientsSegment(rawText) ||
+        (result.parsed_ingredients.length > 0 ? result.parsed_ingredients.join(', ') : rawText);
+
+      await onSavePacketToStoreConnect(linkedEventId, {
+        product_title: result.product_name,
+        ingredients_text: cleanIng,
+        nutrition_text: rawText,
+        calories: nut?.calories,
+        sugars: nut?.sugars,
+        fat: nut?.fat,
+        protein: nut?.protein,
+        sodium_mg: nut?.sodium_mg,
+      });
+      navigate('/amazon');
+    } finally {
+      setIsSavingToStore(false);
+    }
   }
 
   const gaugeTone = !result
@@ -702,6 +672,28 @@ export function ScanPacketPage() {
                 <div className="explanation-box" style={{ marginBottom: 4 }}>
                   <div className="explanation-heading">Plain-English Verdict</div>
                   <p className="explanation-text">{result.summary}</p>
+                  {linkedEventId && onSavePacketToStoreConnect && (
+                    <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        style={{ flex: 'none', padding: '9px 14px', fontSize: '13.5px' }}
+                        disabled={isSavingToStore}
+                        onClick={() => void handleSaveToStoreConnect()}
+                      >
+                        {isSavingToStore
+                          ? 'Saving Verified Label...'
+                          : 'Save Exact Label to Store Connect'}
+                      </button>
+                      <Link
+                        to="/amazon"
+                        className="btn-secondary"
+                        style={{ padding: '9px 14px', fontSize: '13.5px', textDecoration: 'none' }}
+                      >
+                        Back to Store Connect
+                      </Link>
+                    </div>
+                  )}
                 </div>
 
                 {(() => {

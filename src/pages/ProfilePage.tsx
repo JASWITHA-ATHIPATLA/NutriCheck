@@ -76,11 +76,11 @@ export function ProfilePage() {
     );
   }
 
-  function handleSave(e: React.FormEvent) {
+  async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!currentUser) return;
     const numericAge = Number(age);
-    updateProfile({
+    await updateProfile({
       fullName: fullName.trim() || currentUser.fullName,
       age: Number.isFinite(numericAge) && numericAge > 0 ? numericAge : currentUser.age,
       conditions,

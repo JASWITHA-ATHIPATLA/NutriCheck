@@ -119,6 +119,7 @@ export interface EvaluationReport {
 
 export interface AmazonCartEvent {
   event_id: string;
+  user_id?: string;
   timestamp: string;
   source: string;
   status: 'analyzed' | 'needs_nutrition';
@@ -184,7 +185,7 @@ export interface UserHealthProfile {
   id: string;
   fullName: string;
   email: string;
-  password: string;
+  password?: string;
   age: number;
   conditions: HealthCondition[];
   otherConditions?: string[];

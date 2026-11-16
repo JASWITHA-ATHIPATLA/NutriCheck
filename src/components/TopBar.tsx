@@ -46,12 +46,6 @@ export function TopBar() {
                 Dashboard
               </NavLink>
               <NavLink
-                to="/profile"
-                className={({ isActive }) => `nav-tab ${isActive ? 'is-active' : ''}`}
-              >
-                Health Profile
-              </NavLink>
-              <NavLink
                 to="/limits"
                 className={({ isActive }) => `nav-tab ${isActive ? 'is-active' : ''}`}
               >
@@ -83,7 +77,9 @@ export function TopBar() {
               )}
               <Link
                 to="/profile"
-                className="topbar-profile-icon-btn"
+                className={`topbar-profile-icon-btn ${
+                  location.pathname === '/profile' ? 'is-active' : ''
+                }`}
                 title={`Profile: ${currentUser.fullName}`}
                 aria-label="Health Profile"
               >

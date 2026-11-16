@@ -48,7 +48,9 @@ const GROCERY_STAPLES = [
   { keywords: ['sunflower oil', 'mustard oil', 'groundnut oil', 'coconut oil', 'cooking oil', 'refined oil', 'oil'], name: 'Cooking Oil (per tbsp 15ml)', calories: 120, sugars: 0.0, fat: 14.0, protein: 0.0, sodium_mg: 0 },
   { keywords: ['peanut butter', 'almond butter'], name: 'Nut / Peanut Butter (per 100g)', calories: 588, sugars: 9.2, fat: 50.0, protein: 25.1, sodium_mg: 420 },
   { keywords: ['mixed dry fruits', 'dry fruits', 'dry fruit', 'dryfruits', 'dryfruit', 'panchmewa', 'mixed nuts', 'trail mix', 'nut mix', 'nutmix'], name: 'Mixed Dry Fruits & Nuts (per 100g)', calories: 465, sugars: 14.0, fat: 28.5, protein: 14.2, sodium_mg: 6 },
-  { keywords: ['almonds', 'almond', 'badam', 'walnuts', 'walnut', 'akhrot', 'pistachios', 'pistachio', 'pista', 'cashews', 'cashew', 'kaju', 'peanuts', 'peanut', 'hazelnuts', 'hazelnut', 'pecans', 'pecan', 'macadamia', 'chia seeds', 'chia', 'flaxseeds', 'flax seeds', 'flax', 'pumpkin seeds', 'pumpkin seed', 'sunflower seeds', 'sunflower seed', 'makhana', 'fox nut', 'fox nuts'], name: 'Nuts & Seeds (per 100g)', calories: 579, sugars: 4.4, fat: 49.9, protein: 21.2, sodium_mg: 4 },
+  { keywords: ['walnuts', 'walnut', 'akhrot'], name: 'Walnuts (Unsalted Whole, per 100g)', calories: 654, sugars: 2.6, fat: 65.2, protein: 15.2, sodium_mg: 2 },
+  { keywords: ['almonds', 'almond', 'badam'], name: 'Almonds (Unsalted Whole, per 100g)', calories: 579, sugars: 4.4, fat: 49.9, protein: 21.2, sodium_mg: 1 },
+  { keywords: ['pistachios', 'pistachio', 'pista', 'cashews', 'cashew', 'kaju', 'peanuts', 'peanut', 'hazelnuts', 'hazelnut', 'pecans', 'pecan', 'macadamia', 'chia seeds', 'chia', 'flaxseeds', 'flax seeds', 'flax', 'pumpkin seeds', 'pumpkin seed', 'sunflower seeds', 'sunflower seed', 'makhana', 'fox nut', 'fox nuts'], name: 'Nuts & Seeds (per 100g)', calories: 579, sugars: 4.4, fat: 49.9, protein: 21.2, sodium_mg: 4 },
   { keywords: ['dates', 'datiles', 'khajoor', 'raisins', 'raisin', 'kishmish', 'anjeer', 'dried fig', 'dried figs', 'dried apricot', 'dried apricots'], name: 'Dried Dates / Raisins / Figs (per 100g)', calories: 282, sugars: 63.0, fat: 0.4, protein: 2.5, sodium_mg: 3 },
   { keywords: ['honey'], name: 'Honey (per 100g)', calories: 304, sugars: 82.1, fat: 0.0, protein: 0.3, sodium_mg: 4 },
   { keywords: ['jaggery', 'gur', 'sugar'], name: 'Sugar / Sweetener (per 100g)', calories: 387, sugars: 99.8, fat: 0.0, protein: 0.0, sodium_mg: 1 },
@@ -60,7 +62,10 @@ const GROCERY_STAPLES = [
   { keywords: ['chicken'], name: 'Chicken Breast (per 100g)', calories: 165, sugars: 0.0, fat: 3.6, protein: 31.0, sodium_mg: 74 },
   { keywords: ['salmon', 'tuna', 'fish', 'prawns'], name: 'Fish / Seafood (per 100g)', calories: 184, sugars: 0.0, fat: 8.1, protein: 25.4, sodium_mg: 62 },
   { keywords: ['turmeric', 'cumin', 'coriander', 'garam masala', 'masala', 'pepper', 'cinnamon', 'spice', 'seasoning'], name: 'Culinary Spices / Herbs (per 10g)', calories: 31, sugars: 0.3, fat: 0.8, protein: 1.1, sodium_mg: 18 },
-  { keywords: ['apple', 'banana', 'orange', 'mango', 'berry', 'berries', 'grape', 'watermelon', 'fruit'], name: 'Fresh Fruit (per 100g)', calories: 58, sugars: 11.2, fat: 0.2, protein: 0.7, sodium_mg: 1 },
+  { keywords: ['blueberries', 'blueberry'], name: 'Blueberries (Fresh Whole, per 100g)', calories: 57, sugars: 10.0, fat: 0.3, protein: 0.7, sodium_mg: 1 },
+  { keywords: ['strawberries', 'strawberry', 'raspberries', 'raspberry', 'blackberries', 'blackberry', 'cranberries', 'cranberry', 'berries', 'berry'], name: 'Fresh Berries (Whole, per 100g)', calories: 46, sugars: 7.5, fat: 0.4, protein: 1.0, sodium_mg: 1 },
+  { keywords: ['avocado', 'avocados'], name: 'Avocado (Fresh Whole, per 100g)', calories: 160, sugars: 0.7, fat: 14.7, protein: 2.0, sodium_mg: 7 },
+  { keywords: ['apple', 'apples', 'banana', 'bananas', 'orange', 'oranges', 'mango', 'grape', 'grapes', 'watermelon', 'kiwi', 'papaya', 'guava', 'pomegranate', 'pear', 'fruit'], name: 'Fresh Fruit (Whole, per 100g)', calories: 58, sugars: 11.2, fat: 0.2, protein: 0.7, sodium_mg: 1 },
   { keywords: ['broccoli', 'spinach', 'carrot', 'tomato', 'onion', 'potato', 'beans', 'peas', 'vegetable'], name: 'Fresh Vegetable (per 100g)', calories: 42, sugars: 2.5, fat: 0.3, protein: 2.1, sodium_mg: 22 },
   { keywords: ['poha', 'suji', 'rava', 'sooji', 'semolina', 'dalia', 'broken wheat', 'vermicelli', 'seviyan'], name: 'Wholesome Grain / Poha / Dalia / Suji (per 100g)', calories: 356, sugars: 1.0, fat: 1.2, protein: 9.8, sodium_mg: 6 },
   { keywords: ['soya chunks', 'soybean', 'soybeans', 'nutrela', 'soya granules'], name: 'Soya Chunks / Plant Protein (per 100g)', calories: 345, sugars: 2.0, fat: 0.5, protein: 52.0, sodium_mg: 12 },
@@ -112,6 +117,13 @@ const GOOD_ING = [
   ['raisin', 'Raisins', 'Natural dried fruit rich in iron, potassium, and fiber.'],
   ['date', 'Dates', 'Natural whole fruit sweetener with fiber and minerals.'],
   ['fig', 'Figs', 'Natural dried fruit high in fiber and calcium.'],
+  ['blueberry', 'Blueberries', 'Rich in anthocyanin antioxidants, fiber, and low glycemic load.'],
+  ['blueberries', 'Blueberries', 'Rich in anthocyanin antioxidants, fiber, and low glycemic load.'],
+  ['strawberry', 'Strawberries', 'Low-sugar berry rich in vitamin C and fiber.'],
+  ['raspberry', 'Raspberries', 'High-fiber berry supporting steady blood glucose.'],
+  ['blackberry', 'Blackberries', 'Antioxidant-rich low-GI berry.'],
+  ['berry', 'Berries', 'Antioxidant-rich whole fruit with dietary fiber.'],
+  ['avocado', 'Avocado', 'Heart-healthy monounsaturated fats and dietary fiber.'],
   ['chia', 'Chia Seeds', 'Rich in dietary fiber and omega-3 fats.'],
   ['flax', 'Flax Seeds', 'Rich in soluble fiber and plant omega-3 fats.'],
   ['olive oil', 'Olive Oil', 'Monounsaturated healthy cooking fat.'],
@@ -206,33 +218,126 @@ function round1(val) {
 
 function parseNutritionTextInWorker(text) {
   if (!text || !text.trim()) return null;
-  const normalized = text.replace(/\s+/g, ' ').trim();
-  const calMatch = normalized.match(
-    /(?:calories|energy(?:\s*\(\s*kcal\s*\))?)\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*(?:kcal|cal)?/i
+
+  const cleanedRaw = text
+    .replace(/\r\n?/g, '\n')
+    .replace(/based on a?\s*[\d,]+\s*(?:kcal|calories?)\s*diet/gi, ' ')
+    .replace(/[\d,]+\s*(?:kcal|calories?)\s*diet/gi, ' ');
+
+  const normalized = cleanedRaw.replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
+  const hasLabelHeader = /\b(?:nutrition(?:al)?\s*(?:facts|information|values)|per\s*100\s*g|per\s*serving|energy\s*\(?\s*k?cal)\b/i.test(
+    cleanedRaw
   );
+
+  const calMatch =
+    normalized.match(
+      /(?:calories|energy)\s*\(\s*(?:k?cal|keal)\s*(?:\/\s*kj)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)/i
+    ) ||
+    normalized.match(
+      /(?:calories|energy)\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*(?:kcal|cal|keal)\b/i
+    ) ||
+    (hasLabelHeader
+      ? normalized.match(/(?:calories|energy)\s*[:|\-]?\s*(\d+(?:\.\d+)?)\b(?!\s*(?:%|kj\b|g\b|mg\b))/i)
+      : null);
+
   if (!calMatch) return null;
   const calories = parseFloat(calMatch[1]);
 
-  const grab = (re) => {
-    const m = normalized.match(re);
-    return m ? parseFloat(m[1]) : null;
+  const grabMacroGrams = (namePattern, allowBare = true) => {
+    const unitBefore = new RegExp(
+      `(?:${namePattern})\\s*\\(\\s*g(?:ms?)?\\s*\\)\\s*[:|\\-]?\\s*(\\d+(?:\\.\\d+)?)(?!\\s*%)`,
+      'i'
+    );
+    const mBefore = normalized.match(unitBefore);
+    if (mBefore) return parseFloat(mBefore[1]);
+
+    const unitAfter = new RegExp(
+      `(?:${namePattern})\\s*[:|\\-]?\\s*(\\d+(?:\\.\\d+)?)\\s*g(?:ms?)?\\b`,
+      'i'
+    );
+    const mAfter = normalized.match(unitAfter);
+    if (mAfter) return parseFloat(mAfter[1]);
+
+    if (allowBare && hasLabelHeader) {
+      const bare = new RegExp(
+        `(?:${namePattern})\\s*[:|\\-]?\\s*(\\d+(?:\\.\\d+)?)\\b(?!\\s*(?:%|mg\\b|kcal\\b))`,
+        'i'
+      );
+      const mBare = normalized.match(bare);
+      if (mBare) {
+        const val = parseFloat(mBare[1]);
+        if (val <= 105) return val;
+      }
+    }
+    return null;
   };
 
-  const sugars = grab(/(?:total\s+sugars?|of\s+which\s+sugars?|added\s+sugars?|sugars?)\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b/i);
-  const fat = grab(/(?:total\s+)?fat\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b/i);
-  const protein = grab(/protein\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b/i);
-  const carbs = grab(/(?:total\s+)?carbohydrate[s]?\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b/i);
+  const normalizedNoAdded = normalized.replace(/\badded\s+sugars?\b/gi, ' __added_sugar__ ');
+  let sugars = grabMacroGrams('\\btotal\\s+sugars?');
+  if (sugars === null) sugars = grabMacroGrams('\\bof\\s+which\\s+sugars?');
+  if (sugars === null) {
+    const mPlainBefore = normalizedNoAdded.match(/\bsugars?\s*\(\s*g(?:ms?)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)/i);
+    const mPlainAfter = normalizedNoAdded.match(/\bsugars?\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g(?:ms?)?\b/i);
+    if (mPlainBefore) sugars = parseFloat(mPlainBefore[1]);
+    else if (mPlainAfter) sugars = parseFloat(mPlainAfter[1]);
+    else if (hasLabelHeader) {
+      const mBare = normalizedNoAdded.match(/\bsugars?\s*[:|\-]?\s*(\d+(?:\.\d+)?)\b(?!\s*%)/i);
+      if (mBare && parseFloat(mBare[1]) <= 105) sugars = parseFloat(mBare[1]);
+    }
+  }
+  if (sugars === null) sugars = grabMacroGrams('\\badded\\s+sugars?');
+
+  const normalizedNoSubFats = normalized.replace(
+    /\b(?:saturated|sat\.?|trans|mono(?:unsaturated)?|poly(?:unsaturated)?|omega[\s\-\d]*fatty)\s+fat(?:ty\s+acids?)?\b/gi,
+    ' __sub_fat__ '
+  );
+  let fat = grabMacroGrams('\\btotal\\s+fat');
+  if (fat === null) {
+    const mFatBefore = normalizedNoSubFats.match(/\bfat\s*\(\s*g(?:ms?)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)/i);
+    const mFatAfter = normalizedNoSubFats.match(/\bfat\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g(?:ms?)?\b/i);
+    if (mFatBefore) fat = parseFloat(mFatBefore[1]);
+    else if (mFatAfter) fat = parseFloat(mFatAfter[1]);
+    else if (hasLabelHeader) {
+      const mBare = normalizedNoSubFats.match(/\bfat\s*[:|\-]?\s*(\d+(?:\.\d+)?)\b(?!\s*%)/i);
+      if (mBare && parseFloat(mBare[1]) <= 105) fat = parseFloat(mBare[1]);
+    }
+  }
+
+  const protein = grabMacroGrams('\\bproteins?');
+  const carbs = grabMacroGrams('(?:\\btotal\\s+)?\\bcarbohydrates?');
 
   let sodium_mg = null;
-  const sodMg = normalized.match(/sodium\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*mg\b/i);
-  const sodG = normalized.match(/sodium\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b/i);
-  const saltG = normalized.match(/salt\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b/i);
-  if (sodMg) sodium_mg = parseFloat(sodMg[1]);
-  else if (sodG) sodium_mg = parseFloat(sodG[1]) * 1000;
-  else if (saltG) sodium_mg = parseFloat(saltG[1]) * 393.4;
+  const sodMgBefore = normalized.match(/\bsodium\s*\(\s*mg\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)/i);
+  const sodMgAfter = normalized.match(/\bsodium\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*mg\b/i);
+  const sodGBefore = normalized.match(/\bsodium\s*\(\s*g(?:ms?)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)/i);
+  const sodGAfter = normalized.match(/\bsodium\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g(?:ms?)?\b/i);
+  const saltGBefore = normalized.match(/\bsalt\s*\(\s*g(?:ms?)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)/i);
+  const saltGAfter = normalized.match(/\bsalt\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g(?:ms?)?\b/i);
+  const sodBare = hasLabelHeader
+    ? normalized.match(/\bsodium\s*[:|\-]?\s*(\d+(?:\.\d+)?)\b(?!\s*(?:%|g\b))/i)
+    : null;
+
+  if (sodMgBefore) sodium_mg = parseFloat(sodMgBefore[1]);
+  else if (sodMgAfter) sodium_mg = parseFloat(sodMgAfter[1]);
+  else if (sodGBefore) sodium_mg = parseFloat(sodGBefore[1]) * 1000;
+  else if (sodGAfter) sodium_mg = parseFloat(sodGAfter[1]) * 1000;
+  else if (saltGBefore) sodium_mg = parseFloat(saltGBefore[1]) * 393.4;
+  else if (saltGAfter) sodium_mg = parseFloat(saltGAfter[1]) * 393.4;
+  else if (sodBare) sodium_mg = parseFloat(sodBare[1]);
 
   const foundCount = [sugars, fat, protein, sodium_mg, carbs].filter((v) => v !== null).length;
   if (foundCount < 1) return null;
+
+  if (
+    sugars !== null &&
+    carbs !== null &&
+    sugars > carbs &&
+    Number.isInteger(sugars) &&
+    sugars >= 10 &&
+    sugars <= 99
+  ) {
+    sugars = round1(sugars / 10);
+  }
 
   return {
     calories,
@@ -342,6 +447,13 @@ function isNaturalDriedFruitWorker(name, n) {
   return hasDried && !hasJunk && n.sodium_mg <= 40 && n.fat <= 5;
 }
 
+function isWholeFruitOrBerryWorker(name, n) {
+  const lower = (name || '').toLowerCase();
+  const hasFruit = /\b(blueberr(?:y|ies)|strawberr(?:y|ies)|raspberr(?:y|ies)|blackberr(?:y|ies)|cranberr(?:y|ies)|berr(?:y|ies)|avocados?|apples?|oranges?|pears?|guavas?|kiwis?|papayas?|pomegranates?|watermelon|fresh fruit)\b/i.test(lower);
+  const hasJunk = /\b(dried|candied|chocolate|candy|cookie|biscuit|cake|muffin|pastry|pie|jam|jelly|marmalade|juice|nectar|sharbat|squash|syrup|soda|ice cream|yogurt|smoothie)\b/i.test(lower);
+  return hasFruit && !hasJunk && n.sodium_mg <= 45 && n.sugars <= 16 && (n.fat <= 5 || /\bavocado\b/i.test(lower));
+}
+
 function scoreNutritionInWorker(foodName, n) {
   const kcal = Math.max(Number(n.calories) || 0, 1);
   const sugars = Math.max(Number(n.sugars) || 0, 0);
@@ -355,7 +467,8 @@ function scoreNutritionInWorker(foodName, n) {
   const sodium_per_100kcal = clip((sodium_mg / kcal) * 100, 0, 5000);
 
   const wholeNut = isWholeNutOrSeedWorker(foodName, { sugars, sodium_mg });
-  const wholeDriedFruit = !wholeNut && isNaturalDriedFruitWorker(foodName, { fat, sodium_mg });
+  const wholeFruitBerry = !wholeNut && isWholeFruitOrBerryWorker(foodName, { sugars, fat, sodium_mg });
+  const wholeDriedFruit = !wholeNut && !wholeFruitBerry && isNaturalDriedFruitWorker(foodName, { fat, sodium_mg });
 
   let pen_sugar = clip((sugar_kcal_pct - 10) * 0.75, 0, 35) + clip((sugars - 20) * 0.4, 0, 10);
   let pen_fat = clip((fat_kcal_pct - 30) * 0.65, 0, 18);
@@ -369,6 +482,10 @@ function scoreNutritionInWorker(foodName, n) {
     pen_ed *= 0.25;
     pen_sugar *= 0.35;
     bon_whole += 8;
+  } else if (wholeFruitBerry) {
+    pen_sugar *= 0.12;
+    pen_fat *= 0.2;
+    bon_whole += 10;
   } else if (wholeDriedFruit) {
     pen_sugar *= 0.45;
     bon_whole += 4;
@@ -391,13 +508,13 @@ function scoreNutritionInWorker(foodName, n) {
     {
       nutrient: 'Sugar',
       value_display: `${round1(sugars)} g`,
-      status: wholeNut || wholeDriedFruit ? (sugars > 40 ? 'moderate' : 'good') : sugar_kcal_pct > 25 || sugars > 20 ? 'high' : sugar_kcal_pct > 10 || sugars > 10 ? 'moderate' : 'good',
-      note: wholeNut || wholeDriedFruit ? `${round1(sugar_kcal_pct)}% of kcal (natural fruit/nut sugars)` : `${round1(sugar_kcal_pct)}% of calories`,
+      status: wholeNut || wholeFruitBerry || wholeDriedFruit ? (sugars > 40 ? 'moderate' : 'good') : sugar_kcal_pct > 25 || sugars > 20 ? 'high' : sugar_kcal_pct > 10 || sugars > 10 ? 'moderate' : 'good',
+      note: wholeNut || wholeFruitBerry || wholeDriedFruit ? `${round1(sugar_kcal_pct)}% of kcal (natural intrinsic sugars)` : `${round1(sugar_kcal_pct)}% of calories`,
     },
     {
       nutrient: 'Total Fat',
       value_display: `${round1(fat)} g`,
-      status: wholeNut ? 'good' : fat_kcal_pct > 45 ? 'high' : fat_kcal_pct > 30 ? 'moderate' : 'good',
+      status: wholeNut || wholeFruitBerry ? 'good' : fat_kcal_pct > 45 ? 'high' : fat_kcal_pct > 30 ? 'moderate' : 'good',
       note: wholeNut ? `${round1(fat_kcal_pct)}% of kcal (heart-healthy unsaturated fats)` : `${round1(fat_kcal_pct)}% of calories`,
     },
     {
@@ -418,6 +535,8 @@ function scoreNutritionInWorker(foodName, n) {
   const level = classification === 'Healthy' ? 'success' : classification === 'Moderate' ? 'warning' : 'danger';
   const explanation = wholeNut
     ? `${foodName} is ${verdictWord} (${health_score}/100) — whole nuts & dry fruits rich in healthy fats and ${round1(protein)}g protein.`
+    : wholeFruitBerry
+    ? `${foodName} is ${verdictWord} (${health_score}/100) — natural whole fruit/berry with dietary fiber, antioxidants, and low glycemic load.`
     : `${foodName} is ${verdictWord} (${health_score}/100) · ${Math.round(n.calories)} kcal, ${round1(sugars)}g sugar, ${round1(fat)}g fat, ${round1(protein)}g protein.`;
 
   return {
@@ -521,8 +640,11 @@ function inferDefaultIngredientsInWorker(title) {
   if (/mixed\s*dry\s*fruits|dry\s*fruits|trail\s*mix|panchmewa/.test(lower)) {
     return 'Almonds, Cashews, Walnuts, Pistachios, Raisins, Dried Dates';
   }
-  if (/almond|badam/.test(lower)) return 'Whole Almonds (100%)';
-  if (/walnut|akhrot/.test(lower)) return 'Whole Walnut Kernels (100%)';
+  if (/almond|badam/.test(lower)) return '100% Roasted / Natural California Almonds';
+  if (/walnut|akhrot/.test(lower)) return '100% Whole Unsalted Walnuts';
+  if (/blueberry|blueberries/.test(lower)) return '100% Fresh Whole Blueberries';
+  if (/strawberry|strawberries|raspberry|raspberries|blackberry|blackberries|berries|berry/.test(lower)) return '100% Fresh Whole Berries';
+  if (/avocado|avocados/.test(lower)) return '100% Fresh Whole Avocado';
   if (/cashew|kaju/.test(lower)) return 'Whole Cashews (100%)';
   if (/pistachio|pista/.test(lower)) return 'Roasted Pistachios';
   if (/dates|khajoor|raisin|kishmish/.test(lower)) return 'Natural Dried Fruit (100%)';
@@ -676,50 +798,35 @@ async function analyzeInExtensionFallback(payload) {
   if (!nutrition || !imageUrl || !capturedIngredients) {
     const stapleOrCatalog = await lookupStapleOrCatalogInWorker(title);
     const titleWords = title.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').trim().split(/\s+/).filter(Boolean);
+    const isWholeProduceStaple =
+      stapleOrCatalog?.source === 'Grocery & Dish Profile' &&
+      /\b(walnuts?|akhrot|almonds?|badam|blueberr(?:y|ies)|strawberr(?:y|ies)|raspberr(?:y|ies)|blackberr(?:y|ies)|berr(?:y|ies)|avocados?)\b/i.test(title) &&
+      !/\b(chocolate|candy|cookie|biscuit|cake|muffin|jam|jelly|juice|syrup|salted|masala|butter|chips|dried)\b/i.test(title);
     const isPureStaple =
-      stapleOrCatalog?.source === 'Grocery & Dish Profile' && titleWords.length <= 2;
+      isWholeProduceStaple ||
+      (stapleOrCatalog?.source === 'Grocery & Dish Profile' && titleWords.length <= 2);
 
-    const off = isPureStaple && nutrition && imageUrl ? null : await lookupOpenFoodFactsInWorker(title, payload.barcode);
-    let offIsRelevant = false;
-    if (off) {
-      if (!stapleOrCatalog) {
-        offIsRelevant = true;
-      } else {
-        const qTokens = titleWords.filter((t) => t.length > 2);
-        const hNorm = (off.matched_food || '').toLowerCase();
-        const overlap = qTokens.filter((t) => hNorm.includes(t)).length;
-        offIsRelevant = qTokens.length > 0 && overlap / qTokens.length >= 0.5;
-      }
+    const off = isPureStaple && (nutrition || isWholeProduceStaple) && imageUrl
+      ? null
+      : isWholeProduceStaple && imageUrl
+      ? null
+      : await lookupOpenFoodFactsInWorker(title, payload.barcode);
+
+    if (stapleOrCatalog && !nutrition) {
+      nutrition = stapleOrCatalog.nutrition;
+      nutritionSource = `${stapleOrCatalog.source} (Estimated)`;
+      matchedFood = stapleOrCatalog.matched_food;
+    } else if (off && !nutrition && !isWholeProduceStaple) {
+      nutrition = off.nutrition;
+      nutritionSource = `${off.source} (Estimated)`;
+      matchedFood = off.matched_food;
     }
 
-    if (off && offIsRelevant) {
-      if (!nutrition) {
-        nutrition = off.nutrition;
-        nutritionSource = off.source;
-        matchedFood = off.matched_food;
-      }
-      if (!capturedIngredients && off.ingredients_text) {
-        capturedIngredients = off.ingredients_text;
-      }
-      if (!imageUrl && off.image_url) {
-        imageUrl = off.image_url;
-      }
-    } else if (stapleOrCatalog && !nutrition) {
-      nutrition = stapleOrCatalog.nutrition;
-      nutritionSource = stapleOrCatalog.source;
-      matchedFood = stapleOrCatalog.matched_food;
-    } else if (off) {
-      if (!nutrition) {
-        nutrition = off.nutrition;
-        nutritionSource = off.source;
-        matchedFood = off.matched_food;
-      }
-      if (!capturedIngredients && off.ingredients_text) {
-        capturedIngredients = off.ingredients_text;
-      }
-      if (!imageUrl && off.image_url) {
-        imageUrl = off.image_url;
-      }
+    if (!capturedIngredients && off?.ingredients_text && !isWholeProduceStaple && !stapleOrCatalog) {
+      capturedIngredients = off.ingredients_text;
+    }
+    if (!imageUrl && off?.image_url) {
+      imageUrl = off.image_url;
     }
   }
 
@@ -914,18 +1021,29 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         query: new URLSearchParams({ item: productTitle, source: platform.toLowerCase() }).toString(),
       });
 
+      const storedAuth = await chrome.storage.local.get(['activeHealthGuardUserId']);
+      const activeUserId = storedAuth?.activeHealthGuardUserId || null;
+      const outboundPayload = {
+        ...(message.payload || {}),
+        ...(activeUserId ? { user_id: activeUserId } : {}),
+      };
+
       let eventData = null;
       try {
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), 3200);
+        const headers = {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        };
+        if (activeUserId) {
+          headers['X-User-Id'] = activeUserId;
+        }
         const res = await fetch(`${baseUrl}/api/amazon/add-to-cart`, {
           method: 'POST',
           mode: 'cors',
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-          },
-          body: JSON.stringify(message.payload),
+          headers,
+          body: JSON.stringify(outboundPayload),
           signal: ctrl.signal,
         });
         clearTimeout(timer);
@@ -942,11 +1060,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
       if (!eventData) {
         eventData = await analyzeInExtensionFallback(
-          message.payload || { product_title: productTitle }
+          outboundPayload || { product_title: productTitle }
         );
       }
 
       if (eventData) {
+        if (activeUserId && !eventData.user_id) eventData.user_id = activeUserId;
         if (!eventData.source_platform) eventData.source_platform = platform;
         if (!eventData.image_url && payloadImageUrl) eventData.image_url = payloadImageUrl;
         if (!eventData.ingredients_text && payloadIngredients) {

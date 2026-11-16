@@ -3,7 +3,6 @@ import {
   Activity,
   ShoppingBasket,
   SlidersHorizontal,
-  Store,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -105,14 +104,6 @@ export function NutritionLimitsPage({ events }: NutritionLimitsPageProps) {
             <SlidersHorizontal size={15} />
             <span>Edit Health Profile</span>
           </Link>
-          <Link
-            to="/amazon"
-            className="btn-primary"
-            style={{ textDecoration: 'none', flex: 'none' }}
-          >
-            <Store size={15} />
-            <span>Store Connect</span>
-          </Link>
         </div>
       </div>
 
@@ -202,16 +193,15 @@ export function NutritionLimitsPage({ events }: NutritionLimitsPageProps) {
         </div>
       </section>
 
-      {/* Normal vs Patient Baseline Comparison Table */}
-      <section className="card" style={{ marginTop: 20 }} aria-labelledby="baseline-table-heading">
+      {/* Normal vs Patient Baseline Comparison Compact Table */}
+      <section className="card limits-table-card" style={{ marginTop: 18 }} aria-labelledby="baseline-table-heading">
         <div className="pie-card-header-row">
           <div>
             <h2 id="baseline-table-heading" className="card-title">
-              Normal Person vs. Patient Nutrition Limits
+              Normal vs. Patient Limits
             </h2>
             <p className="card-subtitle">
-              Clinical reference thresholds used when screening packaged and whole foods.
-              Whole unsalted walnuts &amp; fresh berries remain beneficial within portions.
+              Quick reference caps used for screening. Unsalted walnuts &amp; berries stay beneficial in normal portions.
             </p>
           </div>
 
@@ -228,25 +218,23 @@ export function NutritionLimitsPage({ events }: NutritionLimitsPageProps) {
               className={`chart-switch-tab ${viewMode === 'per100g' ? 'is-active' : ''}`}
               onClick={() => setViewMode('per100g')}
             >
-              Per-100g Screening
+              Per-100g
             </button>
           </div>
         </div>
 
-        <div className="data-table-wrap">
+        <div className="data-table-wrap limits-table-frame">
           {viewMode === 'daily' ? (
-            <table className="data-table">
+            <table className="data-table is-compact">
               <thead>
                 <tr>
-                  <th>Profile Group</th>
-                  <th className="num">Calories/day</th>
-                  <th className="num">Sugars Max</th>
-                  <th className="num">Total Fat Max</th>
-                  <th className="num">Sat. Fat Max</th>
-                  <th className="num">Protein Target</th>
-                  <th className="num">Fiber Min</th>
+                  <th>Profile</th>
+                  <th className="num">Calories</th>
+                  <th className="num">Sugar Max</th>
+                  <th className="num">Fat / Sat.</th>
+                  <th className="num">Protein</th>
+                  <th className="num">Fiber</th>
                   <th className="num">Sodium Max</th>
-                  <th>Clinical Focus</th>
                 </tr>
               </thead>
               <tbody>
@@ -264,36 +252,38 @@ export function NutritionLimitsPage({ events }: NutritionLimitsPageProps) {
                       className={isActiveRow ? 'is-active-profile' : undefined}
                     >
                       <td>
-                        <strong>{row.profileLabel}</strong>
-                        {row.profileKey === 'active' ? (
-                          <span className="best-tag">Your Limit</span>
-                        ) : isActiveRow ? (
-                          <span className="best-tag">Active</span>
-                        ) : null}
+                        <div className="limits-row-title">
+                          <strong>{row.profileLabel}</strong>
+                          {row.profileKey === 'active' ? (
+                            <span className="best-tag">You</span>
+                          ) : isActiveRow ? (
+                            <span className="best-tag">Active</span>
+                          ) : null}
+                        </div>
+                        <div className="limits-row-sub">{row.keyFocus}</div>
                       </td>
-                      <td className="num">{row.caloriesDay.toLocaleString()} kcal</td>
-                      <td className="num">&le; {row.sugarDayMaxG} g</td>
-                      <td className="num">&le; {row.fatDayMaxG} g</td>
-                      <td className="num">&le; {row.satFatDayMaxG} g</td>
+                      <td className="num">{row.caloriesDay.toLocaleString()}</td>
+                      <td className="num">&le; {row.sugarDayMaxG}g</td>
+                      <td className="num">
+                        {row.fatDayMaxG}g / {row.satFatDayMaxG}g
+                      </td>
                       <td className="num">{row.proteinDayLabel}</td>
-                      <td className="num">&ge; {row.fiberDayMinG} g</td>
-                      <td className="num">&le; {row.sodiumDayMaxMg.toLocaleString()} mg</td>
-                      <td className="table-note-cell">{row.keyFocus}</td>
+                      <td className="num">&ge; {row.fiberDayMinG}g</td>
+                      <td className="num">&le; {row.sodiumDayMaxMg.toLocaleString()}mg</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           ) : (
-            <table className="data-table">
+            <table className="data-table is-compact">
               <thead>
                 <tr>
-                  <th>Profile Group</th>
-                  <th className="num">Max kcal / 100g</th>
-                  <th className="num">Free Sugar / 100g</th>
-                  <th className="num">Sat. Fat / 100g</th>
+                  <th>Profile</th>
+                  <th className="num">Max kcal</th>
+                  <th className="num">Sugar / 100g</th>
+                  <th className="num">Sat. Fat</th>
                   <th className="num">Sodium / 100g</th>
-                  <th>Fat Guidance (Per 100g)</th>
                 </tr>
               </thead>
               <tbody>
@@ -311,18 +301,20 @@ export function NutritionLimitsPage({ events }: NutritionLimitsPageProps) {
                       className={isActiveRow ? 'is-active-profile' : undefined}
                     >
                       <td>
-                        <strong>{row.profileLabel}</strong>
-                        {row.profileKey === 'active' ? (
-                          <span className="best-tag">Your Limit</span>
-                        ) : isActiveRow ? (
-                          <span className="best-tag">Active</span>
-                        ) : null}
+                        <div className="limits-row-title">
+                          <strong>{row.profileLabel}</strong>
+                          {row.profileKey === 'active' ? (
+                            <span className="best-tag">You</span>
+                          ) : isActiveRow ? (
+                            <span className="best-tag">Active</span>
+                          ) : null}
+                        </div>
+                        <div className="limits-row-sub">{row.fatPer100gNote}</div>
                       </td>
-                      <td className="num">&le; {row.caloriesPer100gMax} kcal</td>
-                      <td className="num">&le; {row.sugarPer100gMaxG} g</td>
-                      <td className="num">&le; {row.satFatPer100gMaxG} g</td>
-                      <td className="num">&le; {row.sodiumPer100gMaxMg} mg</td>
-                      <td className="table-note-cell">{row.fatPer100gNote}</td>
+                      <td className="num">&le; {row.caloriesPer100gMax}</td>
+                      <td className="num">&le; {row.sugarPer100gMaxG}g</td>
+                      <td className="num">&le; {row.satFatPer100gMaxG}g</td>
+                      <td className="num">&le; {row.sodiumPer100gMaxMg}mg</td>
                     </tr>
                   );
                 })}
@@ -332,15 +324,15 @@ export function NutritionLimitsPage({ events }: NutritionLimitsPageProps) {
         </div>
       </section>
 
-      {/* Logged-In Cart vs. Personal Limits Table */}
-      <section className="card" style={{ marginTop: 20 }} aria-labelledby="cart-limits-heading">
-        <div className="card-header">
+      {/* Logged-In Cart vs. Personal Limits Compact Table */}
+      <section className="card limits-table-card" style={{ marginTop: 18 }} aria-labelledby="cart-limits-heading">
+        <div className="card-header" style={{ marginBottom: 12 }}>
           <div>
             <h2 id="cart-limits-heading" className="card-title">
-              Logged-In Cart vs. Your Personal Limits ({currentUser.fullName})
+              Your Cart vs. Personal Limits ({currentUser.fullName})
             </h2>
             <p className="card-subtitle">
-              Shows how each 100g serving in your Store Connect cart compares against your daily caps.
+              Per-100g nutrients in your cart compared against your daily limits.
             </p>
           </div>
           <span className="sc-count-pill">
@@ -349,38 +341,27 @@ export function NutritionLimitsPage({ events }: NutritionLimitsPageProps) {
         </div>
 
         {events.length === 0 ? (
-          <div className="empty-state">
+          <div className="empty-state" style={{ padding: '24px 16px' }}>
             <div className="empty-icon" aria-hidden="true">
               <ShoppingBasket size={22} />
             </div>
             <h3 className="empty-title">No products in your cart yet</h3>
             <p className="empty-desc">
-              Add foods from Store Connect (or add walnuts, blueberries, oats, or packaged
-              snacks via the store extension) to compare every nutrient against your limits here.
+              Add foods to your cart to compare every nutrient against your daily limits here.
             </p>
-            <Link
-              to="/amazon"
-              className="btn-primary"
-              style={{ textDecoration: 'none', flex: 'none' }}
-            >
-              <Store size={16} />
-              <span>Browse Store Connect</span>
-            </Link>
           </div>
         ) : (
-          <div className="data-table-wrap">
-            <table className="data-table">
+          <div className="data-table-wrap limits-table-frame">
+            <table className="data-table is-compact">
               <thead>
                 <tr>
                   <th>Product</th>
-                  <th>Store</th>
-                  <th className="num">Calories</th>
-                  <th className="num">Sugars</th>
+                  <th className="num">kcal</th>
+                  <th className="num">Sugar</th>
                   <th className="num">Fat</th>
                   <th className="num">Protein</th>
                   <th className="num">Sodium</th>
-                  <th>Share of Daily Caps</th>
-                  <th>Profile Verdict</th>
+                  <th>Daily Share &amp; Risk</th>
                 </tr>
               </thead>
               <tbody>
@@ -417,27 +398,29 @@ export function NutritionLimitsPage({ events }: NutritionLimitsPageProps) {
                   return (
                     <tr key={ev.event_id}>
                       <td>
-                        <strong>{ev.product_title}</strong>
+                        <div className="limits-row-product">{ev.product_title}</div>
+                        <div className="limits-row-sub">{store}</div>
                       </td>
-                      <td>{store}</td>
                       <td className="num">
-                        {a ? `${Math.round(a.nutrition.calories)} kcal` : '—'}
+                        {a ? `${Math.round(a.nutrition.calories)}` : '—'}
                       </td>
-                      <td className="num">{a ? `${a.nutrition.sugars} g` : '—'}</td>
-                      <td className="num">{a ? `${a.nutrition.fat} g` : '—'}</td>
-                      <td className="num">{a ? `${a.nutrition.protein} g` : '—'}</td>
+                      <td className="num">{a ? `${a.nutrition.sugars}g` : '—'}</td>
+                      <td className="num">{a ? `${a.nutrition.fat}g` : '—'}</td>
+                      <td className="num">{a ? `${a.nutrition.protein}g` : '—'}</td>
                       <td className="num">
-                        {a ? `${Math.round(a.nutrition.sodium_mg)} mg` : '—'}
-                      </td>
-                      <td className="table-note-cell tabular">
-                        {a
-                          ? `${calPct}% kcal · ${sugPct}% sugar · ${sodPct}% Na`
-                          : 'Needs nutrition info'}
+                        {a ? `${Math.round(a.nutrition.sodium_mg)}mg` : '—'}
                       </td>
                       <td>
-                        <span className={`risk-tag ${riskCls}`}>
-                          {prof ? prof.riskLevel : 'PENDING'}
-                        </span>
+                        <div className="limits-verdict-cell">
+                          <span className={`risk-tag ${riskCls}`}>
+                            {prof ? prof.riskLevel : 'PENDING'}
+                          </span>
+                          {a && (
+                            <span className="limits-pct-line tabular">
+                              {calPct}% kcal · {sugPct}% sug · {sodPct}% Na
+                            </span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -446,31 +429,29 @@ export function NutritionLimitsPage({ events }: NutritionLimitsPageProps) {
               {analyzedEvents.length > 0 && (
                 <tfoot>
                   <tr className="limits-total-row">
-                    <td colSpan={2}>
-                      <strong>
-                        Cumulative Cart Total ({analyzedEvents.length} analyzed{' '}
-                        {analyzedEvents.length === 1 ? 'item' : 'items'})
-                      </strong>
+                    <td>
+                      <strong>Total ({analyzedEvents.length})</strong>
                     </td>
                     <td className="num">
-                      {Math.round(cartTotals.calories)} kcal ({pctOf(cartTotals.calories, personalLimits.caloriesDay)}%)
+                      {Math.round(cartTotals.calories)}
                     </td>
                     <td className="num">
-                      {cartTotals.sugars.toFixed(1)} g ({pctOf(cartTotals.sugars, personalLimits.sugarDayMaxG)}%)
+                      {cartTotals.sugars.toFixed(1)}g
                     </td>
                     <td className="num">
-                      {cartTotals.fat.toFixed(1)} g ({pctOf(cartTotals.fat, personalLimits.fatDayMaxG)}%)
+                      {cartTotals.fat.toFixed(1)}g
                     </td>
-                    <td className="num">{cartTotals.protein.toFixed(1)} g</td>
+                    <td className="num">{cartTotals.protein.toFixed(1)}g</td>
                     <td className="num">
-                      {Math.round(cartTotals.sodium_mg)} mg ({pctOf(cartTotals.sodium_mg, personalLimits.sodiumDayMaxMg)}%)
+                      {Math.round(cartTotals.sodium_mg)}mg
                     </td>
-                    <td className="table-note-cell" colSpan={2}>
-                      <span className="limits-total-note">
-                        <Activity size={13} aria-hidden="true" />
+                    <td>
+                      <span className="limits-total-note tabular">
+                        <Activity size={12} aria-hidden="true" />
                         <span>
-                          Against {personalLimits.caloriesDay} kcal / {personalLimits.sugarDayMaxG}g
-                          sugar / {personalLimits.sodiumDayMaxMg}mg Na daily cap
+                          {pctOf(cartTotals.calories, personalLimits.caloriesDay)}% kcal ·{' '}
+                          {pctOf(cartTotals.sugars, personalLimits.sugarDayMaxG)}% sug ·{' '}
+                          {pctOf(cartTotals.sodium_mg, personalLimits.sodiumDayMaxMg)}% Na
                         </span>
                       </span>
                     </td>

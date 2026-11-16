@@ -429,44 +429,138 @@ def parse_nutrition_text(text: str) -> dict[str, float] | None:
     """Extract calories, sugars, fat, protein, and sodium (mg) from nutrition label text."""
     if not text or not text.strip():
         return None
-    normalized = " ".join(text.replace("\n", " ").replace("\t", " ").split())
 
-    cal_match = re.search(
-        r"(?:calories|energy(?:\s*\(\s*kcal\s*\))?)\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*(?:kcal|cal)?",
-        normalized,
-        re.IGNORECASE,
+    cleaned_raw = re.sub(
+        r"based on a?\s*[\d,]+\s*(?:kcal|calories?)\s*diet",
+        " ",
+        text.replace("\r\n", "\n").replace("\r", "\n"),
+        flags=re.IGNORECASE,
+    )
+    cleaned_raw = re.sub(r"[\d,]+\s*(?:kcal|calories?)\s*diet", " ", cleaned_raw, flags=re.IGNORECASE)
+    normalized = " ".join(cleaned_raw.replace("|", " ").replace("\n", " ").replace("\t", " ").split())
+    has_label_header = bool(
+        re.search(
+            r"\b(?:nutrition(?:al)?\s*(?:facts|information|values)|per\s*100\s*g|per\s*serving|energy\s*\(?\s*k?cal)\b",
+            cleaned_raw,
+            re.IGNORECASE,
+        )
+    )
+
+    cal_match = (
+        re.search(
+            r"(?:calories|energy)\s*\(\s*(?:k?cal|keal)\s*(?:/\s*kj)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)",
+            normalized,
+            re.IGNORECASE,
+        )
+        or re.search(
+            r"(?:calories|energy)\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*(?:kcal|cal|keal)\b",
+            normalized,
+            re.IGNORECASE,
+        )
+        or (
+            re.search(
+                r"(?:calories|energy)\s*[:|\-]?\s*(\d+(?:\.\d+)?)\b(?!\s*(?:%|kj\b|g\b|mg\b))",
+                normalized,
+                re.IGNORECASE,
+            )
+            if has_label_header
+            else None
+        )
     )
     if not cal_match:
         return None
     calories = float(cal_match.group(1))
 
-    def extract_grams(pattern: str) -> float | None:
-        m = re.search(pattern, normalized, re.IGNORECASE)
-        return float(m.group(1)) if m else None
+    def extract_grams(name_pattern: str, allow_bare: bool = True) -> float | None:
+        m_before = re.search(
+            rf"(?:{name_pattern})\s*\(\s*g(?:ms?)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)",
+            normalized,
+            re.IGNORECASE,
+        )
+        if m_before:
+            return float(m_before.group(1))
+        m_after = re.search(
+            rf"(?:{name_pattern})\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g(?:ms?)?\b",
+            normalized,
+            re.IGNORECASE,
+        )
+        if m_after:
+            return float(m_after.group(1))
+        if allow_bare and has_label_header:
+            m_bare = re.search(
+                rf"(?:{name_pattern})\s*[:|\-]?\s*(\d+(?:\.\d+)?)\b(?!\s*(?:%|mg\b|kcal\b))",
+                normalized,
+                re.IGNORECASE,
+            )
+            if m_bare:
+                val = float(m_bare.group(1))
+                if val <= 105.0:
+                    return val
+        return None
 
-    sugars = extract_grams(
-        r"(?:total\s+sugars?|of\s+which\s+sugars?|added\s+sugars?|sugars?)\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b"
+    no_added = re.sub(r"\badded\s+sugars?\b", " __added_sugar__ ", normalized, flags=re.IGNORECASE)
+    sugars = extract_grams(r"\btotal\s+sugars?")
+    if sugars is None:
+        sugars = extract_grams(r"\bof\s+which\s+sugars?")
+    if sugars is None:
+        m_pb = re.search(r"\bsugars?\s*\(\s*g(?:ms?)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)", no_added, re.I)
+        m_pa = re.search(r"\bsugars?\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g(?:ms?)?\b", no_added, re.I)
+        if m_pb:
+            sugars = float(m_pb.group(1))
+        elif m_pa:
+            sugars = float(m_pa.group(1))
+        elif has_label_header:
+            m_p_bare = re.search(r"\bsugars?\s*[:|\-]?\s*(\d+(?:\.\d+)?)\b(?!\s*%)", no_added, re.I)
+            if m_p_bare and float(m_p_bare.group(1)) <= 105.0:
+                sugars = float(m_p_bare.group(1))
+    if sugars is None:
+        sugars = extract_grams(r"\badded\s+sugars?")
+
+    no_sub_fats = re.sub(
+        r"\b(?:saturated|sat\.?|trans|mono(?:unsaturated)?|poly(?:unsaturated)?|omega[\s\-\d]*fatty)\s+fat(?:ty\s+acids?)?\b",
+        " __sub_fat__ ",
+        normalized,
+        flags=re.IGNORECASE,
     )
-    fat = extract_grams(r"(?:total\s+)?fat\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b")
-    protein = extract_grams(r"protein\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b")
-    carbs = extract_grams(r"(?:total\s+)?carbohydrate[s]?\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b")
+    fat = extract_grams(r"\btotal\s+fat")
+    if fat is None:
+        m_fb = re.search(r"\bfat\s*\(\s*g(?:ms?)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)", no_sub_fats, re.I)
+        m_fa = re.search(r"\bfat\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g(?:ms?)?\b", no_sub_fats, re.I)
+        if m_fb:
+            fat = float(m_fb.group(1))
+        elif m_fa:
+            fat = float(m_fa.group(1))
+        elif has_label_header:
+            m_f_bare = re.search(r"\bfat\s*[:|\-]?\s*(\d+(?:\.\d+)?)\b(?!\s*%)", no_sub_fats, re.I)
+            if m_f_bare and float(m_f_bare.group(1)) <= 105.0:
+                fat = float(m_f_bare.group(1))
+
+    protein = extract_grams(r"\bproteins?")
+    carbs = extract_grams(r"(?:\btotal\s+)?\bcarbohydrates?")
 
     sodium_mg: float | None = None
-    sod_mg_match = re.search(
-        r"sodium\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*mg\b", normalized, re.IGNORECASE
-    )
-    sod_g_match = re.search(
-        r"sodium\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b", normalized, re.IGNORECASE
-    )
-    salt_g_match = re.search(
-        r"salt\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b", normalized, re.IGNORECASE
-    )
-    if sod_mg_match:
-        sodium_mg = float(sod_mg_match.group(1))
-    elif sod_g_match:
-        sodium_mg = float(sod_g_match.group(1)) * 1000.0
-    elif salt_g_match:
-        sodium_mg = float(salt_g_match.group(1)) * 393.4
+    sod_mg_before = re.search(r"\bsodium\s*\(\s*mg\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)", normalized, re.I)
+    sod_mg_after = re.search(r"\bsodium\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*mg\b", normalized, re.I)
+    sod_g_before = re.search(r"\bsodium\s*\(\s*g(?:ms?)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)", normalized, re.I)
+    sod_g_after = re.search(r"\bsodium\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g(?:ms?)?\b", normalized, re.I)
+    salt_g_before = re.search(r"\bsalt\s*\(\s*g(?:ms?)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)", normalized, re.I)
+    salt_g_after = re.search(r"\bsalt\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g(?:ms?)?\b", normalized, re.I)
+    sod_bare = re.search(r"\bsodium\s*[:|\-]?\s*(\d+(?:\.\d+)?)\b(?!\s*(?:%|g\b))", normalized, re.I) if has_label_header else None
+
+    if sod_mg_before:
+        sodium_mg = float(sod_mg_before.group(1))
+    elif sod_mg_after:
+        sodium_mg = float(sod_mg_after.group(1))
+    elif sod_g_before:
+        sodium_mg = float(sod_g_before.group(1)) * 1000.0
+    elif sod_g_after:
+        sodium_mg = float(sod_g_after.group(1)) * 1000.0
+    elif salt_g_before:
+        sodium_mg = float(salt_g_before.group(1)) * 393.4
+    elif salt_g_after:
+        sodium_mg = float(salt_g_after.group(1)) * 393.4
+    elif sod_bare:
+        sodium_mg = float(sod_bare.group(1))
 
     found_macros = sum(x is not None for x in (sugars, fat, protein, sodium_mg, carbs))
     if found_macros < 1:

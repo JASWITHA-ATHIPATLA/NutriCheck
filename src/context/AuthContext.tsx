@@ -39,17 +39,22 @@ interface LoginOverrides {
   otherConditions?: string[];
 }
 
+interface AuthActionResult {
+  ok: boolean;
+  error?: string;
+}
+
 interface AuthContextValue {
   currentUser: UserHealthProfile | null;
   products: CatalogProduct[];
-  register: (input: RegisterInput) => { ok: boolean; error?: string };
+  register: (input: RegisterInput) => Promise<AuthActionResult>;
   login: (
     email: string,
     password: string,
     overrides?: LoginOverrides
-  ) => { ok: boolean; error?: string };
+  ) => Promise<AuthActionResult>;
   logout: () => void;
-  updateProfile: (input: UpdateProfileInput) => void;
+  updateProfile: (input: UpdateProfileInput) => Promise<void>;
   addCustomProduct: (product: Omit<CatalogProduct, 'id' | 'isCustom'>) => CatalogProduct;
   evaluateProduct: (product: CatalogProduct) => PersonalizedCheckResult;
 }
@@ -98,6 +103,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       : []
   );
 
+  function upsertCachedUser(user: UserHealthProfile) {
+    const clean = normalizeUser(user);
+    setUsers((prev) => {
+      const idx = prev.findIndex(
+        (u) => u.id === clean.id || u.email.toLowerCase() === clean.email.toLowerCase()
+      );
+      if (idx === -1) return [...prev, clean];
+      const next = [...prev];
+      next[idx] = { ...next[idx], ...clean };
+      return next;
+    });
+  }
+
+  useEffect(() => {
+    if (!activeUserId) return;
+    const userId = activeUserId;
+    let cancelled = false;
+    async function refreshSession() {
+      try {
+        const res = await fetch(`/api/auth/me/${encodeURIComponent(userId)}`);
+        if (!res.ok) return;
+        const body = (await res.json()) as { ok?: boolean; user?: UserHealthProfile };
+        if (!cancelled && body.ok && body.user) {
+          upsertCachedUser(body.user);
+        }
+      } catch {
+        // Offline / static preview mode relies on local cache
+      }
+    }
+    void refreshSession();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeUserId]);
+
   useEffect(() => {
     try {
       window.localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
@@ -129,7 +169,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const currentUser = users.find((u) => u.id === activeUserId) || null;
   const products = [...customProducts, ...SEEDED_CATALOG_PRODUCTS];
 
-  function register(input: RegisterInput): { ok: boolean; error?: string } {
+  async function register(input: RegisterInput): Promise<AuthActionResult> {
     const cleanEmail = input.email.trim().toLowerCase();
     const cleanName = input.fullName.trim();
 
@@ -142,6 +182,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     if (!Number.isFinite(input.age) || input.age < 1 || input.age > 120) {
       return { ok: false, error: 'Please enter a valid age (1–120).' };
+    }
+
+    try {
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: cleanName,
+          email: cleanEmail,
+          password: input.password,
+          age: Math.round(input.age),
+          conditions: input.conditions,
+          otherConditions: input.otherConditions || [],
+          allergies: input.allergies,
+          dietaryNotes: input.dietaryNotes.trim(),
+        }),
+      });
+
+      const body = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        user?: UserHealthProfile;
+        error?: string;
+      } | null;
+
+      if (res.ok && body?.ok && body.user) {
+        upsertCachedUser(body.user);
+        setActiveUserId(body.user.id);
+        return { ok: true };
+      }
+
+      if (res.status >= 400 && res.status < 500 && body?.error) {
+        return { ok: false, error: body.error };
+      }
+    } catch {
+      // Fall back to browser storage when running without API server
     }
 
     if (users.some((u) => u.email.toLowerCase() === cleanEmail)) {
@@ -169,12 +244,73 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { ok: true };
   }
 
-  function login(
+  async function login(
     email: string,
     password: string,
     overrides?: LoginOverrides
-  ): { ok: boolean; error?: string } {
+  ): Promise<AuthActionResult> {
     const cleanEmail = email.trim().toLowerCase();
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: cleanEmail,
+          password,
+          conditions: overrides?.conditions,
+          otherConditions: overrides?.otherConditions,
+        }),
+      });
+
+      const body = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        user?: UserHealthProfile;
+        storage?: string;
+        error?: string;
+      } | null;
+
+      if (res.ok && body?.ok && body.user) {
+        upsertCachedUser(body.user);
+        setActiveUserId(body.user.id);
+        return { ok: true };
+      }
+
+      // If MongoDB explicitly rejects credentials, respect it immediately;
+      // If memory-fallback had no record yet, check legacy localStorage cache as well.
+      if (
+        res.status >= 400 &&
+        res.status < 500 &&
+        body?.error &&
+        body.storage === 'mongodb'
+      ) {
+        return { ok: false, error: body.error };
+      }
+
+      const cachedFound = users.find((u) => u.email.toLowerCase() === cleanEmail);
+      if (cachedFound && cachedFound.password === password) {
+        const mergedConditions = Array.from(
+          new Set([...(cachedFound.conditions || []), ...(overrides?.conditions || [])])
+        );
+        const mergedOther = Array.from(
+          new Set([...(cachedFound.otherConditions || []), ...(overrides?.otherConditions || [])])
+        );
+        upsertCachedUser({
+          ...cachedFound,
+          conditions: mergedConditions,
+          otherConditions: mergedOther,
+        });
+        setActiveUserId(cachedFound.id);
+        return { ok: true };
+      }
+
+      if (body?.error) {
+        return { ok: false, error: body.error };
+      }
+    } catch {
+      // Offline fallback below
+    }
+
     const found = users.find((u) => u.email.toLowerCase() === cleanEmail);
     if (!found) {
       return { ok: false, error: 'No account found with that email address.' };
@@ -215,23 +351,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setActiveUserId(null);
   }
 
-  function updateProfile(input: UpdateProfileInput) {
+  async function updateProfile(input: UpdateProfileInput): Promise<void> {
     if (!activeUserId) return;
+
+    const cleanUpdates = {
+      fullName: input.fullName.trim(),
+      age: Number.isFinite(input.age) ? Math.round(input.age) : undefined,
+      conditions: input.conditions,
+      otherConditions: input.otherConditions ?? [],
+      allergies: input.allergies,
+      dietaryNotes: input.dietaryNotes.trim(),
+    };
+
     setUsers((prev) =>
       prev.map((u) =>
         u.id === activeUserId
           ? {
               ...u,
-              fullName: input.fullName.trim() || u.fullName,
-              age: Number.isFinite(input.age) ? Math.round(input.age) : u.age,
-              conditions: input.conditions,
+              fullName: cleanUpdates.fullName || u.fullName,
+              age: cleanUpdates.age ?? u.age,
+              conditions: cleanUpdates.conditions,
               otherConditions: input.otherConditions ?? u.otherConditions ?? [],
-              allergies: input.allergies,
-              dietaryNotes: input.dietaryNotes.trim(),
+              allergies: cleanUpdates.allergies,
+              dietaryNotes: cleanUpdates.dietaryNotes,
             }
           : u
       )
     );
+
+    try {
+      const res = await fetch(`/api/users/${encodeURIComponent(activeUserId)}/profile`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cleanUpdates),
+      });
+      if (res.ok) {
+        const body = (await res.json()) as { ok?: boolean; user?: UserHealthProfile };
+        if (body.ok && body.user) {
+          upsertCachedUser(body.user);
+        }
+      }
+    } catch {
+      // Keep local update if backend unreachable
+    }
   }
 
   function addCustomProduct(

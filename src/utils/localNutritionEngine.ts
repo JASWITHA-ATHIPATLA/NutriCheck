@@ -513,33 +513,150 @@ export function parseNutritionTextClient(text: string): {
   sodium_mg: number;
 } | null {
   if (!text || !text.trim()) return null;
-  const normalized = text.replace(/\s+/g, ' ').trim();
-  const calMatch = normalized.match(
-    /(?:calories|energy(?:\s*\(\s*kcal\s*\))?)\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*(?:kcal|cal)?/i
+
+  // Strip "2,000 calorie(s) diet" footnotes so footnote energy doesn't spoof label energy
+  const cleanedRaw = text
+    .replace(/\r\n?/g, '\n')
+    .replace(/based on a?\s*[\d,]+\s*(?:kcal|calories?)\s*diet/gi, ' ')
+    .replace(/[\d,]+\s*(?:kcal|calories?)\s*diet/gi, ' ');
+
+  const normalized = cleanedRaw.replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
+  const hasLabelHeader = /\b(?:nutrition(?:al)?\s*(?:facts|information|values)|per\s*100\s*g|per\s*serving|energy\s*\(?\s*k?cal)\b/i.test(
+    cleanedRaw
   );
+
+  // Calories / Energy: supports "Energy (kcal) 654", "Calories: 379 kcal", "Energy 427"
+  const calMatch =
+    normalized.match(
+      /(?:calories|energy)\s*\(\s*(?:k?cal|keal)\s*(?:\/\s*kj)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)/i
+    ) ||
+    normalized.match(
+      /(?:calories|energy)\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*(?:kcal|cal|keal)\b/i
+    ) ||
+    (hasLabelHeader
+      ? normalized.match(/(?:calories|energy)\s*[:|\-]?\s*(\d+(?:\.\d+)?)\b(?!\s*(?:%|kj\b|g\b|mg\b))/i)
+      : null);
+
   if (!calMatch) return null;
   const calories = parseFloat(calMatch[1]);
 
-  const grab = (re: RegExp): number | null => {
-    const m = normalized.match(re);
-    return m ? parseFloat(m[1]) : null;
+  const grabMacroGrams = (
+    namePattern: string,
+    options?: { allowBare?: boolean }
+  ): number | null => {
+    // 1. Unit before number: e.g. "Total Sugars (g) 2.6", "Protein (gm): 15.2"
+    const unitBefore = new RegExp(
+      `(?:${namePattern})\\s*\\(\\s*g(?:ms?)?\\s*\\)\\s*[:|\\-]?\\s*(\\d+(?:\\.\\d+)?)(?!\\s*%)`,
+      'i'
+    );
+    const mBefore = normalized.match(unitBefore);
+    if (mBefore) return parseFloat(mBefore[1]);
+
+    // 2. Unit after number: e.g. "Total Fat: 65.2 g", "Sugars 2.6g"
+    const unitAfter = new RegExp(
+      `(?:${namePattern})\\s*[:|\\-]?\\s*(\\d+(?:\\.\\d+)?)\\s*g(?:ms?)?\\b`,
+      'i'
+    );
+    const mAfter = normalized.match(unitAfter);
+    if (mAfter) return parseFloat(mAfter[1]);
+
+    // 3. Bare tabular number when explicit nutrition table header exists
+    if (options?.allowBare && hasLabelHeader) {
+      const bare = new RegExp(
+        `(?:${namePattern})\\s*[:|\\-]?\\s*(\\d+(?:\\.\\d+)?)\\b(?!\\s*(?:%|mg\\b|kcal\\b))`,
+        'i'
+      );
+      const mBare = normalized.match(bare);
+      if (mBare) {
+        const val = parseFloat(mBare[1]);
+        if (val <= 105) return val;
+      }
+    }
+    return null;
   };
 
-  const sugars = grab(/(?:total\s+sugars?|of\s+which\s+sugars?|added\s+sugars?|sugars?)\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b/i);
-  const fat = grab(/(?:total\s+)?fat\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b/i);
-  const protein = grab(/protein\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b/i);
-  const carbs = grab(/(?:total\s+)?carbohydrate[s]?\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b/i);
+  // Sugars: prioritize Total Sugars -> Of which sugars -> plain Sugars (excluding Added Sugar) -> Added Sugar
+  const normalizedNoAdded = normalized.replace(/\badded\s+sugars?\b/gi, ' __added_sugar__ ');
+  let sugars = grabMacroGrams('\\btotal\\s+sugars?', { allowBare: true });
+  if (sugars === null) {
+    sugars = grabMacroGrams('\\bof\\s+which\\s+sugars?', { allowBare: true });
+  }
+  if (sugars === null) {
+    const mPlainSugBefore = normalizedNoAdded.match(
+      /\bsugars?\s*\(\s*g(?:ms?)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)/i
+    );
+    const mPlainSugAfter = normalizedNoAdded.match(
+      /\bsugars?\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g(?:ms?)?\b/i
+    );
+    if (mPlainSugBefore) sugars = parseFloat(mPlainSugBefore[1]);
+    else if (mPlainSugAfter) sugars = parseFloat(mPlainSugAfter[1]);
+    else if (hasLabelHeader) {
+      const mBare = normalizedNoAdded.match(/\bsugars?\s*[:|\-]?\s*(\d+(?:\.\d+)?)\b(?!\s*%)/i);
+      if (mBare && parseFloat(mBare[1]) <= 105) sugars = parseFloat(mBare[1]);
+    }
+  }
+  if (sugars === null) {
+    sugars = grabMacroGrams('\\badded\\s+sugars?', { allowBare: true });
+  }
 
+  // Fat: prioritize Total Fat -> plain Fat (excluding Saturated / Trans / Mono / Poly fat)
+  const normalizedNoSubFats = normalized.replace(
+    /\b(?:saturated|sat\.?|trans|mono(?:unsaturated)?|poly(?:unsaturated)?|omega[\s\-\d]*fatty)\s+fat(?:ty\s+acids?)?\b/gi,
+    ' __sub_fat__ '
+  );
+  let fat = grabMacroGrams('\\btotal\\s+fat', { allowBare: true });
+  if (fat === null) {
+    const mFatBefore = normalizedNoSubFats.match(
+      /\bfat\s*\(\s*g(?:ms?)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)/i
+    );
+    const mFatAfter = normalizedNoSubFats.match(
+      /\bfat\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g(?:ms?)?\b/i
+    );
+    if (mFatBefore) fat = parseFloat(mFatBefore[1]);
+    else if (mFatAfter) fat = parseFloat(mFatAfter[1]);
+    else if (hasLabelHeader) {
+      const mBare = normalizedNoSubFats.match(/\bfat\s*[:|\-]?\s*(\d+(?:\.\d+)?)\b(?!\s*%)/i);
+      if (mBare && parseFloat(mBare[1]) <= 105) fat = parseFloat(mBare[1]);
+    }
+  }
+
+  const protein = grabMacroGrams('\\bproteins?', { allowBare: true });
+  const carbs = grabMacroGrams('(?:\\btotal\\s+)?\\bcarbohydrates?', { allowBare: true });
+
+  // Sodium: mg before/after -> g before/after (*1000) -> Salt g (*393.4) -> bare mg in header table
   let sodium_mg: number | null = null;
-  const sodMg = normalized.match(/sodium\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*mg\b/i);
-  const sodG = normalized.match(/sodium\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b/i);
-  const saltG = normalized.match(/salt\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g\b/i);
-  if (sodMg) sodium_mg = parseFloat(sodMg[1]);
-  else if (sodG) sodium_mg = parseFloat(sodG[1]) * 1000;
-  else if (saltG) sodium_mg = parseFloat(saltG[1]) * 393.4;
+  const sodMgBefore = normalized.match(/\bsodium\s*\(\s*mg\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)/i);
+  const sodMgAfter = normalized.match(/\bsodium\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*mg\b/i);
+  const sodGBefore = normalized.match(/\bsodium\s*\(\s*g(?:ms?)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)/i);
+  const sodGAfter = normalized.match(/\bsodium\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g(?:ms?)?\b/i);
+  const saltGBefore = normalized.match(/\bsalt\s*\(\s*g(?:ms?)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)/i);
+  const saltGAfter = normalized.match(/\bsalt\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g(?:ms?)?\b/i);
+  const sodBare = hasLabelHeader
+    ? normalized.match(/\bsodium\s*[:|\-]?\s*(\d+(?:\.\d+)?)\b(?!\s*(?:%|g\b))/i)
+    : null;
+
+  if (sodMgBefore) sodium_mg = parseFloat(sodMgBefore[1]);
+  else if (sodMgAfter) sodium_mg = parseFloat(sodMgAfter[1]);
+  else if (sodGBefore) sodium_mg = parseFloat(sodGBefore[1]) * 1000;
+  else if (sodGAfter) sodium_mg = parseFloat(sodGAfter[1]) * 1000;
+  else if (saltGBefore) sodium_mg = parseFloat(saltGBefore[1]) * 393.4;
+  else if (saltGAfter) sodium_mg = parseFloat(saltGAfter[1]) * 393.4;
+  else if (sodBare) sodium_mg = parseFloat(sodBare[1]);
 
   const foundCount = [sugars, fat, protein, sodium_mg, carbs].filter((v) => v !== null).length;
   if (foundCount < 1) return null;
+
+  // Guard against dropped decimal dot on sugars when carbohydrates are parsed (Total Sugars <= Total Carbohydrate)
+  if (
+    sugars !== null &&
+    carbs !== null &&
+    sugars > carbs &&
+    Number.isInteger(sugars) &&
+    sugars >= 10 &&
+    sugars <= 99
+  ) {
+    sugars = round1(sugars / 10);
+  }
 
   return {
     calories,
@@ -1069,6 +1186,14 @@ export async function analyzeAmazonItemLocally(payload: {
   product_url?: string;
   image_url?: string;
   source_platform?: string;
+  calories?: number;
+  sugars?: number;
+  fat?: number;
+  protein?: number;
+  sodium_mg?: number;
+  event_id?: string;
+  user_id?: string;
+  skipGenericFallback?: boolean;
 }): Promise<AmazonCartEvent> {
   const title = payload.product_title.trim();
   const urlLower = (payload.product_url || '').toLowerCase();
@@ -1095,13 +1220,35 @@ export async function analyzeAmazonItemLocally(payload: {
     .filter(Boolean)
     .join('\n');
 
-  const parsed = combinedLabelText ? parseNutritionTextClient(combinedLabelText) : null;
+  const hasExplicitNumbers =
+    payload.calories != null &&
+    payload.sugars != null &&
+    payload.fat != null &&
+    payload.protein != null &&
+    payload.sodium_mg != null;
+
+  const parsed = hasExplicitNumbers
+    ? {
+        calories: Number(payload.calories),
+        sugars: Number(payload.sugars),
+        fat: Number(payload.fat),
+        protein: Number(payload.protein),
+        sodium_mg: Number(payload.sodium_mg),
+      }
+    : combinedLabelText
+    ? parseNutritionTextClient(combinedLabelText)
+    : null;
 
   let nutritionInput = parsed;
-  let nutritionSource = parsed ? `${platform} Page Nutrition Facts` : '';
+  let nutritionSource = hasExplicitNumbers
+    ? 'Back of Packet (Verified)'
+    : parsed
+    ? `${platform} Page Nutrition Facts`
+    : '';
   let matchedFood: string | null = null;
 
-  const stapleOrCatalog = !nutritionInput ? matchStapleOrCatalogClient(title) : null;
+  const stapleOrCatalog =
+    !payload.skipGenericFallback && !nutritionInput ? matchStapleOrCatalogClient(title) : null;
   const titleWords = title.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').trim().split(/\s+/).filter(Boolean);
   const isWholeProduceStaple =
     stapleOrCatalog?.source === 'Grocery Staple Nutrition Profile' &&
@@ -1111,7 +1258,7 @@ export async function analyzeAmazonItemLocally(payload: {
     isWholeProduceStaple ||
     (stapleOrCatalog?.source === 'Grocery Staple Nutrition Profile' && titleWords.length <= 2);
 
-  if (!nutritionInput && !isPureStaple) {
+  if (!payload.skipGenericFallback && !nutritionInput && !isPureStaple) {
     const offItems = await searchOpenFoodFactsClient(title, 4);
     const online = offItems.find((i) => {
       if (!i.source_group.includes('Open Food Facts')) return false;
@@ -1129,7 +1276,7 @@ export async function analyzeAmazonItemLocally(payload: {
         protein: online.protein,
         sodium_mg: online.sodium_mg,
       };
-      nutritionSource = online.source_group;
+      nutritionSource = `${online.source_group} (Estimated)`;
       matchedFood = online.food;
       if (!capturedIngredients && online.ingredients_text && !stapleOrCatalog) {
         capturedIngredients = online.ingredients_text;
@@ -1140,7 +1287,7 @@ export async function analyzeAmazonItemLocally(payload: {
     }
   }
 
-  if (!nutritionInput && stapleOrCatalog) {
+  if (!payload.skipGenericFallback && !nutritionInput && stapleOrCatalog) {
     nutritionInput = {
       calories: stapleOrCatalog.calories,
       sugars: stapleOrCatalog.sugars,
@@ -1148,11 +1295,11 @@ export async function analyzeAmazonItemLocally(payload: {
       protein: stapleOrCatalog.protein,
       sodium_mg: stapleOrCatalog.sodium_mg,
     };
-    nutritionSource = stapleOrCatalog.source;
+    nutritionSource = `${stapleOrCatalog.source} (Estimated)`;
     matchedFood = stapleOrCatalog.matched_food;
   }
 
-  if (!capturedIngredients) {
+  if (!payload.skipGenericFallback && !capturedIngredients) {
     const inferred = inferDefaultIngredientsClient(title);
     if (inferred) capturedIngredients = inferred;
   }
@@ -1167,10 +1314,11 @@ export async function analyzeAmazonItemLocally(payload: {
     ? scanPacketLocally(title, finalCombinedText)
     : null;
 
-  const eventId = Math.random().toString(36).slice(2, 10);
+  const eventId = payload.event_id || Math.random().toString(36).slice(2, 10);
   if (!nutritionInput && !ingredientScan) {
     return {
       event_id: eventId,
+      user_id: payload.user_id,
       timestamp: new Date().toISOString(),
       source: 'web_intake',
       source_platform: platform,
@@ -1180,7 +1328,7 @@ export async function analyzeAmazonItemLocally(payload: {
       image_url: capturedImage,
       nutrition_source: 'Nutrition Label Not Found on Page',
       matched_food: null,
-      message: `Captured "${title}". Nutrition facts were not detected—enter label numbers below to classify.`,
+      message: `Captured "${title}". Nutrition facts were not detected—scan or enter back-of-packet values.`,
       analysis: null,
       ingredients_text: capturedIngredients || null,
       ingredient_scan: null,
@@ -1201,14 +1349,15 @@ export async function analyzeAmazonItemLocally(payload: {
 
   if (ingredientScan && !nutritionInput) {
     nutritionSource = `${platform} Ingredients Scan`;
-  } else if (ingredientScan && nutritionInput) {
+  } else if (ingredientScan && nutritionInput && !nutritionSource.includes('Ingredients Scan')) {
     nutritionSource = `${nutritionSource} + Ingredients Scan`;
   }
 
   return {
     event_id: eventId,
+    user_id: payload.user_id,
     timestamp: new Date().toISOString(),
-    source: 'web_intake',
+    source: hasExplicitNumbers ? 'packet_back_verified' : 'web_intake',
     source_platform: platform,
     status: 'analyzed',
     product_title: title,

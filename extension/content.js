@@ -38,7 +38,7 @@
 
   const NUTRITION_REGEX =
     /calori|energy|sugar|sodium|salt|protein|fat|nutrition|kcal|carbohydrate|carbs/i;
-  const INGREDIENT_REGEX = /\bingredients?\b|\bcontains\b|\ballergen/i;
+  const INGREDIENT_REGEX = /\bingredients?(?!\s+(?:type|preference|format|category))\b|\bcontains\b|\ballergen/i;
 
   const UI_CHROME_TITLE_RE =
     /^(?:subtotal|cart subtotal|your cart|shopping cart|proceed to (?:buy|checkout)|order summary|buy now|add to cart|added to cart|add to basket|add to bag|add to list|add to wish ?list|add to wishlist|go to cart|see options|see all buying options|quick look|sponsored|sponsored ad|ad|best seller|bestseller|must try|chef'?s special|newly added|highly reordered|pure veg|veg|non-veg|non veg|amazon'?s choice|overall pick|limited time deal|deal of the day|delivery|free delivery|round the clock delivery|superfast delivery|best prices? & offers?|wide assortment|why shop from blinkit\??|results|price|filters?|sort by|featured|loading\.*|amazon(?:\.[a-z.]+)?|flipkart|swiggy|instamart|zomato|blinkit|add|add item|add items|customise|customize|customisable|customizable|repeat last)$/i;
@@ -631,6 +631,52 @@
     return { brand, barcode };
   }
 
+  function extractTableTextWithRows(tbl) {
+    if (!tbl) return '';
+    const rowLines = [];
+    tbl.querySelectorAll('tr').forEach((tr) => {
+      const cells = [];
+      tr.querySelectorAll('th, td').forEach((cell) => {
+        const cText = (cell.textContent || '').replace(/\s+/g, ' ').trim();
+        if (cText) cells.push(cText);
+      });
+      if (cells.length > 0) {
+        rowLines.push(cells.join(' '));
+      }
+    });
+    if (rowLines.length > 0) return rowLines.join('\n');
+    return (tbl.innerText || tbl.textContent || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function extractStructuredText(el) {
+    if (!el) return '';
+    if (el.tagName === 'TABLE') return extractTableTextWithRows(el);
+    if (typeof el.innerText === 'string' && el.innerText.trim() && !el.querySelector('table')) {
+      return el.innerText.replace(/\r\n?/g, '\n').replace(/[ \t]+/g, ' ').trim();
+    }
+    const clone = el.cloneNode(true);
+    clone.querySelectorAll('script, style, noscript').forEach((n) => n.remove());
+    clone.querySelectorAll('tr').forEach((tr) => {
+      const cells = [];
+      tr.querySelectorAll('th, td').forEach((cell) => {
+        const t = (cell.textContent || '').replace(/\s+/g, ' ').trim();
+        if (t) cells.push(t);
+      });
+      if (cells.length > 0) {
+        tr.textContent = `\n${cells.join(' ')}\n`;
+      }
+    });
+    clone.querySelectorAll('br').forEach((br) => br.replaceWith('\n'));
+    clone.querySelectorAll('p, li, div, h1, h2, h3, h4, h5, dt, dd').forEach((blk) => {
+      blk.append('\n');
+    });
+    return (clone.textContent || '')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n\s+/g, '\n')
+      .replace(/\n{2,}/g, '\n')
+      .trim();
+  }
+
   function extractIngredientsAndNutritionFromDoc(doc) {
     const nutritionChunks = [];
     const ingredientChunks = [];
@@ -640,14 +686,19 @@
       '[data-feature-name="importantInformation"]',
       '#productFactsDesktopExpander',
       '#productDetails_techSpec_section_1',
+      '#productDetails_techSpec_section_2',
       '#productDetails_detailBullets_sections1',
       '#detailBullets_feature_div',
       '#productOverview_feature_div',
+      '#technicalSpecifications_feature_div',
+      '#vitalInfo_feature_div',
       '#feature-bullets',
       '#productDescription',
       '#aplus',
       '#aplus_feature_div',
       '#vital-info',
+      '.prodDetTable',
+      '.a-keyvalue',
       // Flipkart & Instamart & Blinkit sections
       '.cPHDOP',
       '._1UhVsV',
@@ -664,34 +715,46 @@
       'main table',
     ];
 
+    const extractRealIngredients = (rawText) => {
+      if (!rawText) return '';
+      // Strip Amazon product detail table metadata rows such as "Ingredient Type Vegetarian"
+      const cleaned = rawText
+        .replace(/\bingredient\s+(?:type|preference|format|category)\s*[:\-]?\s*[^\n;]+/gi, '')
+        .replace(/\bspecial\s+ingredients?\s*[:\-]?\s*[^\n;]+/gi, '')
+        .trim();
+      if (!cleaned || !INGREDIENT_REGEX.test(cleaned)) return '';
+      const ingMatch = cleaned.match(
+        /\bingredients?(?:\s+list)?\s*[:\-]\s*([^]{2,1200}?)(?:\bdirections\b|\blegal disclaimer\b|\bnutrition\b|\ballergen\b|\bstorage\b|\bnet\s*weight\b|\bmanufactured\b|\bpacked\s*by\b|$)/i
+      );
+      if (ingMatch && ingMatch[1]) {
+        const val = ingMatch[1].replace(/\s+/g, ' ').trim();
+        if (val && !/^(?:vegetarian|vegan|non-vegetarian|organic|natural)$/i.test(val)) {
+          return `Ingredients: ${val}`;
+        }
+      }
+      return '';
+    };
+
     for (const sel of candidateSelectors) {
       doc.querySelectorAll(sel).forEach((el) => {
-        const text = (el.innerText || el.textContent || '')
-          .replace(/<[^>]*>/g, ' ')
-          .replace(/\s+/g, ' ')
-          .trim();
+        const text = extractStructuredText(el);
         if (!text) return;
         if (NUTRITION_REGEX.test(text)) {
-          nutritionChunks.push(text.slice(0, 2200));
+          nutritionChunks.push(text.slice(0, 2600));
         }
-        if (INGREDIENT_REGEX.test(text)) {
-          const ingMatch = text.match(
-            /ingredients?\s*[:\-]?\s*([^]{3,1200}?)(?:\bdirections\b|\blegal disclaimer\b|\bnutrition\b|\ballergen\b|\bstorage\b|$)/i
-          );
-          if (ingMatch && ingMatch[1]) {
-            ingredientChunks.push(`Ingredients: ${ingMatch[1].trim()}`);
-          } else {
-            ingredientChunks.push(text.slice(0, 1000));
-          }
+        const extractedIng = extractRealIngredients(text);
+        if (extractedIng) {
+          ingredientChunks.push(extractedIng);
         }
       });
     }
 
     doc.querySelectorAll('table').forEach((tbl) => {
-      const t = (tbl.innerText || tbl.textContent || '').replace(/\s+/g, ' ').trim();
-      if (!t || t.length > 2600) return;
-      if (NUTRITION_REGEX.test(t)) nutritionChunks.push(t.slice(0, 1500));
-      if (INGREDIENT_REGEX.test(t)) ingredientChunks.push(t.slice(0, 1200));
+      const t = extractTableTextWithRows(tbl);
+      if (!t || t.length > 3200) return;
+      if (NUTRITION_REGEX.test(t)) nutritionChunks.push(t.slice(0, 2000));
+      const extractedTableIng = extractRealIngredients(t);
+      if (extractedTableIng) ingredientChunks.push(extractedTableIng);
     });
 
     doc.querySelectorAll('#aplus img[alt], #important-information img[alt]').forEach((img) => {
@@ -702,7 +765,7 @@
     });
 
     return {
-      nutritionText: Array.from(new Set(nutritionChunks)).join('\n').slice(0, 6000),
+      nutritionText: Array.from(new Set(nutritionChunks)).join('\n').slice(0, 6500),
       ingredientsText: Array.from(new Set(ingredientChunks)).join('\n').slice(0, 3500),
     };
   }
