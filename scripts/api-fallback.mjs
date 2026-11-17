@@ -603,6 +603,7 @@ export function createApiApp() {
         ...(result.user ? { user: result.user } : {}),
         ...(result.storage ? { storage: result.storage } : {}),
         ...(result.migratedFromId ? { migratedFromId: result.migratedFromId } : {}),
+        ...(result.reason ? { reason: result.reason } : {}),
         ...(result.error ? { error: result.error } : {}),
       });
     } catch (err) {
@@ -616,7 +617,18 @@ export function createApiApp() {
   app.get('/api/auth/me/:id', async (req, res) => {
     try {
       const found = await getUserById(req.params.id);
-      if (!found) {
+      if (found?.unavailable) {
+        res.status(503).json({
+          ok: false,
+          mongoConnected: false,
+          ...(found.reason ? { reason: found.reason } : {}),
+          error: found.reason
+            ? `MongoDB is not connected on the backend (${found.reason}).`
+            : 'MongoDB is not currently connected on the backend.',
+        });
+        return;
+      }
+      if (!found?.user) {
         res.status(404).json({ ok: false, error: 'User not found.' });
         return;
       }

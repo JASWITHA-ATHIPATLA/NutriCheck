@@ -282,7 +282,10 @@ export async function syncOrUpsertUser(input) {
   return {
     ok: false,
     status: 503,
-    error: 'MongoDB is not currently connected on the backend.',
+    reason: mongo.reason || 'mongodb_disconnected',
+    error: mongo.reason
+      ? `MongoDB is not connected on the backend (${mongo.reason}).`
+      : 'MongoDB is not currently connected on the backend.',
   };
 }
 
@@ -380,7 +383,16 @@ export async function getUserById(userId) {
   }
 
   const mem = memoryUsersById.get(cleanId);
-  return mem ? { user: sanitizeUserDoc(mem), storage: 'memory-fallback' } : null;
+  if (mem) {
+    return { user: sanitizeUserDoc(mem), storage: 'memory-fallback' };
+  }
+
+  return {
+    user: null,
+    unavailable: true,
+    storage: 'unavailable',
+    reason: mongo.reason || 'MongoDB is not currently connected on the backend.',
+  };
 }
 
 export async function updateUserProfile(userId, input) {

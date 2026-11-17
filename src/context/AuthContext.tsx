@@ -370,12 +370,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const { data: syncBody } = await readJsonResponse<{
           ok?: boolean;
           user?: UserHealthProfile;
+          error?: string;
         }>(syncRes);
 
         if (syncRes.ok && syncBody?.ok && syncBody.user) {
           upsertCachedUser(syncBody.user, cachedFound.id);
           setActiveUserId(syncBody.user.id);
           return { ok: true };
+        }
+
+        if (syncBody?.error) {
+          return { ok: false, error: syncBody.error };
         }
       }
 

@@ -280,14 +280,32 @@ FoodLogSchema.index({ userId: 1, consumedDate: -1 });
 export const FoodLogModel =
   mongoose.models.FoodLog || mongoose.model('FoodLog', FoodLogSchema);
 
+function stripSurroundingQuotes(val) {
+  const s = String(val || '').trim();
+  if (
+    (s.startsWith('"') && s.endsWith('"')) ||
+    (s.startsWith("'") && s.endsWith("'"))
+  ) {
+    return s.slice(1, -1).trim();
+  }
+  return s;
+}
+
+function sanitizeMongoErrorMessage(err) {
+  const raw = String(err?.message || err || 'Unknown MongoDB error');
+  return raw.replace(/(mongodb(?:\+srv)?:\/\/[^:]+:)[^@]+(@)/gi, '$1***$2');
+}
+
 function getMongoUri() {
-  const raw = String(
+  const raw = stripSurroundingQuotes(
     process.env.MONGODB_URI ||
       process.env.MONGO_URI ||
       process.env.MONGODB_URL ||
-      (String(process.env.DATABASE_URL || '').startsWith('mongodb') ? process.env.DATABASE_URL : '') ||
+      (stripSurroundingQuotes(process.env.DATABASE_URL || '').startsWith('mongodb')
+        ? process.env.DATABASE_URL
+        : '') ||
       ''
-  ).trim();
+  );
   return raw;
 }
 
@@ -304,12 +322,14 @@ function extractDbNameFromUri(uri) {
 }
 
 function getDbName(uriOverride = '') {
-  const explicit = String(process.env.MONGODB_DB_NAME || '').trim();
+  const explicit = stripSurroundingQuotes(process.env.MONGODB_DB_NAME || '');
   if (explicit) return explicit;
   const fromUri = extractDbNameFromUri(uriOverride || getMongoUri());
   if (fromUri) return fromUri;
   return 'NutriCheck';
 }
+
+let lastMongoError = '';
 
 export function getMongoStatus() {
   const uri = getMongoUri();
@@ -318,68 +338,93 @@ export function getMongoStatus() {
     connected: mongoose.connection.readyState === 1,
     readyState: mongoose.connection.readyState,
     dbName: mongoose.connection.name || getDbName(uri),
+    ...(mongoose.connection.readyState !== 1 && lastMongoError
+      ? { reason: lastMongoError }
+      : {}),
   };
 }
 
 export async function connectMongoDB() {
   const uri = getMongoUri();
   if (!uri) {
+    lastMongoError = 'MONGODB_URI is not configured in environment variables.';
     return {
       connected: false,
       configured: false,
-      reason: 'MONGODB_URI is not configured.',
+      reason: lastMongoError,
     };
   }
 
   if (mongoose.connection.readyState === 1) {
+    lastMongoError = '';
     return { connected: true, configured: true };
   }
 
   const targetDbName = getDbName(uri);
 
   if (!globalThis.__nutricheckMongoPromise) {
-    globalThis.__nutricheckMongoPromise = mongoose
-      .connect(uri, {
-        dbName: targetDbName,
-        serverSelectionTimeoutMS: 5000,
-        maxPoolSize: 10,
-      })
-      .then(() => {
-        console.log(`[NutriCheck] MongoDB connected (${targetDbName})`);
+    globalThis.__nutricheckMongoPromise = (async () => {
+      try {
+        await mongoose.connect(uri, {
+          dbName: targetDbName,
+          serverSelectionTimeoutMS: 8000,
+          connectTimeoutMS: 8000,
+          maxPoolSize: 10,
+        });
+        try {
+          await UserModel.init();
+        } catch (initErr) {
+          const diffCaseMatch = String(initErr?.message || '').match(
+            /already have:\s*\[([^\]]+)\]/i
+          );
+          if (diffCaseMatch?.[1] && diffCaseMatch[1].trim() !== targetDbName) {
+            throw initErr;
+          }
+          console.warn(`[NutriCheck] MongoDB index init notice: ${sanitizeMongoErrorMessage(initErr)}`);
+        }
+        lastMongoError = '';
+        console.log(`[NutriCheck] MongoDB connected (${mongoose.connection.name || targetDbName})`);
         return { connected: true, configured: true };
-      })
-      .catch(async (err) => {
+      } catch (err) {
         const diffCaseMatch = String(err?.message || '').match(
           /already have:\s*\[([^\]]+)\]/i
         );
-        if (diffCaseMatch?.[1] && diffCaseMatch[1] !== targetDbName) {
+        if (diffCaseMatch?.[1] && diffCaseMatch[1].trim() !== targetDbName) {
           const exactDbName = diffCaseMatch[1].trim();
           try {
             await mongoose.disconnect().catch(() => {});
             await mongoose.connect(uri, {
               dbName: exactDbName,
-              serverSelectionTimeoutMS: 5000,
+              serverSelectionTimeoutMS: 8000,
+              connectTimeoutMS: 8000,
               maxPoolSize: 10,
             });
+            await UserModel.init().catch(() => {});
+            lastMongoError = '';
             console.log(`[NutriCheck] MongoDB connected (${exactDbName})`);
             return { connected: true, configured: true };
           } catch (retryErr) {
-            globalThis.__nutricheckMongoPromise = null;
+            const msg = sanitizeMongoErrorMessage(retryErr);
+            lastMongoError = msg;
             return {
               connected: false,
               configured: true,
-              reason: retryErr.message,
+              reason: msg,
             };
           }
         }
-        globalThis.__nutricheckMongoPromise = null;
-        console.warn(`[NutriCheck] MongoDB connection unavailable: ${err.message}`);
+        const msg = sanitizeMongoErrorMessage(err);
+        lastMongoError = msg;
+        console.warn(`[NutriCheck] MongoDB connection unavailable: ${msg}`);
         return {
           connected: false,
           configured: true,
-          reason: err.message,
+          reason: msg,
         };
-      });
+      } finally {
+        globalThis.__nutricheckMongoPromise = null;
+      }
+    })();
   }
 
   return globalThis.__nutricheckMongoPromise;
