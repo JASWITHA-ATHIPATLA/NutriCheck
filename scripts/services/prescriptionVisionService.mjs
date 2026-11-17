@@ -18,9 +18,15 @@ export class PrescriptionServiceError extends Error {
 }
 
 function cleanEnvKey(val) {
-  const trimmed = String(val || '').trim();
-  if (!trimmed || trimmed === 'MY_GEMINI_API_KEY') return '';
-  return trimmed;
+  let s = String(val || '').trim();
+  if (
+    (s.startsWith('"') && s.endsWith('"')) ||
+    (s.startsWith("'") && s.endsWith("'"))
+  ) {
+    s = s.slice(1, -1).trim();
+  }
+  if (!s || s === 'MY_GEMINI_API_KEY' || s === 'YOUR_API_KEY' || s === 'API_KEY') return '';
+  return s;
 }
 
 function getVisionApiKey() {
