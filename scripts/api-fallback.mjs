@@ -510,7 +510,7 @@ async function lookupOpenFoodFacts(title) {
   return null;
 }
 
-export function startNodeApiFallback({ host = '127.0.0.1', port = 8001 } = {}) {
+export function createApiApp() {
   const catalog = loadFoodCatalog();
 
   void connectMongoDB();
@@ -1492,6 +1492,11 @@ export function startNodeApiFallback({ host = '127.0.0.1', port = 8001 } = {}) {
     }
   });
 
+  return app;
+}
+
+export function startNodeApiFallback({ host = '127.0.0.1', port = 8001 } = {}) {
+  const app = createApiApp();
   const server = app.listen(port, host, () => {
     console.log(`[NutriCheck] Node API server listening on http://${host}:${port}`);
   });

@@ -24,6 +24,10 @@ import type {
   NutritionSummaryReport,
   TrackerRange,
 } from '../types';
+import {
+  buildNonJsonErrorMessage,
+  readJsonResponse,
+} from '../utils/safeFetchJson';
 
 const MEAL_SLOTS: { key: MealSlot; label: string; windowHint: string }[] = [
   { key: 'breakfast', label: 'Breakfast', windowHint: 'Morning' },
@@ -214,8 +218,16 @@ export function DailyTrackerPage() {
         `/api/food-logs?userId=${encodeURIComponent(userId)}&range=${encodeURIComponent(range)}&date=${encodeURIComponent(selectedDate)}`,
         { headers: { 'X-User-Id': userId } }
       );
-      if (!res.ok) throw new Error('Unable to load daily nutrition logs.');
-      const data = await res.json();
+      const { data } = await readJsonResponse<{
+        logs?: FoodConsumptionLog[];
+        report?: NutritionSummaryReport | null;
+        error?: string;
+      }>(res);
+      if (!res.ok || !data) {
+        throw new Error(
+          data?.error || buildNonJsonErrorMessage(res, 'Unable to load daily nutrition logs.')
+        );
+      }
       setLogs(Array.isArray(data.logs) ? data.logs : []);
       setReport(data.report || null);
     } catch (err) {
@@ -284,9 +296,11 @@ export function DailyTrackerPage() {
           vitamin_c_mg: manualVitC.trim() === '' ? undefined : parseFloat(manualVitC),
         }),
       });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        throw new Error(data.error || 'Could not log food item.');
+      const { data } = await readJsonResponse<{ ok?: boolean; error?: string }>(res);
+      if (!res.ok || !data?.ok) {
+        throw new Error(
+          data?.error || buildNonJsonErrorMessage(res, 'Could not log food item.')
+        );
       }
 
       setManualName('');

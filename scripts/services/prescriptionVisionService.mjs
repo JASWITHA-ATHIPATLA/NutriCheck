@@ -1,6 +1,9 @@
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 import sharp from 'sharp';
-import { resolveCanonicalConditionMeta } from '../rules/prescriptionAlertEngine.mjs';
+import {
+  extractPrescriptionFields,
+  resolveCanonicalConditionMeta,
+} from '../rules/prescriptionAlertEngine.mjs';
 
 const VISION_ENDPOINT = 'https://vision.googleapis.com/v1/images:annotate';
 const MAX_PAGES = 6;
@@ -32,6 +35,7 @@ function createGeminiClient(apiKey) {
   return new GoogleGenAI({
     apiKey,
     httpOptions: {
+      timeout: 12000,
       headers: {
         'User-Agent': 'aistudio-build',
       },
@@ -193,6 +197,7 @@ async function runCloudVisionDocumentOcr(preparedPages, visionApiKey) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ requests }),
+          signal: AbortSignal.timeout(20000),
         }
       );
 
@@ -465,16 +470,19 @@ Return strict JSON with patientName, prescriptionDate (YYYY-MM-DD or ""), diagno
   }
   parts.push({ text: promptText });
 
+  const modelsToTry = ['gemini-4-hydrogen', 'gemini-3.1-flash-lite'];
   let lastError = null;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+
+  for (const modelName of modelsToTry) {
     try {
       const response = await ai.models.generateContent({
-        model: 'gemini-4-hydrogen',
+        model: modelName,
         contents: { parts },
         config: {
           systemInstruction: SYSTEM_INSTRUCTION,
           responseMimeType: 'application/json',
           responseSchema: PRESCRIPTION_JSON_SCHEMA,
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         },
       });
 
@@ -498,24 +506,17 @@ Return strict JSON with patientName, prescriptionDate (YYYY-MM-DD or ""), diagno
           'GEMINI_AUTH_ERROR'
         );
       }
-      if (status === 429 && attempt === 0) {
-        await sleep(900);
-        continue;
-      }
-      if (attempt === 0 && (!status || status >= 500)) {
-        await sleep(700);
-        continue;
-      }
-      if (err instanceof PrescriptionServiceError) throw err;
-      throw new PrescriptionServiceError(
-        `Gemini Vision interpretation failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
-        status >= 400 && status < 600 ? status : 502,
-        'GEMINI_UPSTREAM_ERROR'
-      );
+      // Transient 429/503/timeout: try fallback model immediately
     }
   }
 
-  throw lastError;
+  if (lastError instanceof PrescriptionServiceError) throw lastError;
+  const status = Number(lastError?.status || lastError?.statusCode || 0);
+  throw new PrescriptionServiceError(
+    `Gemini Vision interpretation failed: ${lastError instanceof Error ? lastError.message : 'Unknown error'}`,
+    status >= 400 && status < 600 ? status : 502,
+    'GEMINI_UPSTREAM_ERROR'
+  );
 }
 
 function normalizeConfidence(val, fallback = 'medium') {
@@ -537,13 +538,6 @@ export async function analyzePrescriptionDocument({ pages = [], rawTextInput = '
   }
 
   const geminiApiKey = getGeminiApiKey();
-  if (!geminiApiKey || geminiApiKey === 'MY_GEMINI_API_KEY') {
-    throw new PrescriptionServiceError(
-      'GEMINI_API_KEY is not configured in backend environment variables. Configure it in Settings > Secrets to interpret prescriptions.',
-      503,
-      'MISSING_GEMINI_API_KEY'
-    );
-  }
 
   let preparedPages = [];
   let ocrPages = [];
@@ -581,13 +575,86 @@ export async function analyzePrescriptionDocument({ pages = [], rawTextInput = '
     }
   }
 
-  const geminiResult = await callGeminiStructuredInterpreter({
-    geminiApiKey,
-    preparedPages,
-    ocrPages,
-    combinedRawText,
-    qualityWarnings,
-  });
+  let geminiResult = null;
+  let usedOcrFallback = false;
+
+  if (geminiApiKey && geminiApiKey !== 'MY_GEMINI_API_KEY') {
+    try {
+      geminiResult = await callGeminiStructuredInterpreter({
+        geminiApiKey,
+        preparedPages,
+        ocrPages,
+        combinedRawText,
+        qualityWarnings,
+      });
+    } catch (err) {
+      if (
+        err instanceof PrescriptionServiceError &&
+        (err.code === 'GEMINI_AUTH_ERROR' || !combinedRawText.trim())
+      ) {
+        throw err;
+      }
+      // Transient 503/429/timeout from Gemini: preserve extracted OCR transcript with manual review required
+      usedOcrFallback = true;
+      qualityWarnings.push(
+        'Gemini Vision was temporarily busy; preliminary fields were parsed directly from the OCR transcript and require your manual verification.'
+      );
+    }
+  } else if (combinedRawText.trim()) {
+    usedOcrFallback = true;
+    qualityWarnings.push(
+      'GEMINI_API_KEY is not configured; preliminary fields were parsed from OCR text and require manual verification.'
+    );
+  } else {
+    throw new PrescriptionServiceError(
+      'GEMINI_API_KEY is not configured in backend environment variables. Configure it in Settings > Secrets to interpret prescriptions.',
+      503,
+      'MISSING_GEMINI_API_KEY'
+    );
+  }
+
+  if (!geminiResult || usedOcrFallback) {
+    const parsed = extractPrescriptionFields(combinedRawText);
+    geminiResult = {
+      isReadablePrescription: Boolean(combinedRawText.trim()),
+      handwritingQuality: 'partially_unclear',
+      overallConfidence: 'low',
+      doctorVerificationRecommended: true,
+      verificationPrompt:
+        'Automated AI interpretation was unavailable. Review the preserved OCR transcript and verify every condition, medicine, dosage, and date with your prescription or doctor before saving.',
+      patientName: '',
+      patientNameConfidence: 'low',
+      patientNameUncertain: true,
+      prescriptionDate: parsed.prescriptionDate || '',
+      prescriptionDateConfidence: parsed.prescriptionDate ? 'medium' : 'low',
+      prescriptionDateUncertain: !parsed.prescriptionDate,
+      conditions: (parsed.conditions || []).map((c) => ({
+        name: c.name,
+        category: c.category,
+        validDays: c.validDays,
+        confidence: 'low',
+        needsVerification: true,
+        uncertaintyReason: 'Parsed from raw OCR text — verify against prescription.',
+        sourceSnippet: c.sourceSnippet,
+      })),
+      medicines: (parsed.medicines || []).map((m) => ({
+        name: m.name,
+        dosage: m.dosage || '',
+        frequency: '',
+        duration: m.note || '',
+        confidence: 'low',
+        needsVerification: true,
+        uncertaintyReason: 'Verify medicine name, dosage, and frequency manually.',
+        note: m.note || '',
+      })),
+      dietaryRestrictions: (parsed.dietaryRestrictions || []).map((text) => ({
+        text,
+        confidence: 'low',
+        needsVerification: true,
+        uncertaintyReason: 'Verify dietary restriction against prescription.',
+      })),
+    };
+  }
 
   const validDate = /^\d{4}-\d{2}-\d{2}$/.test(String(geminiResult.prescriptionDate || '').trim())
     ? String(geminiResult.prescriptionDate).trim()

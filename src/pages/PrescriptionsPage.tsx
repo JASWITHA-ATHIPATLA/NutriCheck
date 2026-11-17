@@ -38,6 +38,10 @@ import {
   PRESCRIPTION_DISCLAIMER,
   evaluateProductAgainstActiveProfileClient,
 } from '../utils/prescriptionUtils';
+import {
+  buildNonJsonErrorMessage,
+  readJsonResponse,
+} from '../utils/safeFetchJson';
 
 interface DraftCondition {
   id: string;
@@ -182,8 +186,16 @@ export function PrescriptionsPage({
         `/api/prescriptions?userId=${encodeURIComponent(userId)}`,
         { headers: { 'X-User-Id': userId } }
       );
-      if (!res.ok) throw new Error('Unable to load prescriptions from server.');
-      const data = await res.json();
+      const { data } = await readJsonResponse<{
+        prescriptions?: PrescriptionRecord[];
+        activeProfile?: ActivePrescriptionSummary;
+        error?: string;
+      }>(res);
+      if (!res.ok || !data) {
+        throw new Error(
+          data?.error || buildNonJsonErrorMessage(res, 'Unable to load prescriptions from server.')
+        );
+      }
       setPrescriptions(Array.isArray(data.prescriptions) ? data.prescriptions : []);
       if (data.activeProfile) {
         setActiveProfile(data.activeProfile);
@@ -228,7 +240,14 @@ export function PrescriptionsPage({
           rawText: params.rawText,
         }),
       });
-      const data = (await res.json()) as Partial<PrescriptionExtractResponse> & { error?: string };
+      const { data } = await readJsonResponse<
+        Partial<PrescriptionExtractResponse> & { error?: string }
+      >(res);
+      if (!data) {
+        throw new Error(
+          buildNonJsonErrorMessage(res, 'Could not extract prescription details.')
+        );
+      }
       if (!res.ok || !data.ok) {
         throw new Error(data.error || 'Could not extract prescription details.');
       }
@@ -480,9 +499,11 @@ export function PrescriptionsPage({
           notes: draftNotes,
         }),
       });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        throw new Error(data.error || 'Failed to save prescription.');
+      const { data } = await readJsonResponse<{ ok?: boolean; error?: string }>(res);
+      if (!res.ok || !data?.ok) {
+        throw new Error(
+          data?.error || buildNonJsonErrorMessage(res, 'Failed to save prescription.')
+        );
       }
       setDraftOpen(false);
       setToastMsg('Verified prescription saved securely to MongoDB & health alerts updated.');
