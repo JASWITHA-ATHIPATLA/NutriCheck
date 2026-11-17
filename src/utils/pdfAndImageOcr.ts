@@ -20,7 +20,7 @@ export interface PreparedPrescriptionUpload {
 }
 
 const MAX_TOTAL_PAGES = 6;
-const MAX_DIMENSION = 2000;
+const MAX_DIMENSION = 1600;
 
 function detectFileType(file: File): 'pdf' | 'jpg' | 'png' {
   const lower = (file.name || '').toLowerCase();
@@ -68,9 +68,8 @@ async function normalizeImageFileToPage(
   ctx.fillRect(0, 0, targetW, targetH);
   ctx.drawImage(img, 0, 0, targetW, targetH);
 
-  const isPng = detectFileType(file) === 'png';
-  const mimeType = isPng ? 'image/png' : 'image/jpeg';
-  const dataUrl = canvas.toDataURL(mimeType, 0.92);
+  const mimeType = 'image/jpeg';
+  const dataUrl = canvas.toDataURL(mimeType, 0.86);
 
   const warnings: string[] = [];
   if (srcW < 550 || srcH < 550) {
@@ -134,12 +133,12 @@ async function renderPdfPages(
       canvas,
     }).promise;
 
-    const dataUrl = canvas.toDataURL('image/png');
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.86);
     pages.push({
       pageNumber: startPageNumber + pages.length,
       fileName: `${file.name} (Page ${p})`,
       dataUrl,
-      mimeType: 'image/png',
+      mimeType: 'image/jpeg',
       width: canvas.width,
       height: canvas.height,
     });

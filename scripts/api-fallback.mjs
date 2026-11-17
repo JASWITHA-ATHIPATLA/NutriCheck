@@ -39,6 +39,7 @@ import {
 import {
   PrescriptionServiceError,
   analyzePrescriptionDocument,
+  getConfiguredOcrCapabilities,
 } from './services/prescriptionVisionService.mjs';
 import {
   buildFullNutrientProfile,
@@ -534,6 +535,8 @@ export function createApiApp() {
     res.json({
       status: 'ok',
       engine: 'node-express',
+      environment: process.env.VERCEL ? 'vercel' : 'node',
+      ocrKeys: getConfiguredOcrCapabilities(),
       mongodb: getMongoStatus(),
     });
   });

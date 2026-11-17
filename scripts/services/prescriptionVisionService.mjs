@@ -1,5 +1,4 @@
 import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
-import sharp from 'sharp';
 import {
   extractPrescriptionFields,
   resolveCanonicalConditionMeta,
@@ -18,17 +17,47 @@ export class PrescriptionServiceError extends Error {
   }
 }
 
+function cleanEnvKey(val) {
+  const trimmed = String(val || '').trim();
+  if (!trimmed || trimmed === 'MY_GEMINI_API_KEY') return '';
+  return trimmed;
+}
+
 function getVisionApiKey() {
-  return String(
+  return cleanEnvKey(
     process.env.GOOGLE_CLOUD_VISION_API_KEY ||
       process.env.GOOGLE_VISION_API_KEY ||
       process.env.CLOUD_VISION_API_KEY ||
-      ''
-  ).trim();
+      process.env.VISION_API_KEY
+  );
 }
 
 function getGeminiApiKey() {
-  return String(process.env.GEMINI_API_KEY || '').trim();
+  return cleanEnvKey(
+    process.env.GEMINI_API_KEY ||
+      process.env.GOOGLE_GEMINI_API_KEY ||
+      process.env.GOOGLE_GENAI_API_KEY ||
+      process.env.GOOGLE_API_KEY
+  );
+}
+
+export function getConfiguredOcrCapabilities() {
+  return {
+    geminiConfigured: Boolean(getGeminiApiKey()),
+    visionConfigured: Boolean(getVisionApiKey()),
+  };
+}
+
+function buildMissingKeysMessage(missingBoth = true) {
+  const isVercel = Boolean(process.env.VERCEL);
+  if (isVercel) {
+    return missingBoth
+      ? "Neither GOOGLE_CLOUD_VISION_API_KEY nor GEMINI_API_KEY is configured in your Vercel Environment Variables. Add GEMINI_API_KEY (and optionally GOOGLE_CLOUD_VISION_API_KEY) in Vercel Dashboard → Project Settings → Environment Variables, then Redeploy. You can also use 'Paste or Type Prescription Text' or 'Enter Manually' below."
+      : "GEMINI_API_KEY is not configured in your Vercel Environment Variables. Add GEMINI_API_KEY in Vercel Dashboard → Project Settings → Environment Variables, then Redeploy.";
+  }
+  return missingBoth
+    ? "Neither GOOGLE_CLOUD_VISION_API_KEY nor GEMINI_API_KEY is configured in backend environment variables. Configure at least GEMINI_API_KEY in Settings > Secrets (or .env locally), or use 'Paste or Type Prescription Text' / 'Enter Manually' below."
+    : "GEMINI_API_KEY is not configured in backend environment variables. Configure it in Settings > Secrets (or .env locally) to interpret prescriptions.";
 }
 
 function createGeminiClient(apiKey) {
@@ -76,7 +105,30 @@ async function analyzeAndPrepareImage(page, idx) {
     );
   }
 
-  const baseImg = sharp(inputBuffer).rotate();
+  let sharpFn = null;
+  try {
+    const sharpMod = await import('sharp');
+    sharpFn = sharpMod?.default || null;
+  } catch {
+    sharpFn = null;
+  }
+
+  if (!sharpFn) {
+    return {
+      pageNumber: Number(page?.pageNumber) || idx + 1,
+      fileName: String(page?.fileName || `Page ${idx + 1}`).trim(),
+      width: Number(page?.width) || 0,
+      height: Number(page?.height) || 0,
+      sharpnessScore: 55,
+      isBlurry: false,
+      isLowResolution: false,
+      warnings: [],
+      mimeType: parsed.mimeType,
+      base64: parsed.base64,
+    };
+  }
+
+  const baseImg = sharpFn(inputBuffer).rotate();
   const metadata = await baseImg.metadata();
   const width = metadata.width || 0;
   const height = metadata.height || 0;
@@ -85,16 +137,16 @@ async function analyzeAndPrepareImage(page, idx) {
   let sharpnessScore = 50;
   let contrastStd = 40;
   try {
-    const sampleBuf = await sharp(inputBuffer)
+    const sampleBuf = await sharpFn(inputBuffer)
       .rotate()
       .resize({ width: 900, height: 900, fit: 'inside', withoutEnlargement: true })
       .grayscale()
       .toBuffer();
 
-    const baseStats = await sharp(sampleBuf).stats();
+    const baseStats = await sharpFn(sampleBuf).stats();
     contrastStd = Number(baseStats?.channels?.[0]?.stdev || 0);
 
-    const lapStats = await sharp(sampleBuf)
+    const lapStats = await sharpFn(sampleBuf)
       .convolve({
         width: 3,
         height: 3,
@@ -122,8 +174,8 @@ async function analyzeAndPrepareImage(page, idx) {
     );
   }
 
-  // Produce high-clarity normalized PNG/JPEG buffer for Vision & Gemini
-  const preparedBuffer = await sharp(inputBuffer)
+  // Produce high-clarity normalized PNG buffer for Vision & Gemini
+  const preparedBuffer = await sharpFn(inputBuffer)
     .rotate()
     .resize({
       width: MAX_IMAGE_EDGE,
@@ -562,7 +614,7 @@ export async function analyzePrescriptionDocument({ pages = [], rawTextInput = '
   }
 
   const geminiApiKey = getGeminiApiKey();
-  const hasValidGeminiKey = Boolean(geminiApiKey && geminiApiKey !== 'MY_GEMINI_API_KEY');
+  const hasValidGeminiKey = Boolean(geminiApiKey);
   const visionApiKey = getVisionApiKey();
 
   let preparedPages = [];
@@ -574,7 +626,7 @@ export async function analyzePrescriptionDocument({ pages = [], rawTextInput = '
   if (cleanedPages.length > 0) {
     if (!visionApiKey && !hasValidGeminiKey) {
       throw new PrescriptionServiceError(
-        'Neither GOOGLE_CLOUD_VISION_API_KEY nor GEMINI_API_KEY is configured in backend environment variables. Configure at least GEMINI_API_KEY in Settings > Secrets to extract prescriptions.',
+        buildMissingKeysMessage(true),
         503,
         'MISSING_VISION_AND_GEMINI_KEYS'
       );
@@ -674,7 +726,7 @@ export async function analyzePrescriptionDocument({ pages = [], rawTextInput = '
     );
   } else {
     throw new PrescriptionServiceError(
-      'GEMINI_API_KEY is not configured in backend environment variables. Configure it in Settings > Secrets to interpret prescriptions.',
+      buildMissingKeysMessage(false),
       503,
       'MISSING_GEMINI_API_KEY'
     );

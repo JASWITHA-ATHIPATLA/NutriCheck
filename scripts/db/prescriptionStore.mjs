@@ -6,7 +6,9 @@ import {
   refreshPrescriptionStatuses,
 } from '../rules/prescriptionAlertEngine.mjs';
 
-const DATA_DIR = path.resolve(process.cwd(), '.nutricheck-data');
+const DATA_DIR = process.env.VERCEL
+  ? '/tmp/.nutricheck-data'
+  : path.resolve(process.cwd(), '.nutricheck-data');
 const FALLBACK_FILE = path.join(DATA_DIR, 'prescriptions.json');
 
 function loadLocalMap() {

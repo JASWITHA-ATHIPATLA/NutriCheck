@@ -2,7 +2,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { FoodLogModel, connectMongoDB } from './mongodb.mjs';
 
-const DATA_DIR = path.resolve(process.cwd(), '.nutricheck-data');
+const DATA_DIR = process.env.VERCEL
+  ? '/tmp/.nutricheck-data'
+  : path.resolve(process.cwd(), '.nutricheck-data');
 const FALLBACK_FILE = path.join(DATA_DIR, 'food_logs.json');
 
 function loadLocalMap() {

@@ -772,9 +772,59 @@ export function PrescriptionsPage({
             )}
 
             {ocrError && (
-              <div className="error-banner" role="alert" style={{ marginTop: 12 }}>
-                <AlertTriangle size={15} />
-                <span>{ocrError}</span>
+              <div className="error-banner" role="alert" style={{ marginTop: 12, flexDirection: 'column', alignItems: 'flex-start', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                  <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 2 }} />
+                  <span>{ocrError}</span>
+                </div>
+                {(ocrError.includes('GEMINI_API_KEY') || ocrError.includes('GOOGLE_CLOUD_VISION_API_KEY')) && (
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ padding: '5px 10px', fontSize: '12px', background: '#fff' }}
+                      onClick={() => {
+                        setShowRawTextInput(true);
+                        setOcrError(null);
+                      }}
+                    >
+                      Paste Prescription Text Instead
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ padding: '5px 10px', fontSize: '12px', background: '#fff' }}
+                      onClick={() => {
+                        setDraftFileName('Manual Prescription Entry');
+                        setDraftFileType('manual');
+                        setDraftPatientName('');
+                        setDraftPatientNameConf('high');
+                        setDraftPatientNameUncertain(false);
+                        setDraftDate(new Date().toISOString().slice(0, 10));
+                        setDraftDateConf('high');
+                        setDraftDateUncertain(false);
+                        setDraftRawOcr('');
+                        setDraftOcrProvider('manual_entry');
+                        setDraftOcrConfidence(null);
+                        setDraftOcrPages([]);
+                        setDraftPreviewPages([]);
+                        setDraftHandwritingQuality('clear');
+                        setDraftOverallConfidence('high');
+                        setDraftDoctorVerifyRecommended(false);
+                        setDraftVerificationPrompt('');
+                        setDraftQualityWarnings([]);
+                        setDraftUserVerifiedAck(true);
+                        setDraftConditions([]);
+                        setDraftMedicines([]);
+                        setDraftRestrictions([]);
+                        setDraftOpen(true);
+                        setOcrError(null);
+                      }}
+                    >
+                      Enter Condition / Medicine Manually
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
