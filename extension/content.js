@@ -2,7 +2,18 @@
   function detectPlatform(hostname) {
     const h = (hostname || window.location.hostname || '').toLowerCase();
     const p = (window.location.pathname || '').toLowerCase();
-    if (h.includes('amazon.')) return 'Amazon';
+    const s = (window.location.search || '').toLowerCase();
+    if (h.includes('amazon.')) {
+      const isFresh =
+        p.includes('/fresh') ||
+        p.includes('/alm/') ||
+        p.includes('/afx/') ||
+        p.includes('/wholefoods') ||
+        s.includes('i=amazonfresh') ||
+        s.includes('almbrandid') ||
+        Boolean(document.querySelector('#freshAddToCartButton, [data-action="fresh-add-to-cart"]'));
+      return isFresh ? 'Amazon Fresh' : 'Amazon';
+    }
     if (h.includes('flipkart.')) return 'Flipkart';
     if (h.includes('swiggy.')) return p.includes('instamart') ? 'Swiggy Instamart' : 'Swiggy';
     if (h.includes('zomato.')) return 'Zomato';
@@ -982,6 +993,143 @@
     return '';
   }
 
+  function upgradeProductImageUrl(rawUrl, platform) {
+    const clean = normalizeImageCandidate(rawUrl);
+    if (!clean) return '';
+    if (platform === 'Amazon' || /media-amazon\.com|images-amazon\.com/i.test(clean)) {
+      return clean.replace(/\._[^./]+_\.(jpg|jpeg|png|webp)(\?.*)?$/i, '._SL1500_.$1$2');
+    }
+    if (platform === 'Flipkart' || /rukminim\d*\.flixcart\.com/i.test(clean)) {
+      return clean.replace(/\/image\/\d+\/\d+\//i, '/image/832/832/');
+    }
+    if (platform === 'Blinkit' || /cdn\.grofers\.com|cdn\.blinkit\.com/i.test(clean)) {
+      return clean
+        .replace(/([,/])w=\d+/gi, '$1w=1200')
+        .replace(/([?&])w=\d+/gi, '$1w=1200');
+    }
+    if (platform === 'Swiggy Instamart' || platform === 'Swiggy' || /media-assets\.swiggy\.com/i.test(clean)) {
+      return clean.replace(/([,/])w_\d+,h_\d+(?:,c_[a-z]+)?/gi, '$1w_1200,h_1200,c_fit');
+    }
+    return clean;
+  }
+
+  function isExcludedGalleryAsset(img, url) {
+    const lowerUrl = (url || '').toLowerCase();
+    const alt = (img?.getAttribute?.('alt') || '').toLowerCase();
+    if (
+      /(?:veg[-_]?icon|non[-_]?veg[-_]?icon|nonveg[-_]?icon|veg[-_]?mark|rating[-_]?star|badge[-_]?icon|nav[-_]?logo|sprite|spinner|play[-_]?button|video|360[-_]?view|header[-_]?logo|app[-_]?icon|fk-p-linchpin|promos?\/|\.svg(?:\?|$)|\.gif(?:\?|$))/i.test(
+        lowerUrl
+      ) ||
+      /^(?:veg|non-veg|non veg|rating|star|icon|logo|play|video)$/i.test(alt.trim())
+    ) {
+      return true;
+    }
+    if (img?.closest?.('header, nav, footer')) return true;
+    if (img?.closest?.('[class*="video" i], [data-action*="video"]')) return true;
+    return false;
+  }
+
+  function extractGalleryImagesFromDoc(doc, card, platform, primaryImageUrl = '') {
+    const scope = card || doc;
+    const urls = [];
+    const seen = new Set();
+
+    const pushUrl = (raw) => {
+      const upgraded = upgradeProductImageUrl(raw, platform);
+      if (!upgraded || isExcludedGalleryAsset(null, upgraded)) return;
+      if (seen.has(upgraded)) return;
+      seen.add(upgraded);
+      urls.push(upgraded);
+    };
+
+    // 1. Prioritize currently active main viewer image on product detail page
+    if (!card) {
+      const activeMainSelectors =
+        platform === 'Amazon'
+          ? ['#landingImage', '#imgTagWrapperId img', '.imgTagWrapper img', '#main-image']
+          : platform === 'Flipkart'
+          ? ['img.jLEJ7H', 'img.DByuf4', 'img._0DkuPH', 'img[src*="rukminim"][src*="/image/"]']
+          : platform === 'Blinkit'
+          ? ['[class*="Carousel"] img', 'img[src*="/cms-assets/cms/product/"]', 'img[src*="cdn.grofers.com"]']
+          : platform === 'Swiggy Instamart' || platform === 'Swiggy'
+          ? ['img[src*="media-assets.swiggy.com/swiggy/image/upload"]']
+          : [];
+
+      let bestVisibleUrl = '';
+      let bestArea = 0;
+      for (const sel of activeMainSelectors) {
+        doc.querySelectorAll(sel).forEach((img) => {
+          const cand = extractCandidateFromImgElement(img);
+          if (!cand || isExcludedGalleryAsset(img, cand)) return;
+          const rect = typeof img.getBoundingClientRect === 'function' ? img.getBoundingClientRect() : null;
+          const area = rect ? rect.width * rect.height : 10000;
+          if (area >= bestArea) {
+            bestArea = area;
+            bestVisibleUrl = cand;
+          }
+        });
+      }
+      if (bestVisibleUrl) pushUrl(bestVisibleUrl);
+    }
+
+    if (primaryImageUrl) pushUrl(primaryImageUrl);
+
+    // 2. Gather gallery thumbnail carousel images
+    const gallerySelectors =
+      platform === 'Amazon'
+        ? [
+            '#altImages li.imageThumbnail img',
+            '#altImages img',
+            '#imageBlock img',
+            '[data-feature-name="imageBlock"] img',
+          ]
+        : platform === 'Flipkart'
+        ? [
+            'ul.ZqtVYK img',
+            'ul._0DkuPH img',
+            '._8M4o6K img',
+            'img[src*="rukminim"][src*="/image/"]',
+          ]
+        : platform === 'Blinkit'
+        ? [
+            '[class*="Carousel" i] img',
+            '[class*="Thumbnail" i] img',
+            'img[src*="/cms-assets/cms/product/"]',
+            'img[src*="cdn.grofers.com/app/images/products"]',
+          ]
+        : platform === 'Swiggy Instamart' || platform === 'Swiggy'
+        ? [
+            '[class*="carousel" i] img',
+            'img[src*="media-assets.swiggy.com/swiggy/image/upload"]',
+          ]
+        : [];
+
+    for (const sel of gallerySelectors) {
+      scope.querySelectorAll(sel).forEach((img) => {
+        const cand = extractCandidateFromImgElement(img);
+        if (!cand || isExcludedGalleryAsset(img, cand)) return;
+        pushUrl(cand);
+      });
+    }
+
+    // 3. Fallback: Amazon colorImages inline hiRes JSON in fetched/rendered HTML
+    if (platform === 'Amazon' && urls.length < 3 && doc === document) {
+      const scripts = doc.querySelectorAll('script');
+      for (const s of scripts) {
+        const txt = s.textContent || '';
+        if (!txt.includes('hiRes') && !txt.includes('colorImages')) continue;
+        const matches = txt.matchAll(/"hiRes"\s*:\s*"(https:[^"]+)"/g);
+        for (const m of matches) {
+          pushUrl(m[1].replace(/\\u002F/g, '/'));
+          if (urls.length >= 6) break;
+        }
+        if (urls.length >= 6) break;
+      }
+    }
+
+    return urls.slice(0, 6);
+  }
+
   function isProductDetailPage(platform) {
     const p = window.location.pathname.toLowerCase();
     if (platform === 'Amazon') {
@@ -1014,12 +1162,14 @@
       const initialTitle = extractProductTitleFromDoc(document, card, btn, platform);
       const dpUrl = isMainDetailPage ? window.location.href : extractAmazonLinkFromCard(card, btn);
       const imageUrl = extractProductImageFromDoc(document, card, platform);
+      const galleryImages = extractGalleryImagesFromDoc(document, card, platform, imageUrl);
       return {
         platform,
         isMainDetailPage,
         initialTitle,
         dpUrl,
         imageUrl,
+        galleryImages,
         cardNotes: '',
       };
     }
@@ -1043,6 +1193,12 @@
       detailPage ? null : card,
       platform
     );
+    let galleryImages = extractGalleryImagesFromDoc(
+      document,
+      detailPage ? null : card,
+      platform,
+      imageUrl
+    );
 
     if (
       inDialog &&
@@ -1051,11 +1207,15 @@
     ) {
       if (!initialTitle || initialTitle.length < 3) initialTitle = lastMenuCardSnapshot.title;
       if (!imageUrl) imageUrl = lastMenuCardSnapshot.imageUrl;
+      if (!galleryImages.length && Array.isArray(lastMenuCardSnapshot.galleryImages)) {
+        galleryImages = lastMenuCardSnapshot.galleryImages;
+      }
       if (!cardNotes) cardNotes = lastMenuCardSnapshot.notes;
     } else if (!inDialog && initialTitle) {
       lastMenuCardSnapshot = {
         title: initialTitle,
         imageUrl,
+        galleryImages,
         notes: cardNotes,
         at: Date.now(),
       };
@@ -1064,6 +1224,9 @@
     if (!initialTitle && lastMenuCardSnapshot && Date.now() - lastMenuCardSnapshot.at < 90000) {
       initialTitle = lastMenuCardSnapshot.title;
       if (!imageUrl) imageUrl = lastMenuCardSnapshot.imageUrl;
+      if (!galleryImages.length && Array.isArray(lastMenuCardSnapshot.galleryImages)) {
+        galleryImages = lastMenuCardSnapshot.galleryImages;
+      }
       if (!cardNotes) cardNotes = lastMenuCardSnapshot.notes;
     }
 
@@ -1073,6 +1236,7 @@
       initialTitle: initialTitle || (platform !== 'Online Store' ? `${platform} Food Item` : ''),
       dpUrl,
       imageUrl,
+      galleryImages,
       cardNotes,
     };
   }
@@ -1081,6 +1245,7 @@
     let productTitle = snapshot.initialTitle;
     const productUrl = snapshot.dpUrl || window.location.href;
     let imageUrl = snapshot.imageUrl || '';
+    let galleryImages = Array.isArray(snapshot.galleryImages) ? snapshot.galleryImages : [];
     let nutritionText = '';
     let ingredientsText = snapshot.cardNotes || '';
     let meta = { brand: '', barcode: '' };
@@ -1094,6 +1259,7 @@
       if (!imageUrl) {
         imageUrl = extractProductImageFromDoc(document, null, snapshot.platform);
       }
+      galleryImages = extractGalleryImagesFromDoc(document, null, snapshot.platform, imageUrl);
       meta = extractBrandAndBarcodeFromDoc(document);
     } else if (
       snapshot.dpUrl &&
@@ -1123,6 +1289,10 @@
           if (!imageUrl) {
             imageUrl = extractProductImageFromDoc(parsedDoc, null, snapshot.platform);
           }
+          const fetchedGallery = extractGalleryImagesFromDoc(parsedDoc, null, snapshot.platform, imageUrl);
+          if (fetchedGallery.length) {
+            galleryImages = fetchedGallery;
+          }
           meta = extractBrandAndBarcodeFromDoc(parsedDoc);
         }
       } catch {
@@ -1135,6 +1305,7 @@
       productTitle,
       productUrl,
       imageUrl,
+      galleryImages,
       nutritionText,
       ingredientsText,
       brand: meta.brand,
@@ -1148,6 +1319,40 @@
     if (existing) existing.remove();
     const oldLegacy = document.getElementById('healthguard-amazon-toast');
     if (oldLegacy) oldLegacy.remove();
+  }
+
+  function formatPrescriptionConditions(warnings) {
+    if (!Array.isArray(warnings) || warnings.length === 0) return 'an active health condition';
+    const medical = warnings.filter(
+      (w) =>
+        w &&
+        w.conditionName &&
+        !String(w.conditionKey || '').startsWith('avoid_') &&
+        !String(w.conditionKey || '').startsWith('low_') &&
+        !String(w.conditionKey || '').startsWith('soft_')
+    );
+    const source = medical.length > 0 ? medical : warnings;
+    const names = [];
+    const seen = new Set();
+    for (const w of source) {
+      const raw = String(w?.conditionName || '').trim();
+      if (!raw) continue;
+      const key = raw.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        names.push(raw);
+      }
+    }
+    if (names.length === 0) return 'an active health condition';
+    if (names.length === 1) return names[0];
+    if (names.length === 2) return `${names[0]} and ${names[1]}`;
+    return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`;
+  }
+
+  function formatShortToastProductName(name) {
+    const clean = String(name || 'this product').replace(/\s+/g, ' ').trim();
+    if (clean.length <= 88) return clean;
+    return `${clean.slice(0, 85).trimEnd()}…`;
   }
 
   function showHealthToast(toastData) {
@@ -1172,7 +1377,164 @@
       macros,
       ingredientSummary,
       query,
+      sourceLabel,
+      isEstimated,
+      prescriptionAlerts,
+      eventId,
+      queuedFoodLogId,
+      userId,
     } = toastData;
+
+    const hasPrescriptionAlert = Boolean(
+      prescriptionAlerts &&
+        prescriptionAlerts.hasWarnings &&
+        Array.isArray(prescriptionAlerts.warnings) &&
+        prescriptionAlerts.warnings.length > 0
+    );
+
+    if (hasPrescriptionAlert) {
+      const card = document.createElement('div');
+      card.id = 'nutricheck-floating-card';
+      card.setAttribute('role', 'dialog');
+      card.setAttribute('aria-label', 'NutriCheck – Health Alert');
+      card.style.cssText = [
+        'position:fixed',
+        'top:14px',
+        'right:14px',
+        'z-index:2147483647',
+        'width:min(440px, calc(100vw - 24px))',
+        'max-height:calc(100vh - 28px)',
+        'overflow-y:auto',
+        'box-sizing:border-box',
+        'background:#ffffff',
+        'border:1.5px solid #e2b857',
+        'border-radius:14px',
+        'box-shadow:0 16px 38px rgba(15,23,42,0.16)',
+        'font-family:system-ui,-apple-system,Segoe UI,sans-serif',
+        'color:#0f172a',
+        'padding:18px 20px',
+      ].join(';');
+
+      const headerRow = document.createElement('div');
+      headerRow.style.cssText =
+        'display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;';
+
+      const titleWrap = document.createElement('div');
+      titleWrap.style.cssText =
+        'display:flex;align-items:center;gap:8px;font-size:15.5px;font-weight:700;color:#0f172a;min-width:0;';
+
+      const warnSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      warnSvg.setAttribute('width', '18');
+      warnSvg.setAttribute('height', '18');
+      warnSvg.setAttribute('viewBox', '0 0 24 24');
+      warnSvg.setAttribute('fill', 'none');
+      warnSvg.setAttribute('stroke', '#d97706');
+      warnSvg.setAttribute('stroke-width', '2.1');
+      warnSvg.setAttribute('stroke-linecap', 'round');
+      warnSvg.setAttribute('stroke-linejoin', 'round');
+      warnSvg.style.flexShrink = '0';
+
+      const path1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path1.setAttribute('d', 'm21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z');
+      const path2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path2.setAttribute('d', 'M12 9v4');
+      const path3 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path3.setAttribute('d', 'M12 17h.01');
+      warnSvg.appendChild(path1);
+      warnSvg.appendChild(path2);
+      warnSvg.appendChild(path3);
+
+      const headerTitle = document.createElement('span');
+      headerTitle.textContent = 'NutriCheck – Health Alert';
+      titleWrap.appendChild(warnSvg);
+      titleWrap.appendChild(headerTitle);
+
+      const badge = document.createElement('span');
+      badge.textContent = 'Health warning';
+      badge.style.cssText =
+        'background:#fdedde;color:#c2410c;font-size:12px;font-weight:600;padding:4px 11px;border-radius:999px;white-space:nowrap;flex-shrink:0;';
+
+      headerRow.appendChild(titleWrap);
+      headerRow.appendChild(badge);
+      card.appendChild(headerRow);
+
+      const headlineEl = document.createElement('div');
+      headlineEl.textContent = 'Be careful with this product!';
+      headlineEl.style.cssText =
+        'font-size:16.5px;font-weight:700;color:#0f172a;line-height:1.3;margin:0 0 10px 0;';
+      card.appendChild(headlineEl);
+
+      const condText = formatPrescriptionConditions(prescriptionAlerts.warnings);
+      const p1 = document.createElement('p');
+      p1.style.cssText = 'margin:0 0 8px 0;font-size:13.5px;color:#1e293b;line-height:1.45;';
+      p1.appendChild(document.createTextNode('Your recent prescription mentions '));
+      const condStrong = document.createElement('strong');
+      condStrong.style.cssText = 'font-weight:700;color:#0f172a;';
+      condStrong.textContent = condText;
+      p1.appendChild(condStrong);
+      p1.appendChild(document.createTextNode('.'));
+      card.appendChild(p1);
+
+      const shortProd = formatShortToastProductName(productName || toastData.title || 'this product');
+      const storeLabel = platform || 'Online Store';
+      const p2 = document.createElement('p');
+      p2.style.cssText = 'margin:0 0 8px 0;font-size:13.5px;color:#1e293b;line-height:1.45;';
+      p2.textContent = `You are trying to add ${shortProd} to your ${storeLabel} cart.`;
+      card.appendChild(p2);
+
+      const p3 = document.createElement('p');
+      p3.style.cssText = 'margin:0 0 10px 0;font-size:13.5px;color:#1e293b;line-height:1.45;';
+      p3.textContent = 'Consider whether this product is suitable for your current health condition.';
+      card.appendChild(p3);
+
+      const disclaimerEl = document.createElement('p');
+      disclaimerEl.style.cssText = 'margin:0 0 14px 0;font-size:11.5px;color:#64748b;line-height:1.4;';
+      disclaimerEl.textContent =
+        'This is a precautionary reminder, not a medical diagnosis or a confirmed food restriction.';
+      card.appendChild(disclaimerEl);
+
+      const btnRow = document.createElement('div');
+      btnRow.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:center;';
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.style.cssText =
+        'background:#ffffff;color:#0f172a;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;font-size:13.5px;font-weight:700;cursor:pointer;';
+      cancelBtn.onclick = () => {
+        card.remove();
+        try {
+          chrome.runtime.sendMessage({
+            type: 'HEALTHGUARD_CANCEL_CART_ITEM',
+            eventId: eventId || null,
+            queuedFoodLogId: queuedFoodLogId || null,
+            userId: userId || null,
+          });
+        } catch {
+          // ignore
+        }
+      };
+
+      const continueBtn = document.createElement('button');
+      continueBtn.type = 'button';
+      continueBtn.textContent = 'Continue Anyway';
+      continueBtn.style.cssText =
+        'background:#146c43;color:#ffffff;border:1px solid #105635;border-radius:8px;padding:10px 14px;font-size:13.5px;font-weight:700;cursor:pointer;';
+      continueBtn.onclick = () => {
+        card.remove();
+        try {
+          chrome.runtime.sendMessage({ type: 'HEALTHGUARD_DISMISS_TOAST' });
+        } catch {
+          // ignore
+        }
+      };
+
+      btnRow.appendChild(cancelBtn);
+      btnRow.appendChild(continueBtn);
+      card.appendChild(btnRow);
+      document.body.appendChild(card);
+      return;
+    }
 
     const badgeStyle =
       level === 'success'
@@ -1282,6 +1644,17 @@
     titleRow.appendChild(pill);
     body.appendChild(titleRow);
 
+    if (sourceLabel) {
+      const srcNote = document.createElement('div');
+      srcNote.style.cssText = isEstimated
+        ? 'font-size:11px;font-weight:600;color:#92400e;background:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:4px 8px;margin-bottom:8px;line-height:1.35;'
+        : 'font-size:11px;font-weight:600;color:#166534;background:#dcfce7;border:1px solid #bbf7d0;border-radius:6px;padding:4px 8px;margin-bottom:8px;line-height:1.35;';
+      srcNote.textContent = isEstimated
+        ? `Estimated (${sourceLabel}) — open packet photo or click Store Connect to scan exact label`
+        : `✓ ${sourceLabel}`;
+      body.appendChild(srcNote);
+    }
+
     const summaryEl = document.createElement('p');
     summaryEl.textContent = takeaway || message || '';
     summaryEl.style.cssText = 'margin:0 0 10px 0;font-size:12.5px;color:#475569;line-height:1.45;';
@@ -1386,17 +1759,19 @@
     document.body.appendChild(card);
   }
 
-  let lastDispatchedTitle = '';
+  let lastDispatchedKey = '';
   let lastDispatchedAt = 0;
 
-  function sendForAnalysis(details) {
+  function sendForAnalysis(details, { force = false } = {}) {
     const title = cleanExtractedTitle(details.productTitle);
     if (!title) return;
+    const gallery = Array.isArray(details.galleryImages) ? details.galleryImages : [];
+    const dispatchKey = `${title.toLowerCase()}::${gallery[0] || details.imageUrl || ''}`;
     const now = Date.now();
-    if (title.toLowerCase() === lastDispatchedTitle && now - lastDispatchedAt < 4000) {
+    if (!force && dispatchKey === lastDispatchedKey && now - lastDispatchedAt < 4000) {
       return;
     }
-    lastDispatchedTitle = title.toLowerCase();
+    lastDispatchedKey = dispatchKey;
     lastDispatchedAt = now;
 
     chrome.runtime.sendMessage(
@@ -1406,6 +1781,7 @@
           product_title: title,
           product_url: details.productUrl,
           image_url: details.imageUrl || undefined,
+          gallery_images: gallery.length ? gallery : undefined,
           nutrition_text: details.nutritionText,
           ingredients_text: details.ingredientsText,
           brand: details.brand || undefined,
@@ -1462,15 +1838,17 @@
     btn.onclick = async () => {
       const title = extractProductTitleFromDoc(document, null, null, platform);
       if (!title) return;
+      const heroImg = extractProductImageFromDoc(document, null, platform);
       const details = await resolveProductDetails({
         platform,
         isMainDetailPage: true,
         initialTitle: title,
         dpUrl: window.location.href,
-        imageUrl: extractProductImageFromDoc(document, null, platform),
+        imageUrl: heroImg,
+        galleryImages: extractGalleryImagesFromDoc(document, null, platform, heroImg),
         cardNotes: '',
       });
-      sendForAnalysis(details);
+      sendForAnalysis(details, { force: true });
     };
 
     document.body.appendChild(btn);
@@ -1520,11 +1898,17 @@
     if (snapshot.isMainDetailPage || !snapshot.dpUrl || snapshot.dpUrl === window.location.href) {
       const extractedNow = extractIngredientsAndNutritionFromDoc(document);
       const metaNow = extractBrandAndBarcodeFromDoc(document);
+      const heroImg = snapshot.imageUrl || extractProductImageFromDoc(document, null, snapshot.platform);
+      const gallery =
+        Array.isArray(snapshot.galleryImages) && snapshot.galleryImages.length > 0
+          ? snapshot.galleryImages
+          : extractGalleryImagesFromDoc(document, null, snapshot.platform, heroImg);
       sendForAnalysis({
         platform: snapshot.platform,
         productTitle: snapshot.initialTitle,
         productUrl: snapshot.dpUrl || window.location.href,
-        imageUrl: snapshot.imageUrl || extractProductImageFromDoc(document, null, snapshot.platform),
+        imageUrl: heroImg,
+        galleryImages: gallery,
         nutritionText: extractedNow.nutritionText,
         ingredientsText: extractedNow.ingredientsText || snapshot.cardNotes,
         brand: metaNow.brand,
@@ -1545,6 +1929,7 @@
         productTitle: snapshot.initialTitle,
         productUrl: snapshot.dpUrl || window.location.href,
         imageUrl: snapshot.imageUrl,
+        galleryImages: snapshot.galleryImages || [],
         nutritionText: extractedNow.nutritionText,
         ingredientsText: snapshot.cardNotes || extractedNow.ingredientsText,
         brand: '',
@@ -1634,11 +2019,13 @@
         if (!title) return;
         const extracted = extractIngredientsAndNutritionFromDoc(document);
         const meta = extractBrandAndBarcodeFromDoc(document);
+        const heroImg = extractProductImageFromDoc(document, null, 'Amazon');
         sendForAnalysis({
           platform: 'Amazon',
           productTitle: title,
           productUrl: window.location.href,
-          imageUrl: extractProductImageFromDoc(document, null, 'Amazon'),
+          imageUrl: heroImg,
+          galleryImages: extractGalleryImagesFromDoc(document, null, 'Amazon', heroImg),
           nutritionText: extracted.nutritionText,
           ingredientsText: extracted.ingredientsText,
           brand: meta.brand,
@@ -1667,11 +2054,13 @@
       if (!title) return;
       const extracted = extractIngredientsAndNutritionFromDoc(document);
       const meta = extractBrandAndBarcodeFromDoc(document);
+      const heroImg = extractProductImageFromDoc(document, null, 'Amazon');
       sendForAnalysis({
         platform: 'Amazon',
         productTitle: title,
         productUrl: window.location.href,
-        imageUrl: extractProductImageFromDoc(document, null, 'Amazon'),
+        imageUrl: heroImg,
+        galleryImages: extractGalleryImagesFromDoc(document, null, 'Amazon', heroImg),
         nutritionText: extracted.nutritionText,
         ingredientsText: extracted.ingredientsText,
         brand: meta.brand,

@@ -33,7 +33,8 @@ import {
 } from '../utils/localNutritionEngine';
 import { extractIngredientsSegment, runPacketImageOcr } from '../utils/packetOcr';
 import { CATALOG_PRODUCT_IMAGES } from '../utils/catalogImages';
-import type { AmazonCartEvent } from '../types';
+import { evaluateProductAgainstActiveProfileClient } from '../utils/prescriptionUtils';
+import type { ActivePrescriptionSummary, AmazonCartEvent } from '../types';
 
 export interface StorePacketUpdatePayload {
   product_title: string;
@@ -48,6 +49,7 @@ export interface StorePacketUpdatePayload {
 
 interface AmazonConnectViewProps {
   events: AmazonCartEvent[];
+  activePrescriptions?: ActivePrescriptionSummary | null;
   isSubmitting: boolean;
   submitError: string | null;
   onAnalyzeAmazonText: (payload: {
@@ -161,6 +163,7 @@ interface PacketDraft {
 
 export function AmazonConnectView({
   events,
+  activePrescriptions,
   isSubmitting,
   submitError,
   onAnalyzeAmazonText,
@@ -173,6 +176,8 @@ export function AmazonConnectView({
   const [expandedChartId, setExpandedChartId] = useState<string | null>(null);
   const [addingQuickId, setAddingQuickId] = useState<string | null>(null);
   const [showExtConfig, setShowExtConfig] = useState(false);
+  const [dismissedRxIds, setDismissedRxIds] = useState<Record<string, boolean>>({});
+  const [continuedRxIds, setContinuedRxIds] = useState<Record<string, boolean>>({});
 
   // Per-card Back-of-Packet Photo & Exact Label Editor state
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
@@ -599,6 +604,23 @@ export function AmazonConnectView({
                   ? 'Fits well with your saved health profile in normal portions.'
                   : 'Consider unsweetened oats, plain nuts, or minimally processed snacks as alternatives.';
 
+              const rxAlerts =
+                activePrescriptions &&
+                (activePrescriptions.activeConditions.length > 0 ||
+                  activePrescriptions.dietaryRestrictions.length > 0)
+                  ? evaluateProductAgainstActiveProfileClient({
+                      productTitle: ev.product_title,
+                      ingredientsText: ev.ingredients_text || '',
+                      nutrition: a?.nutrition || null,
+                      activeConditions: activePrescriptions.activeConditions,
+                      dietaryRestrictions: activePrescriptions.dietaryRestrictions,
+                    })
+                  : ev.prescription_alerts || null;
+
+              const showRxCardWarning = Boolean(
+                rxAlerts?.hasWarnings && !dismissedRxIds[ev.event_id]
+              );
+
               return (
                 <article key={ev.event_id} className="pa-card">
                   {/* Top Row: Product Analysis + Status */}
@@ -980,6 +1002,72 @@ export function AmazonConnectView({
                       </div>
                     </div>
                   </div>
+
+                  {/* Active Prescription Alert inside Store Connect card */}
+                  {showRxCardWarning && rxAlerts && (
+                    <div className="rx-warning-popup is-alert" style={{ marginTop: 12 }}>
+                      <div className="rx-warning-head">
+                        <AlertTriangle size={16} color="#92400e" />
+                        <span>Prescription Health Alert</span>
+                      </div>
+                      {rxAlerts.warnings.map((w, idx) => (
+                        <div key={idx} className="rx-warning-item">
+                          <div className="rx-warning-headline">{w.headline}</div>
+                          <div className="rx-warning-detail">{w.detail}</div>
+                        </div>
+                      ))}
+                      {rxAlerts.alternatives.length > 0 && (
+                        <div className="rx-alt-box">
+                          <div className="rx-alt-title">Safer alternatives:</div>
+                          <ul>
+                            {rxAlerts.alternatives.map((alt, idx) => (
+                              <li key={idx}>{alt}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      <p className="rx-disclaimer-mini">{rxAlerts.disclaimer}</p>
+                      <div className="rx-popup-actions">
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          style={{ padding: '6px 11px', fontSize: '12px' }}
+                          onClick={() =>
+                            setDismissedRxIds((prev) => ({ ...prev, [ev.event_id]: true }))
+                          }
+                        >
+                          Dismiss Warning
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          style={{ flex: 'none', padding: '6px 11px', fontSize: '12px' }}
+                          onClick={() =>
+                            setContinuedRxIds((prev) => ({ ...prev, [ev.event_id]: true }))
+                          }
+                        >
+                          {continuedRxIds[ev.event_id] ? 'Continued ✓' : 'Continue Ordering'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {ev.tracker_eligibility && (
+                    <div className="sc-tracker-eligibility">
+                      {ev.tracker_eligibility.isInstantConsumable ? (
+                        <span>
+                          Queued for{' '}
+                          <Link to="/tracker" className="sc-text-link">
+                            Daily Food Tracker →
+                          </Link>
+                        </span>
+                      ) : (
+                        <span className="card-subtitle">
+                          {ev.tracker_eligibility.reason}
+                        </span>
+                      )}
+                    </div>
+                  )}
 
                   {isChartOpen && a && (
                     <div style={{ marginTop: '12px' }}>

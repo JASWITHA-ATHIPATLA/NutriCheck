@@ -61,7 +61,11 @@
 
     if (msg.type === 'NUTRICHECK_SET_ACTIVE_USER') {
       currentPageUserId = msg.userId || null;
-      chrome.storage.local.set({ activeHealthGuardUserId: currentPageUserId });
+      const updates = { activeHealthGuardUserId: currentPageUserId };
+      if (!currentPageUserId) {
+        updates.activePrescriptionSummary = null;
+      }
+      chrome.storage.local.set(updates);
       chrome.storage.local.get(['lastHealthGuardEvents'], (res) => {
         syncEventsToPage(res?.lastHealthGuardEvents || [], currentPageUserId);
       });
@@ -103,6 +107,10 @@
           ? list.map((e) => (e && e.event_id === updated.event_id ? updated : e))
           : [updated, ...list];
         chrome.storage.local.set({ lastHealthGuardEvents: next.slice(0, 50) });
+      });
+    } else if (msg.type === 'NUTRICHECK_SYNC_PRESCRIPTIONS') {
+      chrome.storage.local.set({
+        activePrescriptionSummary: msg.summary || null,
       });
     }
   });

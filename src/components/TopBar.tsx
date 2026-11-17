@@ -46,16 +46,22 @@ export function TopBar() {
                 Dashboard
               </NavLink>
               <NavLink
+                to="/prescriptions"
+                className={({ isActive }) => `nav-tab ${isActive ? 'is-active' : ''}`}
+              >
+                Prescriptions
+              </NavLink>
+              <NavLink
+                to="/tracker"
+                className={({ isActive }) => `nav-tab ${isActive ? 'is-active' : ''}`}
+              >
+                Daily Tracker
+              </NavLink>
+              <NavLink
                 to="/limits"
                 className={({ isActive }) => `nav-tab ${isActive ? 'is-active' : ''}`}
               >
                 Daily Limits
-              </NavLink>
-              <NavLink
-                to="/add-product"
-                className={({ isActive }) => `nav-tab ${isActive ? 'is-active' : ''}`}
-              >
-                Add Product
               </NavLink>
               <NavLink
                 to="/scan"
@@ -151,6 +157,18 @@ export function TopBar() {
                 className={({ isActive }) => `mobile-nav-link ${isActive ? 'is-active' : ''}`}
               >
                 Dashboard
+              </NavLink>
+              <NavLink
+                to="/prescriptions"
+                className={({ isActive }) => `mobile-nav-link ${isActive ? 'is-active' : ''}`}
+              >
+                Prescription Alerts
+              </NavLink>
+              <NavLink
+                to="/tracker"
+                className={({ isActive }) => `mobile-nav-link ${isActive ? 'is-active' : ''}`}
+              >
+                Daily Food &amp; Nutrition Tracker
               </NavLink>
               <NavLink
                 to="/profile"

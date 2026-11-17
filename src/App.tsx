@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  AlertTriangle,
   ExternalLink,
   ShoppingBag,
   X,
@@ -17,17 +18,20 @@ import { Footer } from './components/Footer';
 import { TopBar } from './components/TopBar';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AddProductPage } from './pages/AddProductPage';
+import { DailyTrackerPage } from './pages/DailyTrackerPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { HomePage } from './pages/HomePage';
 import { LoginPage } from './pages/LoginPage';
 import { NutritionLimitsPage } from './pages/NutritionLimitsPage';
+import { PrescriptionsPage } from './pages/PrescriptionsPage';
 import { ProductDetailPage } from './pages/ProductDetailPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { RegisterPage } from './pages/RegisterPage';
 import { ScanPacketPage } from './pages/ScanPacketPage';
 import { evaluateProfileAlertsForValues } from './utils/healthProfileEngine';
 import { analyzeAmazonItemLocally } from './utils/localNutritionEngine';
-import type { AmazonCartEvent } from './types';
+import { evaluateProductAgainstActiveProfileClient } from './utils/prescriptionUtils';
+import type { ActivePrescriptionSummary, AmazonCartEvent } from './types';
 
 const LEGACY_AMAZON_STORAGE_KEY = 'nutricheck_amazon_events_v1';
 
@@ -97,6 +101,38 @@ function inferStorePlatform(ev: AmazonCartEvent): string {
   return 'Online Store';
 }
 
+function formatRxConditionPhrase(
+  warnings: Array<{ conditionKey?: string; conditionName?: string }>
+): string {
+  if (!Array.isArray(warnings) || warnings.length === 0) {
+    return 'an active health condition';
+  }
+  const medical = warnings.filter(
+    (w) =>
+      w &&
+      w.conditionName &&
+      !String(w.conditionKey || '').startsWith('avoid_') &&
+      !String(w.conditionKey || '').startsWith('low_') &&
+      !String(w.conditionKey || '').startsWith('soft_')
+  );
+  const source = medical.length > 0 ? medical : warnings;
+  const names: string[] = [];
+  const seen = new Set<string>();
+  for (const w of source) {
+    const raw = String(w?.conditionName || '').trim();
+    if (!raw) continue;
+    const key = raw.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      names.push(raw);
+    }
+  }
+  if (names.length === 0) return 'an active health condition';
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`;
+}
+
 function NutriCheckShell() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -111,6 +147,8 @@ function NutriCheckShell() {
   const [isSubmittingAmazon, setIsSubmittingAmazon] = useState(false);
   const [amazonError, setAmazonError] = useState<string | null>(null);
   const [popupEvent, setPopupEvent] = useState<AmazonCartEvent | null>(null);
+  const [activePrescriptionSummary, setActivePrescriptionSummary] =
+    useState<ActivePrescriptionSummary | null>(null);
 
   const seenEventIdsRef = useRef<Set<string>>(new Set());
   const initializedEventsRef = useRef(false);
@@ -149,7 +187,7 @@ function NutriCheckShell() {
     }, 18000);
   }
 
-  // Sync active user ID to Chrome extension bridge & reload per-user cart whenever user logs in/switches/logs out
+  // Sync active user ID to Chrome extension bridge & reload per-user cart + active prescriptions
   useEffect(() => {
     let cancelled = false;
 
@@ -165,10 +203,29 @@ function NutriCheckShell() {
 
     if (!activeUserId) {
       setAmazonEvents([]);
+      setActivePrescriptionSummary(null);
+      window.postMessage(
+        { type: 'NUTRICHECK_SYNC_PRESCRIPTIONS', userId: null, summary: null },
+        window.location.origin
+      );
       return () => {
         cancelled = true;
       };
     }
+
+    fetch(`/api/prescriptions/active?userId=${encodeURIComponent(activeUserId)}`, {
+      headers: { 'X-User-Id': activeUserId },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((summary) => {
+        if (cancelled || !summary) return;
+        setActivePrescriptionSummary(summary);
+        window.postMessage(
+          { type: 'NUTRICHECK_SYNC_PRESCRIPTIONS', userId: activeUserId, summary },
+          window.location.origin
+        );
+      })
+      .catch(() => {});
 
     const initialStored = readStoredAmazonEvents(activeUserId);
     initialStored.forEach((ev) => seenEventIdsRef.current.add(ev.event_id));
@@ -234,7 +291,14 @@ function NutriCheckShell() {
     function handleBridgeMessage(event: MessageEvent) {
       if (event.origin !== window.location.origin) return;
       const msg = event.data;
-      if (!msg || msg.type !== 'NUTRICHECK_AMAZON_SYNC' || !Array.isArray(msg.events)) return;
+      if (!msg) return;
+      if (msg.type === 'NUTRICHECK_SYNC_PRESCRIPTIONS') {
+        if (!activeUserId || msg.userId === activeUserId || msg.userId === null) {
+          setActivePrescriptionSummary(msg.summary || null);
+        }
+        return;
+      }
+      if (msg.type !== 'NUTRICHECK_AMAZON_SYNC' || !Array.isArray(msg.events)) return;
       if (!activeUserId) return;
 
       const incoming = (msg.events as AmazonCartEvent[]).filter(
@@ -487,6 +551,17 @@ function NutriCheckShell() {
     ).catch(() => {});
   }
 
+  async function handleCancelPopupProduct(ev: AmazonCartEvent) {
+    setPopupEvent(null);
+    await handleDeleteAmazonEvent(ev.event_id);
+    if (activeUserId && ev.queued_food_log_id) {
+      await fetch(
+        `/api/food-logs/${encodeURIComponent(ev.queued_food_log_id)}?userId=${encodeURIComponent(activeUserId)}`,
+        { method: 'DELETE', headers: { 'X-User-Id': activeUserId } }
+      ).catch(() => {});
+    }
+  }
+
   const showTopPopup = Boolean(currentUser && popupEvent);
   const popupStore = popupEvent ? inferStorePlatform(popupEvent) : '';
   const popupAnalysis = popupEvent?.analysis || null;
@@ -506,13 +581,88 @@ function NutriCheckShell() {
         )
       : null;
 
+  const hasUploadedPrescription =
+    activePrescriptionSummary === null
+      ? Boolean(popupEvent?.prescription_alerts?.hasWarnings)
+      : activePrescriptionSummary.activeConditions.length > 0 ||
+        activePrescriptionSummary.dietaryRestrictions.length > 0;
+
+  const popupRxAlert =
+    popupEvent && hasUploadedPrescription
+      ? popupEvent.prescription_alerts?.hasWarnings
+        ? popupEvent.prescription_alerts
+        : evaluateProductAgainstActiveProfileClient({
+            productTitle: popupEvent.product_title,
+            ingredientsText: popupEvent.ingredients_text || '',
+            nutrition: popupAnalysis?.nutrition || null,
+            activeConditions: activePrescriptionSummary?.activeConditions || [],
+            dietaryRestrictions: activePrescriptionSummary?.dietaryRestrictions || [],
+          })
+      : null;
+
+  const showRxWarningPopup = Boolean(
+    popupRxAlert?.hasWarnings && popupRxAlert.warnings.length > 0
+  );
+
   return (
     <div className="app-shell">
       <ScrollToTop />
       <TopBar />
 
       {/* Top Add-to-Cart Floating Popup */}
-      {showTopPopup && popupEvent && (
+      {showTopPopup && popupEvent && showRxWarningPopup && popupRxAlert && (
+        <div
+          className="atc-top-popup is-rx-warning"
+          role="dialog"
+          aria-label="NutriCheck – Health Alert"
+          aria-live="polite"
+        >
+          <div className="atc-rx-warn-header">
+            <div className="atc-rx-warn-brand">
+              <AlertTriangle size={18} className="atc-rx-warn-icon" />
+              <span>NutriCheck – Health Alert</span>
+            </div>
+            <span className="atc-rx-warn-badge">Health warning</span>
+          </div>
+
+          <div className="atc-rx-warn-headline">Be careful with this product!</div>
+
+          <p className="atc-rx-warn-copy">
+            Your recent prescription mentions{' '}
+            <strong>{formatRxConditionPhrase(popupRxAlert.warnings)}</strong>.
+          </p>
+          <p className="atc-rx-warn-copy">
+            You are trying to add {popupEvent.product_title} to your {popupStore} cart.
+          </p>
+          <p className="atc-rx-warn-copy">
+            Consider whether this product is suitable for your current health condition.
+          </p>
+
+          <p className="atc-rx-warn-disclaimer">
+            This is a precautionary reminder, not a medical diagnosis or a confirmed food
+            restriction.
+          </p>
+
+          <div className="atc-rx-warn-actions">
+            <button
+              type="button"
+              className="atc-rx-warn-cancel"
+              onClick={() => void handleCancelPopupProduct(popupEvent)}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="atc-rx-warn-continue"
+              onClick={() => setPopupEvent(null)}
+            >
+              Continue Anyway
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showTopPopup && popupEvent && !showRxWarningPopup && (
         <div
           className="atc-top-popup"
           role="dialog"
@@ -594,6 +744,23 @@ function NutriCheckShell() {
               {popupProfile && (
                 <div className="atc-top-popup-note">
                   {popupProfile.alerts[0]}
+                </div>
+              )}
+
+              {popupEvent.queued_food_log_id && (
+                <div className="atc-tracker-note">
+                  Added to{' '}
+                  <button
+                    type="button"
+                    className="sc-text-link-btn"
+                    onClick={() => {
+                      setPopupEvent(null);
+                      navigate('/tracker');
+                    }}
+                  >
+                    Daily Food Tracker →
+                  </button>{' '}
+                  for consumption confirmation.
                 </div>
               )}
             </div>
@@ -678,6 +845,24 @@ function NutriCheckShell() {
             }
           />
           <Route
+            path="/prescriptions"
+            element={
+              <RequireAuth>
+                <PrescriptionsPage
+                  onProfileSynced={(summary) => setActivePrescriptionSummary(summary)}
+                />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/tracker"
+            element={
+              <RequireAuth>
+                <DailyTrackerPage />
+              </RequireAuth>
+            }
+          />
+          <Route
             path="/amazon"
             element={
               <RequireAuth>
@@ -692,6 +877,7 @@ function NutriCheckShell() {
                   </div>
                   <AmazonConnectView
                     events={amazonEvents}
+                    activePrescriptions={activePrescriptionSummary}
                     isSubmitting={isSubmittingAmazon}
                     submitError={amazonError}
                     onAnalyzeAmazonText={handleAnalyzeAmazonText}

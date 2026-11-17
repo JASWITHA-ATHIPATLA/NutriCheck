@@ -36,20 +36,23 @@ export async function preprocessImageForOcr(
     const width = Math.max(1, Math.round(sw * scale));
     const height = Math.max(1, Math.round(sh * scale));
 
+    const pad = 24;
     const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
+    canvas.width = width + pad * 2;
+    canvas.height = height + pad * 2;
     const ctx = canvas.getContext('2d');
     if (!ctx) return source;
 
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, width, height);
+    ctx.drawImage(img, sx, sy, sw, sh, pad, pad, width, height);
 
-    const imgData = ctx.getImageData(0, 0, width, height);
+    const imgData = ctx.getImageData(pad, pad, width, height);
     const d = imgData.data;
 
-    const contrast = options.contrast ?? 1.18;
+    const contrast = options.contrast ?? 1.12;
     for (let i = 0; i < d.length; i += 4) {
       const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
       const enhanced = Math.max(0, Math.min(255, (lum - 128) * contrast + 128));
@@ -57,7 +60,7 @@ export async function preprocessImageForOcr(
       d[i + 1] = enhanced;
       d[i + 2] = enhanced;
     }
-    ctx.putImageData(imgData, 0, 0);
+    ctx.putImageData(imgData, pad, pad);
 
     const processed = await new Promise<Blob | null>((resolve) =>
       canvas.toBlob((b) => resolve(b), 'image/png', 0.95)
@@ -73,16 +76,27 @@ export async function preprocessImageForOcr(
 export function normalizeOcrTableText(raw: string): string {
   if (!raw) return '';
   let text = raw
-    .replace(/\bEnergy\s*\(\s*(?:keal|keai|kca1)\s*\)/gi, 'Energy (kcal)')
+    .replace(/\bPro[tl]e[in]{1,2}\b/gi, 'Protein')
+    .replace(/\bCarbo[hy]{1,2}[dv]rates?\b/gi, 'Carbohydrate')
+    .replace(/\bTota[lt]\s+Sugars?\b/gi, 'Total Sugars')
+    .replace(/\bAdded\s+Sugars?\b/gi, 'Added Sugar')
+    .replace(/\bTota[lt]\s+Fat\b/gi, 'Total Fat')
+    .replace(/\bSod[iu]m\b/gi, 'Sodium')
+    .replace(/\bEner[gq]y\b/gi, 'Energy')
+    .replace(/\bEnergy\s*\(\s*(?:keal|keai|kca1|keat)\s*\)/gi, 'Energy (kcal)')
+    .replace(/\b(\d+(?:\.\d+)?)\s*(?:keal|keai|kca1)\b/gi, '$1 kcal')
     .replace(/\bTotal\s+Fat\s*\(\s*[gq9]\s*\)/gi, 'Total Fat (g)')
+    .replace(/\bSaturated\s+Fat\s*\(\s*[gq9]\s*\)/gi, 'Saturated Fat (g)')
+    .replace(/\bTrans\s+Fat\s*\(\s*[gq9]\s*\)/gi, 'Trans Fat (g)')
     .replace(/\bTotal\s+Sugars?\s*\(\s*[gq9]\s*\)/gi, 'Total Sugars (g)')
     .replace(/\bAdded\s+Sugars?\s*\(\s*[gq9]\s*\)/gi, 'Added Sugar (g)')
     .replace(/\bProtein\s*\(\s*[gq9e]\s*\)/gi, 'Protein (g)')
-    .replace(/\bCarbohydrate\s*\(\s*[gq9]\s*\)/gi, 'Carbohydrate (g)')
-    .replace(/\bSodium\s*\(\s*mq\s*\)/gi, 'Sodium (mg)');
+    .replace(/\bCarbohydrates?\s*\(\s*[gq9]\s*\)/gi, 'Carbohydrate (g)')
+    .replace(/\bDietary\s+Fib(?:er|re)\s*\(\s*[gq9]\s*\)/gi, 'Dietary Fiber (g)')
+    .replace(/\bSodium\s*\(\s*m[gq]\s*\)/gi, 'Sodium (mg)');
 
   text = text.replace(
-    /((?:protein|carbohydrate|total\s+sugars?|total\s+fat|saturated\s+fat|dietary\s+fiber)\s*\(\s*g\s*\)\s*[:|\-]?\s*)(\d{3})(?!\.\d)/gi,
+    /((?:protein|carbohydrates?|total\s+sugars?|total\s+fat|saturated\s+fat|dietary\s+fiber)\s*\(\s*g\s*\)\s*[:|\-]?\s*)(\d{3})(?!\.\d)/gi,
     (_full, prefix: string, digits: string) => {
       const val = parseInt(digits, 10);
       if (val >= 101 && val <= 999) {

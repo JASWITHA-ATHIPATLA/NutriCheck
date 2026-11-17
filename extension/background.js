@@ -717,6 +717,7 @@ async function lookupOpenFoodFactsInWorker(title, barcode) {
     .join(' ');
 
   if (!cleanQuery) return null;
+  const queryTokens = cleanQuery.toLowerCase().split(/\s+/).filter((t) => t.length >= 3);
 
   try {
     const r = await fetch(
@@ -724,10 +725,24 @@ async function lookupOpenFoodFactsInWorker(title, barcode) {
     );
     if (r.ok) {
       const d = await r.json();
+      let bestHit = null;
+      let bestOverlap = 0;
       for (const p of d?.hits || []) {
         const n = p?.nutriments;
         const kcal = n?.['energy-kcal_100g'] ?? n?.['energy-kcal_serving'] ?? n?.['energy-kcal'];
         if (!p?.product_name || kcal == null) continue;
+        const nameLower = String(p.product_name).toLowerCase();
+        const overlap = queryTokens.filter((tok) => nameLower.includes(tok)).length;
+        if (queryTokens.length > 0 && overlap === 0) continue;
+        if (overlap > bestOverlap) {
+          bestOverlap = overlap;
+          bestHit = p;
+        }
+      }
+      if (bestHit) {
+        const p = bestHit;
+        const n = p.nutriments;
+        const kcal = n['energy-kcal_100g'] ?? n['energy-kcal_serving'] ?? n['energy-kcal'];
         let sodiumMg = Number(n.sodium_100g || 0) * 1000;
         if (!sodiumMg && n.salt_100g) sodiumMg = Number(n.salt_100g) * 393.4;
         return {
@@ -800,7 +815,7 @@ async function analyzeInExtensionFallback(payload) {
     const titleWords = title.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').trim().split(/\s+/).filter(Boolean);
     const isWholeProduceStaple =
       stapleOrCatalog?.source === 'Grocery & Dish Profile' &&
-      /\b(walnuts?|akhrot|almonds?|badam|blueberr(?:y|ies)|strawberr(?:y|ies)|raspberr(?:y|ies)|blackberr(?:y|ies)|berr(?:y|ies)|avocados?)\b/i.test(title) &&
+      /\b(walnuts?|akhrot|almonds?|badam|blueberr(?:y|ies)|strawberr(?:y|ies)|raspberr(?:y|ies)|blackberr(?:y|ies)|berr(?:y|ies)|avocados?|rolled oats|oats|basmati rice|brown rice)\b/i.test(title) &&
       !/\b(chocolate|candy|cookie|biscuit|cake|muffin|jam|jelly|juice|syrup|salted|masala|butter|chips|dried)\b/i.test(title);
     const isPureStaple =
       isWholeProduceStaple ||
@@ -812,17 +827,23 @@ async function analyzeInExtensionFallback(payload) {
       ? null
       : await lookupOpenFoodFactsInWorker(title, payload.barcode);
 
-    if (stapleOrCatalog && !nutrition) {
-      nutrition = stapleOrCatalog.nutrition;
-      nutritionSource = `${stapleOrCatalog.source} (Estimated)`;
-      matchedFood = stapleOrCatalog.matched_food;
-    } else if (off && !nutrition && !isWholeProduceStaple) {
-      nutrition = off.nutrition;
-      nutritionSource = `${off.source} (Estimated)`;
-      matchedFood = off.matched_food;
+    if (!nutrition) {
+      if (isWholeProduceStaple && stapleOrCatalog) {
+        nutrition = stapleOrCatalog.nutrition;
+        nutritionSource = `${stapleOrCatalog.source} (Estimated)`;
+        matchedFood = stapleOrCatalog.matched_food;
+      } else if (off) {
+        nutrition = off.nutrition;
+        nutritionSource = `${off.source} (Estimated)`;
+        matchedFood = off.matched_food;
+      } else if (stapleOrCatalog) {
+        nutrition = stapleOrCatalog.nutrition;
+        nutritionSource = `${stapleOrCatalog.source} (Estimated)`;
+        matchedFood = stapleOrCatalog.matched_food;
+      }
     }
 
-    if (!capturedIngredients && off?.ingredients_text && !isWholeProduceStaple && !stapleOrCatalog) {
+    if (!capturedIngredients && off?.ingredients_text && !isWholeProduceStaple) {
       capturedIngredients = off.ingredients_text;
     }
     if (!imageUrl && off?.image_url) {
@@ -887,10 +908,172 @@ async function analyzeInExtensionFallback(payload) {
   };
 }
 
-function buildToastFromResponse({ ok, baseUrl, data, error, productTitle, platform, imageUrl, ingredientsText }) {
+function evaluatePrescriptionAlertsInWorker(productTitle, ingredientsText, nutrition, activeSummary) {
+  const disclaimer =
+    'This is a precautionary reminder, not a medical diagnosis or a confirmed food restriction.';
+  const activeCondsRaw = Array.isArray(activeSummary?.activeConditions) ? activeSummary.activeConditions : [];
+  const dietaryRestrictions = Array.isArray(activeSummary?.dietaryRestrictions) ? activeSummary.dietaryRestrictions : [];
+
+  const now = Date.now();
+  const activeConds = activeCondsRaw.filter((c) => {
+    if (!c || c.status === 'dismissed') return false;
+    if (c.expiresAt && new Date(c.expiresAt).getTime() < now) return false;
+    return true;
+  });
+
+  if (activeConds.length === 0 && dietaryRestrictions.length === 0) {
+    return { hasWarnings: false, warnings: [], alternatives: [], disclaimer };
+  }
+
+  const hay = `${productTitle || ''} ${ingredientsText || ''}`.toLowerCase();
+  const warnings = [];
+  const alts = new Set();
+
+  for (const cond of activeConds) {
+    const key = String(cond.canonicalKey || cond.name || '').toLowerCase();
+    const label = cond.name || 'this condition';
+    if (key.includes('fever')) {
+      if (
+        /\b(ice cream|kulfi|gelato|sorbet|popsicle|cold drink|soft drink|soda|cola|pepsi|sprite|fanta|thums up|milkshake|cold coffee|iced|slush|falooda|chips|kurkure|namkeen|fried|samosa|pakora|spicy|maggi|instant noodles)\b/i.test(
+          hay
+        )
+      ) {
+        warnings.push({
+          conditionKey: 'fever',
+          conditionName: cond.name || 'Fever',
+          headline: `You recently reported ${(cond.name || 'fever').toLowerCase()}. Consider whether this product is suitable for your current condition.`,
+          detail: 'Chilled desserts, carbonated cold drinks, or fried/spicy snacks may feel uncomfortable while recovering.',
+        });
+        alts.add('Warm oats or soft khichdi');
+        alts.add('Room-temperature tender coconut water');
+      }
+    } else if (key.includes('throat') || key.includes('cold') || key.includes('cough')) {
+      if (
+        /\b(ice cream|kulfi|gelato|sorbet|popsicle|cold drink|soft drink|soda|cola|pepsi|sprite|fanta|milkshake|cold coffee|iced|slush|falooda|chips|kurkure|namkeen|fried|spicy|chilli)\b/i.test(
+          hay
+        )
+      ) {
+        warnings.push({
+          conditionKey: 'throat_cold',
+          conditionName: cond.name || 'Cold',
+          headline: `You recently reported ${(cond.name || 'cold').toLowerCase()}. Consider whether this product is suitable for your current condition.`,
+          detail: 'Chilled desserts, carbonated drinks, or spicy/fried snacks can aggravate throat irritation.',
+        });
+        alts.add('Warm ginger-tulsi herbal tea');
+        alts.add('Soft steamed idli or warm porridge');
+      }
+    } else if (key.includes('gastrit') || key.includes('acid') || key.includes('gerd')) {
+      if (/\b(spicy|chilli|masala|pickle|achaar|fried|chips|kurkure|namkeen|instant noodles|maggi|coffee|cola|soda|chocolate|pizza|burger)\b/i.test(hay)) {
+        warnings.push({
+          conditionKey: 'gastritis',
+          conditionName: label,
+          headline: `You recently reported ${label.toLowerCase()}. Consider whether this product is suitable for your current condition.`,
+          detail: 'Spicy, fried, caffeinated, or carbonated foods commonly aggravate acidity.',
+        });
+        alts.add('Plain yogurt / curd or steamed idli');
+      }
+    } else if (key.includes('gastroenteritis') || key.includes('diarrhea') || key.includes('stomach')) {
+      if (/\b(ice cream|cheese|paneer|butter|ghee|biryani|pizza|burger|fries|chips|namkeen|spicy|chilli|fried|milkshake|cola|soda|juice|chocolate)\b/i.test(hay)) {
+        warnings.push({
+          conditionKey: 'gastroenteritis',
+          conditionName: label,
+          headline: `You recently reported ${label.toLowerCase()}. Consider whether this product is suitable for your current condition.`,
+          detail: 'High-fat, rich dairy, spicy, or sugary items may worsen digestive upset.',
+        });
+        alts.add('Plain curd rice or soft khichdi');
+      }
+    } else if (key.includes('diabetes') && (
+      (nutrition && nutrition.sugars >= 12) ||
+      /\b(sugar syrup|sharbat|rooh afza|cola|soft drink|candy|chocolate|laddu|gulab jamun|rasgulla|soan papdi|ice cream|jam|honey|jaggery|cake|pastry|milkshake)\b/i.test(hay)
+    )) {
+      warnings.push({
+        conditionKey: 'diabetes',
+        conditionName: label,
+        headline: `You recently reported ${label.toLowerCase()}. Consider whether this product is suitable for your current condition.`,
+        detail: nutrition && nutrition.sugars >= 12
+          ? `Contains ${nutrition.sugars}g sugar which can spike blood glucose.`
+          : 'Contains high free sugar listed on your blood sugar plan.',
+      });
+      alts.add('Unsalted walnuts, almonds, or plain oats');
+    } else if ((key.includes('hypertension') || key.includes('bp')) && (
+      (nutrition && nutrition.sodium_mg >= 350) ||
+      /\b(pickle|achaar|papad|instant noodles|maggi|ramen|salted|potato chips|lays|kurkure|namkeen|bhujia|soy sauce|ketchup|salted butter)\b/i.test(hay)
+    )) {
+      warnings.push({
+        conditionKey: 'hypertension',
+        conditionName: label,
+        headline: `You recently reported ${label.toLowerCase()}. Consider whether this product is suitable for your current condition.`,
+        detail: nutrition && nutrition.sodium_mg >= 350
+          ? `High sodium (${Math.round(nutrition.sodium_mg)}mg) conflicts with low-salt guidance.`
+          : 'Salty snack or condiment high in sodium.',
+      });
+      alts.add('Unsalted nuts or fresh whole fruits');
+    } else if (
+      /\b(chips|instant noodles|maggi|soda|cola|ice cream|fried|candy|chocolate|pickle|bhujia)\b/i.test(hay) ||
+      (nutrition && (nutrition.sugars >= 18 || nutrition.sodium_mg >= 600))
+    ) {
+      warnings.push({
+        conditionKey: key || 'custom',
+        conditionName: label,
+        headline: `You recently reported ${label.toLowerCase()}. Consider whether this product is suitable for your current condition.`,
+        detail: `Consider whether this product suits your current ${label} prescription.`,
+      });
+    }
+  }
+
+  for (const ruleText of dietaryRestrictions) {
+    const rLower = String(ruleText || '').toLowerCase();
+    if (
+      /cold|ice cream|chilled/i.test(rLower) &&
+      /\b(ice cream|kulfi|gelato|cold drink|soft drink|soda|cola|pepsi|sprite|milkshake|cold coffee|iced)\b/i.test(hay)
+    ) {
+      if (!warnings.some((w) => w.conditionKey === 'avoid_cold')) {
+        warnings.push({
+          conditionKey: 'avoid_cold',
+          conditionName: 'Avoid cold drinks & ice cream',
+          headline: 'Prescription dietary note (Avoid cold drinks & ice cream).',
+          detail: `Rule applied: ${ruleText}`,
+        });
+      }
+    } else if (
+      /spicy|oily|fried/i.test(rLower) &&
+      /\b(spicy|chilli|masala|fried|deep fried|chips|kurkure|namkeen|bhujia|samosa|pakora|pickle|achaar|instant noodles)\b/i.test(hay)
+    ) {
+      if (!warnings.some((w) => w.conditionKey === 'avoid_spicy_oily')) {
+        warnings.push({
+          conditionKey: 'avoid_spicy_oily',
+          conditionName: 'Avoid spicy, oily & fried food',
+          headline: 'Prescription dietary note (Avoid spicy, oily & fried food).',
+          detail: `Rule applied: ${ruleText}`,
+        });
+      }
+    }
+  }
+
+  return {
+    hasWarnings: warnings.length > 0,
+    warnings,
+    alternatives: Array.from(alts).slice(0, 3),
+    disclaimer,
+  };
+}
+
+function buildToastFromResponse({ ok, baseUrl, data, error, productTitle, platform, imageUrl, ingredientsText, localPrescriptionAlerts, userId }) {
   const storeName = data?.source_platform || platform || 'Online Store';
   const resolvedImage = data?.image_url || imageUrl || '';
   const resolvedIngredients = data?.ingredients_text || ingredientsText || '';
+  const rawRx = data?.prescription_alerts?.hasWarnings
+    ? data.prescription_alerts
+    : localPrescriptionAlerts?.hasWarnings
+    ? localPrescriptionAlerts
+    : null;
+  const prescriptionAlerts =
+    rawRx && rawRx.hasWarnings && Array.isArray(rawRx.warnings) && rawRx.warnings.length > 0
+      ? rawRx
+      : null;
+  const eventId = data?.event_id || null;
+  const queuedFoodLogId = data?.queued_food_log_id || null;
+  const resolvedUserId = data?.user_id || userId || null;
 
   if (!ok || !data) {
     const fallbackQuery = new URLSearchParams({
@@ -907,6 +1090,10 @@ function buildToastFromResponse({ ok, baseUrl, data, error, productTitle, platfo
       ingredientsText: resolvedIngredients,
       takeaway: error || `Could not reach NutriCheck at ${baseUrl}.`,
       score: null,
+      prescriptionAlerts,
+      eventId,
+      queuedFoodLogId,
+      userId: resolvedUserId,
       baseUrl,
       query: fallbackQuery,
     };
@@ -929,6 +1116,10 @@ function buildToastFromResponse({ ok, baseUrl, data, error, productTitle, platfo
       ingredientsText: resolvedIngredients,
       takeaway: 'Label numbers were not on this page. Open NutriCheck to paste or scan the packet.',
       score: null,
+      prescriptionAlerts,
+      eventId,
+      queuedFoodLogId,
+      userId: resolvedUserId,
       baseUrl,
       query: queryParams.toString(),
     };
@@ -973,8 +1164,22 @@ function buildToastFromResponse({ ok, baseUrl, data, error, productTitle, platfo
   if (resolvedImage) queryParams.set('image_url', resolvedImage);
   if (resolvedIngredients) queryParams.set('ingredients', resolvedIngredients.slice(0, 350));
 
+  const rawSource = String(data.nutrition_source || '');
+  const isEstimated = /estimated/i.test(rawSource);
+  const isBackOfPacket = /back of packet|page nutrition facts/i.test(rawSource);
+  const sourceLabel = isBackOfPacket
+    ? rawSource.replace(/\s*\+\s*Ingredients Scan$/i, '')
+    : isEstimated
+    ? rawSource.replace(/\s*\(Estimated\).*$/i, '').trim() || 'Category Average'
+    : rawSource;
+
+  const toastLevel =
+    prescriptionAlerts?.hasWarnings && a.cart_alert.level === 'success'
+      ? 'warning'
+      : a.cart_alert.level;
+
   return {
-    level: a.cart_alert.level,
+    level: toastLevel,
     verdict,
     platform: storeName,
     productName: a.food_name,
@@ -982,6 +1187,12 @@ function buildToastFromResponse({ ok, baseUrl, data, error, productTitle, platfo
     ingredientsText: resolvedIngredients,
     takeaway: a.explanation,
     score: a.health_score,
+    sourceLabel,
+    isEstimated,
+    prescriptionAlerts,
+    eventId,
+    queuedFoodLogId,
+    userId: resolvedUserId,
     macros: {
       calories: a.nutrition.calories,
       sugars: a.nutrition.sugars,
@@ -1007,6 +1218,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       const platform = inferPlatformName(message.payload?.product_url, message.payload?.source_platform);
       const payloadImageUrl = message.payload?.image_url || '';
       const payloadIngredients = message.payload?.ingredients_text || '';
+      const hasGalleryImages = Array.isArray(message.payload?.gallery_images) && message.payload.gallery_images.length > 0;
 
       await saveToastState({
         level: 'info',
@@ -1015,13 +1227,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         productName: productTitle,
         imageUrl: payloadImageUrl,
         ingredientsText: payloadIngredients,
-        takeaway: 'Scanning ingredients and nutrition profile...',
+        takeaway: hasGalleryImages
+          ? 'Scanning product gallery & packet nutrition label...'
+          : 'Scanning ingredients, nutrition & active prescriptions...',
         score: null,
         baseUrl,
         query: new URLSearchParams({ item: productTitle, source: platform.toLowerCase() }).toString(),
       });
 
-      const storedAuth = await chrome.storage.local.get(['activeHealthGuardUserId']);
+      const storedAuth = await chrome.storage.local.get([
+        'activeHealthGuardUserId',
+        'activePrescriptionSummary',
+      ]);
       const activeUserId = storedAuth?.activeHealthGuardUserId || null;
       const outboundPayload = {
         ...(message.payload || {}),
@@ -1029,9 +1246,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       };
 
       let eventData = null;
+      let fromBackend = false;
       try {
         const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 3200);
+        const timeoutMs = hasGalleryImages ? 16000 : 5000;
+        const timer = setTimeout(() => ctrl.abort(), timeoutMs);
         const headers = {
           'Content-Type': 'application/json',
           Accept: 'application/json',
@@ -1052,6 +1271,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           const candidate = await res.json().catch(() => null);
           if (candidate && candidate.status === 'analyzed') {
             eventData = candidate;
+            fromBackend = true;
           }
         }
       } catch {
@@ -1064,12 +1284,39 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         );
       }
 
+      // Sync active prescription cache when online; only use offline cache when backend was unreachable
+      let cachedRxSummary = storedAuth?.activePrescriptionSummary || null;
+      if (activeUserId && (!fromBackend || !eventData?.prescription_alerts?.hasWarnings)) {
+        try {
+          const rxRes = await fetch(`${baseUrl}/api/prescriptions/active?userId=${encodeURIComponent(activeUserId)}`);
+          if (rxRes.ok) {
+            cachedRxSummary = await rxRes.json();
+            await chrome.storage.local.set({ activePrescriptionSummary: cachedRxSummary });
+          }
+        } catch {
+          // keep cached summary if offline
+        }
+      }
+
+      const localPrescriptionAlerts =
+        !fromBackend && activeUserId && cachedRxSummary
+          ? evaluatePrescriptionAlertsInWorker(
+              eventData?.product_title || productTitle,
+              eventData?.ingredients_text || payloadIngredients,
+              eventData?.analysis?.nutrition || null,
+              cachedRxSummary
+            )
+          : null;
+
       if (eventData) {
         if (activeUserId && !eventData.user_id) eventData.user_id = activeUserId;
         if (!eventData.source_platform) eventData.source_platform = platform;
         if (!eventData.image_url && payloadImageUrl) eventData.image_url = payloadImageUrl;
         if (!eventData.ingredients_text && payloadIngredients) {
           eventData.ingredients_text = payloadIngredients;
+        }
+        if (!eventData.prescription_alerts && localPrescriptionAlerts?.hasWarnings) {
+          eventData.prescription_alerts = localPrescriptionAlerts;
         }
       }
 
@@ -1083,6 +1330,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         platform,
         imageUrl: payloadImageUrl,
         ingredientsText: payloadIngredients,
+        localPrescriptionAlerts,
+        userId: activeUserId,
       });
       await saveToastState(toast);
       sendResponse({ ok: true, baseUrl, event: eventData, toast });
@@ -1093,6 +1342,44 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'HEALTHGUARD_DISMISS_TOAST') {
     chrome.storage.local.remove('lastHealthGuardToast');
     return false;
+  }
+
+  if (message?.type === 'HEALTHGUARD_CANCEL_CART_ITEM') {
+    (async () => {
+      await chrome.storage.local.remove('lastHealthGuardToast');
+      const { eventId, queuedFoodLogId, userId } = message;
+      const stored = await chrome.storage.local.get([
+        'lastHealthGuardEvents',
+        'activeHealthGuardUserId',
+      ]);
+      const activeId = userId || stored?.activeHealthGuardUserId || null;
+
+      if (eventId && Array.isArray(stored?.lastHealthGuardEvents)) {
+        const remaining = stored.lastHealthGuardEvents.filter(
+          (e) => !e || e.event_id !== eventId
+        );
+        await chrome.storage.local.set({ lastHealthGuardEvents: remaining });
+      }
+
+      const baseUrl = await getHealthGuardUrl();
+      const headers = activeId ? { 'X-User-Id': activeId } : {};
+      const qs = activeId ? `?userId=${encodeURIComponent(activeId)}` : '';
+
+      if (eventId) {
+        await fetch(
+          `${baseUrl}/api/amazon/cart-events/${encodeURIComponent(eventId)}${qs}`,
+          { method: 'DELETE', headers }
+        ).catch(() => {});
+      }
+      if (queuedFoodLogId) {
+        await fetch(
+          `${baseUrl}/api/food-logs/${encodeURIComponent(queuedFoodLogId)}${qs}`,
+          { method: 'DELETE', headers }
+        ).catch(() => {});
+      }
+      sendResponse({ ok: true });
+    })();
+    return true;
   }
 
   if (message?.type === 'HEALTHGUARD_OPEN_SITE') {

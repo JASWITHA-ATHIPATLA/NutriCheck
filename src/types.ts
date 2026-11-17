@@ -133,6 +133,9 @@ export interface AmazonCartEvent {
   ingredients_text?: string | null;
   ingredient_scan?: PacketScanResult | null;
   source_platform?: string;
+  prescription_alerts?: PrescriptionAlertResult | null;
+  tracker_eligibility?: TrackerEligibility | null;
+  queued_food_log_id?: string | null;
 }
 
 export interface CatalogFoodItem {
@@ -244,3 +247,228 @@ export interface PersonalizedCheckResult {
   matchedAllergens: string[];
   triggeredConditions: string[];
 }
+
+/* ==================== Feature 1: Smart Prescription Health Alerts ==================== */
+export type ConditionCategory = 'acute' | 'chronic';
+export type ConditionStatus = 'active' | 'expired' | 'dismissed';
+export type ExtractionConfidence = 'high' | 'medium' | 'low';
+
+export interface PrescriptionCondition {
+  id: string;
+  name: string;
+  canonicalKey: string;
+  category: ConditionCategory;
+  validDays: number;
+  prescribedDate: string;
+  expiresAt: string;
+  status: ConditionStatus;
+  daysRemaining?: number;
+  confidence?: ExtractionConfidence;
+  needsVerification?: boolean;
+  uncertaintyReason?: string;
+  sourceSnippet?: string;
+  prescription_id?: string;
+  fileName?: string;
+}
+
+export interface PrescriptionMedicine {
+  name: string;
+  dosage: string;
+  frequency?: string;
+  duration?: string;
+  confidence?: ExtractionConfidence;
+  needsVerification?: boolean;
+  uncertaintyReason?: string;
+  note?: string;
+}
+
+export interface PrescriptionDietaryRestrictionItem {
+  text: string;
+  confidence?: ExtractionConfidence;
+  needsVerification?: boolean;
+  uncertaintyReason?: string;
+}
+
+export interface PrescriptionOcrPageSummary {
+  pageNumber: number;
+  fileName: string;
+  rawText: string;
+  confidence: number | null;
+  lowConfidenceWordCount: number;
+  sharpnessScore: number | null;
+  isBlurry: boolean;
+  warnings: string[];
+}
+
+export interface PrescriptionExtractResponse {
+  ok: boolean;
+  rawText: string;
+  ocrProvider: string;
+  ocrConfidence: number | null;
+  pagesCount: number;
+  ocrPages: PrescriptionOcrPageSummary[];
+  qualityWarnings: string[];
+  isReadablePrescription: boolean;
+  handwritingQuality: 'clear' | 'partially_unclear' | 'unreadable';
+  overallConfidence: ExtractionConfidence;
+  doctorVerificationRecommended: boolean;
+  verificationPrompt: string;
+  patientName: string;
+  patientNameConfidence: ExtractionConfidence;
+  patientNameUncertain: boolean;
+  prescriptionDate: string;
+  prescriptionDateConfidence: ExtractionConfidence;
+  prescriptionDateUncertain: boolean;
+  conditions: PrescriptionCondition[];
+  medicines: PrescriptionMedicine[];
+  dietaryRestrictions: string[];
+  dietaryRestrictionItems: PrescriptionDietaryRestrictionItem[];
+}
+
+export interface PrescriptionRecord {
+  prescription_id: string;
+  user_id?: string;
+  fileName: string;
+  fileType: 'pdf' | 'jpg' | 'png' | 'manual';
+  uploadedAt: string;
+  patientName?: string;
+  patientNameConfidence?: ExtractionConfidence;
+  prescriptionDate: string;
+  prescriptionDateConfidence?: ExtractionConfidence;
+  rawOcrText?: string;
+  ocrProvider?: string;
+  ocrConfidence?: number | null;
+  pagesCount?: number;
+  ocrPages?: PrescriptionOcrPageSummary[];
+  handwritingQuality?: 'clear' | 'partially_unclear' | 'unreadable';
+  overallConfidence?: ExtractionConfidence;
+  doctorVerificationRecommended?: boolean;
+  verifiedByUser?: boolean;
+  imageQualityWarnings?: string[];
+  conditions: PrescriptionCondition[];
+  medicines: PrescriptionMedicine[];
+  dietaryRestrictions: string[];
+  dietaryRestrictionItems?: PrescriptionDietaryRestrictionItem[];
+  notes?: string;
+  activeCount?: number;
+  hasActiveConditions?: boolean;
+}
+
+export interface ActivePrescriptionSummary {
+  activeConditions: PrescriptionCondition[];
+  expiredConditions: PrescriptionCondition[];
+  medicines: PrescriptionMedicine[];
+  dietaryRestrictions: string[];
+  disclaimer: string;
+}
+
+export interface PrescriptionAlertWarning {
+  conditionKey: string;
+  conditionName: string;
+  prescribedDate?: string;
+  daysRemaining?: number | null;
+  severity: 'warning' | 'caution';
+  headline: string;
+  detail: string;
+}
+
+export interface PrescriptionAlertResult {
+  hasWarnings: boolean;
+  warnings: PrescriptionAlertWarning[];
+  alternatives: string[];
+  activeConditionCount: number;
+  disclaimer: string;
+}
+
+/* ==================== Feature 2: Daily Food & Nutrition Tracker ==================== */
+export type MealSlot = 'breakfast' | 'lunch' | 'snack' | 'dinner';
+export type ConsumptionStatus = 'pending_confirmation' | 'consumed' | 'skipped';
+export type TrackerRange = 'daily' | 'weekly' | 'monthly';
+
+export interface TrackerEligibility {
+  isInstantConsumable: boolean;
+  normalizedPlatform: string;
+  reason: string | null;
+}
+
+export interface FullNutrients {
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  fiber_g: number;
+  sugar_g: number;
+  sodium_mg: number;
+  potassium_mg: number;
+  calcium_mg: number;
+  iron_mg: number;
+  vitamin_c_mg: number;
+}
+
+export interface FoodConsumptionLog {
+  log_id: string;
+  user_id?: string;
+  sourceEventId?: string | null;
+  foodName: string;
+  platform: string;
+  isInstantConsumable: boolean;
+  mealSlot: MealSlot;
+  consumedDate: string;
+  consumedTime: string;
+  consumptionStatus: ConsumptionStatus;
+  portionMultiplier: number;
+  quantityLabel: string;
+  baseNutrients: FullNutrients;
+  nutrients: FullNutrients;
+  ingredientsText?: string;
+  imageUrl?: string | null;
+  createdAtIso?: string;
+}
+
+export interface NutrientComparisonRow {
+  key: keyof FullNutrients;
+  label: string;
+  unit: string;
+  mode: 'target' | 'min' | 'max';
+  consumed: number;
+  periodTotal: number;
+  target: number;
+  remaining: number;
+  excess: number;
+  pct: number;
+  status: 'deficient' | 'remaining' | 'optimal' | 'within_limit' | 'near_limit' | 'excess';
+}
+
+export interface MealSlotSummary {
+  mealSlot: MealSlot;
+  count: number;
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+}
+
+export interface DailySeriesEntry extends FullNutrients {
+  date: string;
+  itemsCount: number;
+}
+
+export interface NutritionSummaryReport {
+  range: TrackerRange;
+  startDate: string;
+  endDate: string;
+  loggedDays: number;
+  consumedCount: number;
+  pendingConfirmations: FoodConsumptionLog[];
+  totals: FullNutrients;
+  dailyAverage: FullNutrients;
+  requirements: FullNutrients;
+  comparisonRows: NutrientComparisonRow[];
+  deficiencies: NutrientComparisonRow[];
+  excesses: NutrientComparisonRow[];
+  remaining: NutrientComparisonRow[];
+  mealSlots: MealSlotSummary[];
+  platformBreakdown: { platform: string; count: number }[];
+  dailySeries: DailySeriesEntry[];
+}
+

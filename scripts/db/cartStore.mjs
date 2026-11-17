@@ -22,6 +22,9 @@ function sanitizeCartEvent(doc) {
     analysis: plain.analysis ?? null,
     ingredients_text: plain.ingredients_text ?? null,
     ingredient_scan: plain.ingredient_scan ?? null,
+    prescription_alerts: plain.prescription_alerts ?? null,
+    tracker_eligibility: plain.tracker_eligibility ?? null,
+    queued_food_log_id: plain.queued_food_log_id ?? null,
   };
 }
 
@@ -69,6 +72,9 @@ export async function saveCartEventForUser(userId, ev) {
           analysis: record.analysis ?? null,
           ingredients_text: record.ingredients_text ?? null,
           ingredient_scan: record.ingredient_scan ?? null,
+          prescription_alerts: record.prescription_alerts ?? null,
+          tracker_eligibility: record.tracker_eligibility ?? null,
+          queued_food_log_id: record.queued_food_log_id ?? null,
         },
       },
       { upsert: true, new: true }

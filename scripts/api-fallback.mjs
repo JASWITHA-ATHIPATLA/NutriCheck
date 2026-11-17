@@ -16,6 +16,37 @@ import {
   listCartEventsForUser,
   saveCartEventForUser,
 } from './db/cartStore.mjs';
+import {
+  deletePrescriptionForUser,
+  getActivePrescriptionSummaryForUser,
+  listPrescriptionsForUser,
+  savePrescriptionForUser,
+  updatePrescriptionForUser,
+} from './db/prescriptionStore.mjs';
+import {
+  deleteFoodLogForUser,
+  getFoodLogById,
+  getFoodLogBySourceEvent,
+  listFoodLogsForUser,
+  saveFoodLogForUser,
+} from './db/foodLogStore.mjs';
+import {
+  PRESCRIPTION_DISCLAIMER,
+  evaluateProductAgainstPrescriptions,
+  resolveCanonicalConditionMeta,
+} from './rules/prescriptionAlertEngine.mjs';
+import {
+  PrescriptionServiceError,
+  analyzePrescriptionDocument,
+} from './services/prescriptionVisionService.mjs';
+import {
+  buildFullNutrientProfile,
+  buildNutritionComparisonReport,
+  classifyInstantConsumable,
+  computePersonalizedRequirements,
+} from './rules/nutritionTrackerEngine.mjs';
+import { parseNutritionText } from './ocr/nutritionParser.mjs';
+import { scanGalleryImagesForPacket } from './ocr/packetGalleryOcr.mjs';
 
 const GROCERY_STAPLES = [
   { keywords: ['brown rice', 'red rice', 'black rice', 'wild rice'], name: 'Brown Rice (Whole Grain, per 100g)', calories: 362, sugars: 0.7, fat: 2.7, protein: 7.5, sodium_mg: 4 },
@@ -147,139 +178,6 @@ function inferPlatformName(url, explicit) {
   if (u.includes('blinkit')) return 'Blinkit';
   if (u.includes('amazon')) return 'Amazon';
   return 'Online Store';
-}
-
-function parseNutritionText(text) {
-  if (!text || !text.trim()) return null;
-
-  const cleanedRaw = text
-    .replace(/\r\n?/g, '\n')
-    .replace(/based on a?\s*[\d,]+\s*(?:kcal|calories?)\s*diet/gi, ' ')
-    .replace(/[\d,]+\s*(?:kcal|calories?)\s*diet/gi, ' ');
-
-  const normalized = cleanedRaw.replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
-  const hasLabelHeader = /\b(?:nutrition(?:al)?\s*(?:facts|information|values)|per\s*100\s*g|per\s*serving|energy\s*\(?\s*k?cal)\b/i.test(
-    cleanedRaw
-  );
-
-  const calMatch =
-    normalized.match(
-      /(?:calories|energy)\s*\(\s*(?:k?cal|keal)\s*(?:\/\s*kj)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)/i
-    ) ||
-    normalized.match(
-      /(?:calories|energy)\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*(?:kcal|cal|keal)\b/i
-    ) ||
-    (hasLabelHeader
-      ? normalized.match(/(?:calories|energy)\s*[:|\-]?\s*(\d+(?:\.\d+)?)\b(?!\s*(?:%|kj\b|g\b|mg\b))/i)
-      : null);
-
-  if (!calMatch) return null;
-  const calories = parseFloat(calMatch[1]);
-
-  const grabMacroGrams = (namePattern, allowBare = true) => {
-    const unitBefore = new RegExp(
-      `(?:${namePattern})\\s*\\(\\s*g(?:ms?)?\\s*\\)\\s*[:|\\-]?\\s*(\\d+(?:\\.\\d+)?)(?!\\s*%)`,
-      'i'
-    );
-    const mBefore = normalized.match(unitBefore);
-    if (mBefore) return parseFloat(mBefore[1]);
-
-    const unitAfter = new RegExp(
-      `(?:${namePattern})\\s*[:|\\-]?\\s*(\\d+(?:\\.\\d+)?)\\s*g(?:ms?)?\\b`,
-      'i'
-    );
-    const mAfter = normalized.match(unitAfter);
-    if (mAfter) return parseFloat(mAfter[1]);
-
-    if (allowBare && hasLabelHeader) {
-      const bare = new RegExp(
-        `(?:${namePattern})\\s*[:|\\-]?\\s*(\\d+(?:\\.\\d+)?)\\b(?!\\s*(?:%|mg\\b|kcal\\b))`,
-        'i'
-      );
-      const mBare = normalized.match(bare);
-      if (mBare) {
-        const val = parseFloat(mBare[1]);
-        if (val <= 105) return val;
-      }
-    }
-    return null;
-  };
-
-  const normalizedNoAdded = normalized.replace(/\badded\s+sugars?\b/gi, ' __added_sugar__ ');
-  let sugars = grabMacroGrams('\\btotal\\s+sugars?');
-  if (sugars === null) sugars = grabMacroGrams('\\bof\\s+which\\s+sugars?');
-  if (sugars === null) {
-    const mPlainBefore = normalizedNoAdded.match(/\bsugars?\s*\(\s*g(?:ms?)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)/i);
-    const mPlainAfter = normalizedNoAdded.match(/\bsugars?\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g(?:ms?)?\b/i);
-    if (mPlainBefore) sugars = parseFloat(mPlainBefore[1]);
-    else if (mPlainAfter) sugars = parseFloat(mPlainAfter[1]);
-    else if (hasLabelHeader) {
-      const mBare = normalizedNoAdded.match(/\bsugars?\s*[:|\-]?\s*(\d+(?:\.\d+)?)\b(?!\s*%)/i);
-      if (mBare && parseFloat(mBare[1]) <= 105) sugars = parseFloat(mBare[1]);
-    }
-  }
-  if (sugars === null) sugars = grabMacroGrams('\\badded\\s+sugars?');
-
-  const normalizedNoSubFats = normalized.replace(
-    /\b(?:saturated|sat\.?|trans|mono(?:unsaturated)?|poly(?:unsaturated)?|omega[\s\-\d]*fatty)\s+fat(?:ty\s+acids?)?\b/gi,
-    ' __sub_fat__ '
-  );
-  let fat = grabMacroGrams('\\btotal\\s+fat');
-  if (fat === null) {
-    const mFatBefore = normalizedNoSubFats.match(/\bfat\s*\(\s*g(?:ms?)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)/i);
-    const mFatAfter = normalizedNoSubFats.match(/\bfat\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g(?:ms?)?\b/i);
-    if (mFatBefore) fat = parseFloat(mFatBefore[1]);
-    else if (mFatAfter) fat = parseFloat(mFatAfter[1]);
-    else if (hasLabelHeader) {
-      const mBare = normalizedNoSubFats.match(/\bfat\s*[:|\-]?\s*(\d+(?:\.\d+)?)\b(?!\s*%)/i);
-      if (mBare && parseFloat(mBare[1]) <= 105) fat = parseFloat(mBare[1]);
-    }
-  }
-
-  const protein = grabMacroGrams('\\bproteins?');
-  const carbs = grabMacroGrams('(?:\\btotal\\s+)?\\bcarbohydrates?');
-
-  let sodium_mg = null;
-  const sodMgBefore = normalized.match(/\bsodium\s*\(\s*mg\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)/i);
-  const sodMgAfter = normalized.match(/\bsodium\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*mg\b/i);
-  const sodGBefore = normalized.match(/\bsodium\s*\(\s*g(?:ms?)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)/i);
-  const sodGAfter = normalized.match(/\bsodium\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g(?:ms?)?\b/i);
-  const saltGBefore = normalized.match(/\bsalt\s*\(\s*g(?:ms?)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)/i);
-  const saltGAfter = normalized.match(/\bsalt\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g(?:ms?)?\b/i);
-  const sodBare = hasLabelHeader
-    ? normalized.match(/\bsodium\s*[:|\-]?\s*(\d+(?:\.\d+)?)\b(?!\s*(?:%|g\b))/i)
-    : null;
-
-  if (sodMgBefore) sodium_mg = parseFloat(sodMgBefore[1]);
-  else if (sodMgAfter) sodium_mg = parseFloat(sodMgAfter[1]);
-  else if (sodGBefore) sodium_mg = parseFloat(sodGBefore[1]) * 1000;
-  else if (sodGAfter) sodium_mg = parseFloat(sodGAfter[1]) * 1000;
-  else if (saltGBefore) sodium_mg = parseFloat(saltGBefore[1]) * 393.4;
-  else if (saltGAfter) sodium_mg = parseFloat(saltGAfter[1]) * 393.4;
-  else if (sodBare) sodium_mg = parseFloat(sodBare[1]);
-
-  const foundCount = [sugars, fat, protein, sodium_mg, carbs].filter((v) => v !== null).length;
-  if (foundCount < 1) return null;
-
-  // Guard against dropped decimal dot on sugars when carbohydrates are parsed (Total Sugars <= Total Carbohydrate)
-  if (
-    sugars !== null &&
-    carbs !== null &&
-    sugars > carbs &&
-    Number.isInteger(sugars) &&
-    sugars >= 10 &&
-    sugars <= 99
-  ) {
-    sugars = round1(sugars / 10);
-  }
-
-  return {
-    calories,
-    sugars: sugars ?? 0,
-    fat: fat ?? 0,
-    protein: protein ?? 0,
-    sodium_mg: sodium_mg ?? 0,
-  };
 }
 
 function scoreNutrition(foodName, n) {
@@ -561,20 +459,35 @@ async function lookupOpenFoodFacts(title) {
     .slice(0, 6)
     .join(' ');
   if (!cleanQuery) return null;
+  const queryTokens = cleanQuery.toLowerCase().split(/\s+/).filter((t) => t.length >= 3);
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 2200);
     const res = await fetch(
-      `https://search.openfoodfacts.org/search?q=${encodeURIComponent(cleanQuery)}&page_size=5&fields=product_name,nutriments,ingredients_text,image_front_small_url,image_front_url,image_url`,
+      `https://search.openfoodfacts.org/search?q=${encodeURIComponent(cleanQuery)}&page_size=6&fields=product_name,nutriments,ingredients_text,image_front_small_url,image_front_url,image_url`,
       { signal: ctrl.signal }
     );
     clearTimeout(t);
     if (!res.ok) return null;
     const data = await res.json();
+    let bestHit = null;
+    let bestHitsCount = 0;
     for (const p of data?.hits || []) {
       const n = p?.nutriments;
       const kcal = n?.['energy-kcal_100g'] ?? n?.['energy-kcal_serving'] ?? n?.['energy-kcal'];
       if (!p?.product_name || kcal == null) continue;
+      const nameLower = String(p.product_name).toLowerCase();
+      const overlap = queryTokens.filter((tok) => nameLower.includes(tok)).length;
+      if (queryTokens.length > 0 && overlap === 0) continue;
+      if (overlap > bestHitsCount) {
+        bestHitsCount = overlap;
+        bestHit = p;
+      }
+    }
+    if (bestHit) {
+      const p = bestHit;
+      const n = p.nutriments;
+      const kcal = n['energy-kcal_100g'] ?? n['energy-kcal_serving'] ?? n['energy-kcal'];
       let sodiumMg = Number(n.sodium_100g || 0) * 1000;
       if (!sodiumMg && n.salt_100g) sodiumMg = Number(n.salt_100g) * 393.4;
       return {
@@ -613,7 +526,7 @@ export function startNodeApiFallback({ host = '127.0.0.1', port = 8001 } = {}) {
     }
     next();
   });
-  app.use(express.json({ limit: '1mb' }));
+  app.use(express.json({ limit: '25mb' }));
 
   app.get('/api/health', async (_req, res) => {
     await connectMongoDB();
@@ -756,29 +669,56 @@ export function startNodeApiFallback({ host = '127.0.0.1', port = 8001 } = {}) {
     let matchedFood = null;
     let ingredientsText = ingredientsInput;
     let imageUrl = String(payload.image_url ?? existingEvent?.image_url ?? '').trim();
+    let resolvedSource = payload.source || existingEvent?.source || 'store_browser_extension';
+
+    if (
+      !nutrition &&
+      !hasExplicitNumbers &&
+      !skipGenericFallback &&
+      Array.isArray(payload.gallery_images) &&
+      payload.gallery_images.length > 0
+    ) {
+      const galleryOcr = await scanGalleryImagesForPacket(payload.gallery_images, {
+        existingIngredients: ingredientsText,
+      });
+      if (galleryOcr?.nutrition) {
+        nutrition = galleryOcr.nutrition;
+        nutritionSource = 'Back of Packet Image (Auto-Scanned)';
+        resolvedSource = 'packet_gallery_ocr';
+      }
+      if (!ingredientsText && galleryOcr?.ingredientsText) {
+        ingredientsText = galleryOcr.ingredientsText;
+      }
+    }
 
     if (!skipGenericFallback && (!nutrition || !imageUrl || !ingredientsText)) {
       const staple = lookupStapleOrCatalog(title, catalog);
       const isWholeStaple =
         staple?.source === 'Grocery & Dish Profile' &&
-        (/\b(walnuts?|akhrot|almonds?|badam|blueberr(?:y|ies)|strawberr(?:y|ies)|raspberr(?:y|ies)|blackberr(?:y|ies)|berr(?:y|ies)|avocados?)\b/i.test(title) &&
+        (/\b(walnuts?|akhrot|almonds?|badam|blueberr(?:y|ies)|strawberr(?:y|ies)|raspberr(?:y|ies)|blackberr(?:y|ies)|berr(?:y|ies)|avocados?|rolled oats|oats|basmati rice|brown rice)\b/i.test(title) &&
           !/\b(chocolate|candy|cookie|biscuit|cake|muffin|jam|jelly|juice|syrup|salted|masala|butter|chips|dried)\b/i.test(title));
       const off = isWholeStaple ? null : await lookupOpenFoodFacts(title);
 
-      if (staple && !nutrition) {
-        nutrition = staple.nutrition;
-        nutritionSource = `${staple.source} (Estimated)`;
-        matchedFood = staple.matched_food;
-      } else if (off && !nutrition) {
-        nutrition = off.nutrition;
-        nutritionSource = `${off.source} (Estimated)`;
-        matchedFood = off.matched_food;
+      if (!nutrition) {
+        if (isWholeStaple && staple) {
+          nutrition = staple.nutrition;
+          nutritionSource = `${staple.source} (Estimated)`;
+          matchedFood = staple.matched_food;
+        } else if (off) {
+          nutrition = off.nutrition;
+          nutritionSource = `${off.source} (Estimated)`;
+          matchedFood = off.matched_food;
+        } else if (staple) {
+          nutrition = staple.nutrition;
+          nutritionSource = `${staple.source} (Estimated)`;
+          matchedFood = staple.matched_food;
+        }
       }
       if (!ingredientsText) {
-        if (staple) {
-          ingredientsText = inferDefaultIngredients(title) || '';
-        } else if (off?.ingredients_text) {
+        if (off?.ingredients_text && !isWholeStaple) {
           ingredientsText = off.ingredients_text;
+        } else if (staple) {
+          ingredientsText = inferDefaultIngredients(title) || '';
         }
       }
       if (!imageUrl && off?.image_url) {
@@ -802,7 +742,7 @@ export function startNodeApiFallback({ host = '127.0.0.1', port = 8001 } = {}) {
       return {
         event_id: eventId,
         timestamp: existingEvent?.timestamp || new Date().toISOString(),
-        source: payload.source || existingEvent?.source || 'store_browser_extension',
+        source: resolvedSource,
         source_platform: platform,
         status: 'needs_nutrition',
         product_title: title,
@@ -827,7 +767,7 @@ export function startNodeApiFallback({ host = '127.0.0.1', port = 8001 } = {}) {
     return {
       event_id: eventId,
       timestamp: existingEvent?.timestamp || new Date().toISOString(),
-      source: payload.source || existingEvent?.source || 'store_browser_extension',
+      source: resolvedSource,
       source_platform: platform,
       status: 'analyzed',
       product_title: title,
@@ -887,8 +827,90 @@ export function startNodeApiFallback({ host = '127.0.0.1', port = 8001 } = {}) {
       const payload = req.body || {};
       const userId = getRequestUserId(req, payload);
       const ev = await buildAnalyzedCartEvent(payload);
-      const saved = await saveCartEventForUser(userId, ev);
-      res.json(saved);
+
+      // Feature 1: Check active prescription conditions & dietary rules
+      let prescriptionAlerts = {
+        hasWarnings: false,
+        warnings: [],
+        alternatives: [],
+        activeConditionCount: 0,
+        disclaimer: PRESCRIPTION_DISCLAIMER,
+      };
+      if (userId) {
+        const activeProfile = await getActivePrescriptionSummaryForUser(userId);
+        if (
+          activeProfile.activeConditions.length > 0 ||
+          activeProfile.dietaryRestrictions.length > 0
+        ) {
+          prescriptionAlerts = evaluateProductAgainstPrescriptions({
+            productTitle: ev.product_title,
+            ingredientsText: ev.ingredients_text || '',
+            nutrition: ev.analysis?.nutrition || null,
+            activeConditions: activeProfile.activeConditions,
+            dietaryRestrictions: activeProfile.dietaryRestrictions,
+          });
+        }
+      }
+
+      // Feature 2: Instant-consumption filter for Daily Food & Nutrition Tracker
+      const intakeCheck = classifyInstantConsumable({
+        productTitle: ev.product_title,
+        platform: ev.source_platform,
+        productUrl: ev.product_url || '',
+        source: ev.source || '',
+      });
+
+      let queuedFoodLog = null;
+      if (userId && intakeCheck.isInstantConsumable && ev.analysis?.nutrition) {
+        const existingLog = await getFoodLogBySourceEvent(userId, ev.event_id);
+        if (!existingLog) {
+          const now = new Date();
+          const consumedDate = now.toISOString().slice(0, 10);
+          const consumedTime = now.toTimeString().slice(0, 5);
+          const hour = now.getHours();
+          const mealSlot =
+            hour < 11 ? 'breakfast' : hour < 16 ? 'lunch' : hour < 19 ? 'snack' : 'dinner';
+          const baseNutrients = buildFullNutrientProfile({
+            productTitle: ev.product_title,
+            baseNutrition: ev.analysis.nutrition,
+            ingredientsText: ev.ingredients_text || '',
+            portionMultiplier: 1,
+          });
+          queuedFoodLog = await saveFoodLogForUser(userId, {
+            log_id: `log-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+            sourceEventId: ev.event_id,
+            foodName: ev.product_title,
+            platform: intakeCheck.normalizedPlatform,
+            isInstantConsumable: true,
+            mealSlot,
+            consumedDate,
+            consumedTime,
+            consumptionStatus: 'pending_confirmation',
+            portionMultiplier: 1,
+            quantityLabel: '1 serving (100g)',
+            baseNutrients,
+            nutrients: baseNutrients,
+            ingredientsText: ev.ingredients_text || '',
+            imageUrl: ev.image_url || null,
+            createdAtIso: now.toISOString(),
+          });
+        }
+      }
+
+      const enrichedEvent = {
+        ...ev,
+        prescription_alerts: prescriptionAlerts,
+        tracker_eligibility: intakeCheck,
+        queued_food_log_id: queuedFoodLog?.log_id || null,
+      };
+
+      const saved = await saveCartEventForUser(userId, enrichedEvent);
+      res.json({
+        ...saved,
+        prescription_alerts: prescriptionAlerts,
+        tracker_eligibility: intakeCheck,
+        queued_food_log_id: queuedFoodLog?.log_id || null,
+      });
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Unable to add item.' });
     }
@@ -965,6 +987,509 @@ export function startNodeApiFallback({ host = '127.0.0.1', port = 8001 } = {}) {
       summary: nutritionAnalysis.explanation,
       nutrition_analysis: nutritionAnalysis,
     });
+  });
+
+  /* ==================== Feature 1: Smart Prescription Health Alerts ==================== */
+  app.get('/api/prescriptions', async (req, res) => {
+    try {
+      const userId = getRequestUserId(req);
+      if (!userId) {
+        res.json({ ok: true, prescriptions: [], activeProfile: { activeConditions: [], expiredConditions: [], medicines: [], dietaryRestrictions: [], disclaimer: PRESCRIPTION_DISCLAIMER } });
+        return;
+      }
+      const prescriptions = await listPrescriptionsForUser(userId);
+      const activeProfile = await getActivePrescriptionSummaryForUser(userId);
+      res.json({ ok: true, prescriptions, activeProfile });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Unable to load prescriptions.' });
+    }
+  });
+
+  app.get('/api/prescriptions/active', async (req, res) => {
+    try {
+      const userId = getRequestUserId(req);
+      if (!userId) {
+        res.json({ ok: true, activeConditions: [], expiredConditions: [], medicines: [], dietaryRestrictions: [], disclaimer: PRESCRIPTION_DISCLAIMER });
+        return;
+      }
+      const summary = await getActivePrescriptionSummaryForUser(userId);
+      res.json({ ok: true, ...summary });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Unable to load active prescription profile.' });
+    }
+  });
+
+  app.post('/api/prescriptions/extract', async (req, res) => {
+    try {
+      const body = req.body || {};
+      const pages = Array.isArray(body.pages)
+        ? body.pages
+        : body.imageDataUrl
+        ? [
+            {
+              pageNumber: 1,
+              fileName: body.fileName || 'Prescription',
+              dataUrl: body.imageDataUrl,
+            },
+          ]
+        : [];
+      const rawTextInput = String(body.rawText || '').trim();
+
+      const extracted = await analyzePrescriptionDocument({
+        pages,
+        rawTextInput,
+      });
+
+      res.json({ ok: true, ...extracted });
+    } catch (err) {
+      if (err instanceof PrescriptionServiceError) {
+        res.status(err.status).json({
+          ok: false,
+          code: err.code,
+          error: err.message,
+        });
+        return;
+      }
+      res.status(500).json({
+        ok: false,
+        error:
+          err instanceof Error
+            ? err.message
+            : 'Unable to extract prescription details.',
+      });
+    }
+  });
+
+  app.post('/api/prescriptions', async (req, res) => {
+    try {
+      const body = req.body || {};
+      const userId = getRequestUserId(req, body);
+      if (!userId) {
+        res.status(400).json({ ok: false, error: 'Missing userId.' });
+        return;
+      }
+
+      const rawText = String(body.rawOcrText || body.rawText || '');
+      const prescriptionDate =
+        body.prescriptionDate && /^\d{4}-\d{2}-\d{2}$/.test(body.prescriptionDate)
+          ? body.prescriptionDate
+          : new Date().toISOString().slice(0, 10);
+      const baseMs = new Date(`${prescriptionDate}T00:00:00`).getTime() || Date.now();
+
+      const rawConditions = Array.isArray(body.conditions) ? body.conditions : [];
+      const conditions = rawConditions
+        .filter((c) => c && String(c.name || '').trim())
+        .map((c, idx) => {
+          const name = String(c.name).trim();
+          const meta = resolveCanonicalConditionMeta(name);
+          const validDays = Math.min(
+            365,
+            Math.max(
+              1,
+              Number(c.validDays) || (c.category === 'chronic' ? 180 : meta.defaultValidDays || 7)
+            )
+          );
+          const pDate = c.prescribedDate || prescriptionDate;
+          const pMs = new Date(`${pDate}T00:00:00`).getTime() || baseMs;
+          const expiresAt =
+            c.expiresAt || new Date(pMs + validDays * 24 * 60 * 60 * 1000).toISOString();
+          const confidence = ['high', 'medium', 'low'].includes(c.confidence)
+            ? c.confidence
+            : 'high';
+          return {
+            id: c.id || `cond-${Date.now().toString(36)}-${idx}`,
+            name,
+            canonicalKey: String(c.canonicalKey || meta.canonicalKey || name)
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, '_'),
+            category: c.category === 'chronic' ? 'chronic' : 'acute',
+            validDays,
+            prescribedDate: pDate,
+            expiresAt,
+            status:
+              c.status === 'dismissed'
+                ? 'dismissed'
+                : Date.now() > new Date(expiresAt).getTime()
+                ? 'expired'
+                : 'active',
+            confidence,
+            needsVerification: Boolean(c.needsVerification),
+            uncertaintyReason: String(c.uncertaintyReason || '').trim(),
+            sourceSnippet: String(c.sourceSnippet || 'Verified by user before saving'),
+          };
+        });
+
+      const medicines = (Array.isArray(body.medicines) ? body.medicines : [])
+        .filter((m) => m && String(m.name || '').trim())
+        .map((m) => ({
+          name: String(m.name).trim(),
+          dosage: String(m.dosage || '').trim(),
+          frequency: String(m.frequency || '').trim(),
+          duration: String(m.duration || '').trim(),
+          confidence: ['high', 'medium', 'low'].includes(m.confidence) ? m.confidence : 'high',
+          needsVerification: Boolean(m.needsVerification),
+          uncertaintyReason: String(m.uncertaintyReason || '').trim(),
+          note: String(m.note || '').trim(),
+        }));
+
+      const dietaryRestrictions = (
+        Array.isArray(body.dietaryRestrictions) ? body.dietaryRestrictions : []
+      )
+        .map((d) => String(d || '').trim())
+        .filter(Boolean);
+
+      const dietaryRestrictionItems = Array.isArray(body.dietaryRestrictionItems)
+        ? body.dietaryRestrictionItems
+        : dietaryRestrictions.map((text) => ({
+            text,
+            confidence: 'high',
+            needsVerification: false,
+          }));
+
+      const saved = await savePrescriptionForUser(userId, {
+        prescription_id:
+          body.prescription_id ||
+          `rx-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        fileName: String(body.fileName || 'Doctor Prescription').trim(),
+        fileType: ['pdf', 'jpg', 'png', 'manual'].includes(body.fileType)
+          ? body.fileType
+          : 'jpg',
+        uploadedAt: new Date().toISOString(),
+        patientName: String(body.patientName || '').trim(),
+        patientNameConfidence: ['high', 'medium', 'low'].includes(body.patientNameConfidence)
+          ? body.patientNameConfidence
+          : 'medium',
+        prescriptionDate,
+        prescriptionDateConfidence: ['high', 'medium', 'low'].includes(
+          body.prescriptionDateConfidence
+        )
+          ? body.prescriptionDateConfidence
+          : 'medium',
+        rawOcrText: rawText,
+        ocrProvider: String(
+          body.ocrProvider || 'google_cloud_vision_document_text + gemini_vision'
+        ),
+        ocrConfidence: typeof body.ocrConfidence === 'number' ? body.ocrConfidence : null,
+        pagesCount: Math.max(1, Number(body.pagesCount) || 1),
+        ocrPages: Array.isArray(body.ocrPages) ? body.ocrPages : [],
+        handwritingQuality: ['clear', 'partially_unclear', 'unreadable'].includes(
+          body.handwritingQuality
+        )
+          ? body.handwritingQuality
+          : 'clear',
+        overallConfidence: ['high', 'medium', 'low'].includes(body.overallConfidence)
+          ? body.overallConfidence
+          : 'high',
+        doctorVerificationRecommended: Boolean(body.doctorVerificationRecommended),
+        verifiedByUser: body.verifiedByUser !== false,
+        imageQualityWarnings: Array.isArray(body.imageQualityWarnings)
+          ? body.imageQualityWarnings
+          : [],
+        conditions,
+        medicines,
+        dietaryRestrictions,
+        dietaryRestrictionItems,
+        notes: String(body.notes || '').trim(),
+      });
+
+      const activeProfile = await getActivePrescriptionSummaryForUser(userId);
+      res.status(201).json({ ok: true, prescription: saved, activeProfile });
+    } catch (err) {
+      res.status(500).json({
+        ok: false,
+        error: err instanceof Error ? err.message : 'Unable to save prescription.',
+      });
+    }
+  });
+
+  app.patch('/api/prescriptions/:id', async (req, res) => {
+    try {
+      const body = req.body || {};
+      const userId = getRequestUserId(req, body);
+      if (!userId) {
+        res.status(400).json({ ok: false, error: 'Missing userId.' });
+        return;
+      }
+
+      const list = await listPrescriptionsForUser(userId);
+      const existing = list.find((p) => p.prescription_id === req.params.id);
+      if (!existing) {
+        res.status(404).json({ ok: false, error: 'Prescription not found.' });
+        return;
+      }
+
+      let nextConditions = existing.conditions;
+      if (body.conditionId && (body.status || body.validDays)) {
+        nextConditions = existing.conditions.map((c) => {
+          if (c.id !== body.conditionId) return c;
+          const validDays = body.validDays ? Math.min(365, Math.max(1, Number(body.validDays))) : c.validDays;
+          const baseMs = new Date(`${c.prescribedDate}T00:00:00`).getTime() || Date.now();
+          const expiresAt = body.validDays
+            ? new Date(baseMs + validDays * 24 * 60 * 60 * 1000).toISOString()
+            : c.expiresAt;
+          const nextStatus =
+            body.status === 'dismissed'
+              ? 'dismissed'
+              : body.status === 'active'
+              ? 'active'
+              : Date.now() > new Date(expiresAt).getTime()
+              ? 'expired'
+              : 'active';
+          return { ...c, validDays, expiresAt, status: nextStatus };
+        });
+      } else if (Array.isArray(body.conditions)) {
+        nextConditions = body.conditions;
+      }
+
+      const updated = await updatePrescriptionForUser(userId, req.params.id, {
+        ...body,
+        conditions: nextConditions,
+      });
+      const activeProfile = await getActivePrescriptionSummaryForUser(userId);
+      res.json({ ok: true, prescription: updated, activeProfile });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Unable to update prescription.' });
+    }
+  });
+
+  app.delete('/api/prescriptions/:id', async (req, res) => {
+    try {
+      const userId = getRequestUserId(req);
+      if (!userId) {
+        res.status(400).json({ ok: false, error: 'Missing userId.' });
+        return;
+      }
+      await deletePrescriptionForUser(userId, req.params.id);
+      const activeProfile = await getActivePrescriptionSummaryForUser(userId);
+      res.json({ ok: true, activeProfile });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Unable to delete prescription.' });
+    }
+  });
+
+  app.post('/api/prescriptions/check-product', async (req, res) => {
+    try {
+      const body = req.body || {};
+      const userId = getRequestUserId(req, body);
+      if (!userId) {
+        res.json({ ok: true, hasWarnings: false, warnings: [], alternatives: [], activeConditionCount: 0, disclaimer: PRESCRIPTION_DISCLAIMER });
+        return;
+      }
+      const activeProfile = await getActivePrescriptionSummaryForUser(userId);
+      const result = evaluateProductAgainstPrescriptions({
+        productTitle: String(body.product_title || body.productTitle || ''),
+        ingredientsText: String(body.ingredients_text || body.ingredientsText || ''),
+        nutrition: body.nutrition || null,
+        activeConditions: activeProfile.activeConditions,
+        dietaryRestrictions: activeProfile.dietaryRestrictions,
+      });
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Unable to evaluate product.' });
+    }
+  });
+
+  /* ==================== Feature 2: Daily Food & Nutrition Tracker ==================== */
+  app.get('/api/food-logs', async (req, res) => {
+    try {
+      const userId = getRequestUserId(req);
+      const range = ['daily', 'weekly', 'monthly'].includes(String(req.query?.range))
+        ? String(req.query.range)
+        : 'daily';
+      const targetDate = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query?.date || ''))
+        ? String(req.query.date)
+        : new Date().toISOString().slice(0, 10);
+
+      if (!userId) {
+        const emptyReq = computePersonalizedRequirements(null, []);
+        res.json({
+          ok: true,
+          logs: [],
+          report: buildNutritionComparisonReport([], emptyReq, range, targetDate),
+        });
+        return;
+      }
+
+      const [logs, userFound, activeRx] = await Promise.all([
+        listFoodLogsForUser(userId),
+        getUserById(userId).catch(() => null),
+        getActivePrescriptionSummaryForUser(userId).catch(() => ({ activeConditions: [] })),
+      ]);
+
+      const requirements = computePersonalizedRequirements(
+        userFound?.user || null,
+        activeRx?.activeConditions || []
+      );
+      const report = buildNutritionComparisonReport(logs, requirements, range, targetDate);
+
+      res.json({ ok: true, logs, report });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Unable to load food logs.' });
+    }
+  });
+
+  app.post('/api/food-logs', async (req, res) => {
+    try {
+      const body = req.body || {};
+      const userId = getRequestUserId(req, body);
+      if (!userId) {
+        res.status(400).json({ ok: false, error: 'Missing userId.' });
+        return;
+      }
+
+      const foodName = String(body.foodName || body.product_title || '').trim();
+      if (!foodName) {
+        res.status(400).json({ ok: false, error: 'Food name is required.' });
+        return;
+      }
+
+      const platform = String(body.platform || 'Manual').trim();
+      const intakeCheck = classifyInstantConsumable({
+        productTitle: foodName,
+        platform,
+        productUrl: body.productUrl || '',
+        source: body.source || (platform === 'Manual' ? 'manual_entry' : ''),
+      });
+
+      if (!intakeCheck.isInstantConsumable) {
+        res.status(422).json({
+          ok: false,
+          excluded: true,
+          error: intakeCheck.reason || 'Non-consumable or regular delayed shipment excluded from Daily Food Tracker.',
+        });
+        return;
+      }
+
+      const portionMultiplier = Math.max(0.1, Math.min(20, Number(body.portionMultiplier) || 1));
+      const baseInput = body.baseNutrients || body.nutrients || {
+        calories: body.calories,
+        protein_g: body.protein_g ?? body.protein,
+        carbs_g: body.carbs_g,
+        fat_g: body.fat_g ?? body.fat,
+        fiber_g: body.fiber_g,
+        sugar_g: body.sugar_g ?? body.sugars,
+        sodium_mg: body.sodium_mg,
+        potassium_mg: body.potassium_mg,
+        calcium_mg: body.calcium_mg,
+        iron_mg: body.iron_mg,
+        vitamin_c_mg: body.vitamin_c_mg,
+      };
+
+      const baseNutrients = buildFullNutrientProfile({
+        productTitle: foodName,
+        baseNutrition: baseInput,
+        ingredientsText: body.ingredientsText || '',
+        portionMultiplier: 1,
+      });
+
+      const scaledNutrients = buildFullNutrientProfile({
+        productTitle: foodName,
+        baseNutrition: baseNutrients,
+        ingredientsText: body.ingredientsText || '',
+        portionMultiplier,
+      });
+
+      const now = new Date();
+      const log = await saveFoodLogForUser(userId, {
+        log_id: body.log_id || `log-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        sourceEventId: body.sourceEventId || null,
+        foodName,
+        platform: intakeCheck.normalizedPlatform,
+        isInstantConsumable: true,
+        mealSlot: ['breakfast', 'lunch', 'snack', 'dinner'].includes(body.mealSlot)
+          ? body.mealSlot
+          : 'lunch',
+        consumedDate: /^\d{4}-\d{2}-\d{2}$/.test(String(body.consumedDate || ''))
+          ? body.consumedDate
+          : now.toISOString().slice(0, 10),
+        consumedTime: /^\d{2}:\d{2}$/.test(String(body.consumedTime || ''))
+          ? body.consumedTime
+          : now.toTimeString().slice(0, 5),
+        consumptionStatus: ['pending_confirmation', 'consumed', 'skipped'].includes(
+          body.consumptionStatus
+        )
+          ? body.consumptionStatus
+          : 'consumed',
+        portionMultiplier,
+        quantityLabel: String(body.quantityLabel || `${portionMultiplier}x serving`).trim(),
+        baseNutrients,
+        nutrients: scaledNutrients,
+        ingredientsText: String(body.ingredientsText || '').trim(),
+        imageUrl: body.imageUrl || null,
+        createdAtIso: now.toISOString(),
+      });
+
+      res.status(201).json({ ok: true, log });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Unable to save food log.' });
+    }
+  });
+
+  app.patch('/api/food-logs/:id/confirm', async (req, res) => {
+    try {
+      const body = req.body || {};
+      const userId = getRequestUserId(req, body);
+      if (!userId) {
+        res.status(400).json({ ok: false, error: 'Missing userId.' });
+        return;
+      }
+
+      const existing = await getFoodLogById(userId, req.params.id);
+      if (!existing) {
+        res.status(404).json({ ok: false, error: 'Food log entry not found.' });
+        return;
+      }
+
+      const consumptionStatus = body.consumptionStatus === 'skipped' ? 'skipped' : 'consumed';
+      const portionMultiplier = Math.max(
+        0.1,
+        Math.min(20, Number(body.portionMultiplier ?? existing.portionMultiplier) || 1)
+      );
+      const base = existing.baseNutrients || existing.nutrients || {};
+      const scaledNutrients = buildFullNutrientProfile({
+        productTitle: existing.foodName,
+        baseNutrition: base,
+        ingredientsText: existing.ingredientsText || '',
+        portionMultiplier,
+      });
+
+      const updated = await saveFoodLogForUser(userId, {
+        ...existing,
+        consumptionStatus,
+        portionMultiplier,
+        quantityLabel: String(
+          body.quantityLabel || `${portionMultiplier}x serving`
+        ).trim(),
+        mealSlot: ['breakfast', 'lunch', 'snack', 'dinner'].includes(body.mealSlot)
+          ? body.mealSlot
+          : existing.mealSlot,
+        consumedDate: /^\d{4}-\d{2}-\d{2}$/.test(String(body.consumedDate || ''))
+          ? body.consumedDate
+          : existing.consumedDate,
+        consumedTime: /^\d{2}:\d{2}$/.test(String(body.consumedTime || ''))
+          ? body.consumedTime
+          : existing.consumedTime,
+        nutrients: scaledNutrients,
+      });
+
+      res.json({ ok: true, log: updated });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Unable to confirm food consumption.' });
+    }
+  });
+
+  app.delete('/api/food-logs/:id', async (req, res) => {
+    try {
+      const userId = getRequestUserId(req);
+      if (!userId) {
+        res.status(400).json({ ok: false, error: 'Missing userId.' });
+        return;
+      }
+      await deleteFoodLogForUser(userId, req.params.id);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Unable to delete food log.' });
+    }
   });
 
   const server = app.listen(port, host, () => {

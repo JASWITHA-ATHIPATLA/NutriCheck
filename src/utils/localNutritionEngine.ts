@@ -505,6 +505,79 @@ function dU_val(v: number): number {
   return v;
 }
 
+function getClientMacroCandidates(
+  rawToken: string,
+  hasUnitBefore: boolean,
+  calories: number,
+  macroType: 'protein' | 'carbs' | 'fat' | 'sugars'
+): number[] {
+  const num = parseFloat(rawToken);
+  if (Number.isNaN(num)) return [];
+  if (num <= 100) {
+    if (!hasUnitBefore && /^\d+\.\d9$/.test(rawToken)) {
+      return [parseFloat(rawToken.slice(0, -1)), num];
+    }
+    return [num];
+  }
+
+  const intStr = String(Math.round(num));
+  const cands: number[] = [];
+  if (!hasUnitBefore && /^\d{4}$/.test(intStr) && intStr.endsWith('9')) {
+    const stripped = parseInt(intStr.slice(0, -1), 10);
+    if (stripped > 100) cands.push(round1(stripped / 10));
+    else cands.push(round1(stripped / 10), stripped);
+  } else if (!hasUnitBefore && /^\d{3}$/.test(intStr) && intStr.endsWith('9')) {
+    const withoutNine = parseInt(intStr.slice(0, -1), 10);
+    cands.push(round1(withoutNine / 10));
+    if (withoutNine <= 95 && macroType !== 'protein') cands.push(withoutNine);
+    if (num / 10 <= 99.9 && (macroType !== 'protein' || calories > 350)) {
+      cands.push(round1(num / 10));
+    }
+  } else if (num >= 101 && num <= 999) {
+    cands.push(round1(num / 10));
+  }
+
+  return Array.from(new Set(cands.filter((v) => v >= 0 && v <= 100)));
+}
+
+function resolveClientMacrosWithEnergy(
+  calories: number,
+  pCands: number[],
+  cCands: number[],
+  fCands: number[]
+): { protein: number | null; carbs: number | null; fat: number | null } {
+  const ps = pCands.length ? pCands : [0];
+  const cs = cCands.length ? cCands : [0];
+  const fs = fCands.length ? fCands : [0];
+
+  if (ps.length === 1 && cs.length === 1 && fs.length === 1) {
+    return {
+      protein: pCands.length ? ps[0] : null,
+      carbs: cCands.length ? cs[0] : null,
+      fat: fCands.length ? fs[0] : null,
+    };
+  }
+
+  let best = { p: ps[0], c: cs[0], f: fs[0], err: Infinity };
+  for (const p of ps) {
+    for (const c of cs) {
+      for (const f of fs) {
+        let err = Math.abs(p * 4 + c * 4 + f * 9 - calories);
+        if (p > 45 && calories > 250 && f > 15) err += 60;
+        if (err < best.err) {
+          best = { p, c, f, err };
+        }
+      }
+    }
+  }
+
+  return {
+    protein: pCands.length ? best.p : null,
+    carbs: cCands.length ? best.c : null,
+    fat: fCands.length ? best.f : null,
+  };
+}
+
 export function parseNutritionTextClient(text: string): {
   calories: number;
   sugars: number;
@@ -517,6 +590,9 @@ export function parseNutritionTextClient(text: string): {
   // Strip "2,000 calorie(s) diet" footnotes so footnote energy doesn't spoof label energy
   const cleanedRaw = text
     .replace(/\r\n?/g, '\n')
+    .replace(/\bPro[tl]e[in]{1,2}\b/gi, 'Protein')
+    .replace(/\bCarbo[hy]{1,2}[dv]rates?\b/gi, 'Carbohydrate')
+    .replace(/\bEner[gq]y\b/gi, 'Energy')
     .replace(/based on a?\s*[\d,]+\s*(?:kcal|calories?)\s*diet/gi, ' ')
     .replace(/[\d,]+\s*(?:kcal|calories?)\s*diet/gi, ' ');
 
@@ -525,7 +601,6 @@ export function parseNutritionTextClient(text: string): {
     cleanedRaw
   );
 
-  // Calories / Energy: supports "Energy (kcal) 654", "Calories: 379 kcal", "Energy 427"
   const calMatch =
     normalized.match(
       /(?:calories|energy)\s*\(\s*(?:k?cal|keal)\s*(?:\/\s*kj)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)/i
@@ -539,91 +614,63 @@ export function parseNutritionTextClient(text: string): {
 
   if (!calMatch) return null;
   const calories = parseFloat(calMatch[1]);
+  if (Number.isNaN(calories) || calories <= 0 || calories > 1200) return null;
 
-  const grabMacroGrams = (
+  const grabMacroRaw = (
+    sourceStr: string,
     namePattern: string,
-    options?: { allowBare?: boolean }
-  ): number | null => {
-    // 1. Unit before number: e.g. "Total Sugars (g) 2.6", "Protein (gm): 15.2"
+    macroType: 'protein' | 'carbs' | 'fat' | 'sugars'
+  ): number[] => {
     const unitBefore = new RegExp(
       `(?:${namePattern})\\s*\\(\\s*g(?:ms?)?\\s*\\)\\s*[:|\\-]?\\s*(\\d+(?:\\.\\d+)?)(?!\\s*%)`,
       'i'
     );
-    const mBefore = normalized.match(unitBefore);
-    if (mBefore) return parseFloat(mBefore[1]);
+    const mBefore = sourceStr.match(unitBefore);
+    if (mBefore) return getClientMacroCandidates(mBefore[1], true, calories, macroType);
 
-    // 2. Unit after number: e.g. "Total Fat: 65.2 g", "Sugars 2.6g"
     const unitAfter = new RegExp(
       `(?:${namePattern})\\s*[:|\\-]?\\s*(\\d+(?:\\.\\d+)?)\\s*g(?:ms?)?\\b`,
       'i'
     );
-    const mAfter = normalized.match(unitAfter);
-    if (mAfter) return parseFloat(mAfter[1]);
+    const mAfter = sourceStr.match(unitAfter);
+    if (mAfter) {
+      const val = parseFloat(mAfter[1]);
+      return val <= 105 ? [val] : getClientMacroCandidates(mAfter[1], true, calories, macroType);
+    }
 
-    // 3. Bare tabular number when explicit nutrition table header exists
-    if (options?.allowBare && hasLabelHeader) {
+    if (hasLabelHeader) {
       const bare = new RegExp(
         `(?:${namePattern})\\s*[:|\\-]?\\s*(\\d+(?:\\.\\d+)?)\\b(?!\\s*(?:%|mg\\b|kcal\\b))`,
         'i'
       );
-      const mBare = normalized.match(bare);
-      if (mBare) {
-        const val = parseFloat(mBare[1]);
-        if (val <= 105) return val;
-      }
+      const mBare = sourceStr.match(bare);
+      if (mBare) return getClientMacroCandidates(mBare[1], false, calories, macroType);
     }
-    return null;
+    return [];
   };
 
-  // Sugars: prioritize Total Sugars -> Of which sugars -> plain Sugars (excluding Added Sugar) -> Added Sugar
   const normalizedNoAdded = normalized.replace(/\badded\s+sugars?\b/gi, ' __added_sugar__ ');
-  let sugars = grabMacroGrams('\\btotal\\s+sugars?', { allowBare: true });
-  if (sugars === null) {
-    sugars = grabMacroGrams('\\bof\\s+which\\s+sugars?', { allowBare: true });
-  }
-  if (sugars === null) {
-    const mPlainSugBefore = normalizedNoAdded.match(
-      /\bsugars?\s*\(\s*g(?:ms?)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)/i
-    );
-    const mPlainSugAfter = normalizedNoAdded.match(
-      /\bsugars?\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g(?:ms?)?\b/i
-    );
-    if (mPlainSugBefore) sugars = parseFloat(mPlainSugBefore[1]);
-    else if (mPlainSugAfter) sugars = parseFloat(mPlainSugAfter[1]);
-    else if (hasLabelHeader) {
-      const mBare = normalizedNoAdded.match(/\bsugars?\s*[:|\-]?\s*(\d+(?:\.\d+)?)\b(?!\s*%)/i);
-      if (mBare && parseFloat(mBare[1]) <= 105) sugars = parseFloat(mBare[1]);
-    }
-  }
-  if (sugars === null) {
-    sugars = grabMacroGrams('\\badded\\s+sugars?', { allowBare: true });
-  }
+  let sugarCands = grabMacroRaw(normalized, '\\btotal\\s+sugars?', 'sugars');
+  if (!sugarCands.length) sugarCands = grabMacroRaw(normalized, '\\bof\\s+which\\s+sugars?', 'sugars');
+  if (!sugarCands.length) sugarCands = grabMacroRaw(normalizedNoAdded, '\\bsugars?', 'sugars');
+  if (!sugarCands.length) sugarCands = grabMacroRaw(normalized, '\\badded\\s+sugars?', 'sugars');
 
-  // Fat: prioritize Total Fat -> plain Fat (excluding Saturated / Trans / Mono / Poly fat)
   const normalizedNoSubFats = normalized.replace(
     /\b(?:saturated|sat\.?|trans|mono(?:unsaturated)?|poly(?:unsaturated)?|omega[\s\-\d]*fatty)\s+fat(?:ty\s+acids?)?\b/gi,
     ' __sub_fat__ '
   );
-  let fat = grabMacroGrams('\\btotal\\s+fat', { allowBare: true });
-  if (fat === null) {
-    const mFatBefore = normalizedNoSubFats.match(
-      /\bfat\s*\(\s*g(?:ms?)?\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)/i
-    );
-    const mFatAfter = normalizedNoSubFats.match(
-      /\bfat\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*g(?:ms?)?\b/i
-    );
-    if (mFatBefore) fat = parseFloat(mFatBefore[1]);
-    else if (mFatAfter) fat = parseFloat(mFatAfter[1]);
-    else if (hasLabelHeader) {
-      const mBare = normalizedNoSubFats.match(/\bfat\s*[:|\-]?\s*(\d+(?:\.\d+)?)\b(?!\s*%)/i);
-      if (mBare && parseFloat(mBare[1]) <= 105) fat = parseFloat(mBare[1]);
-    }
-  }
+  let fatCands = grabMacroRaw(normalized, '\\btotal\\s+fat', 'fat');
+  if (!fatCands.length) fatCands = grabMacroRaw(normalizedNoSubFats, '\\bfat', 'fat');
 
-  const protein = grabMacroGrams('\\bproteins?', { allowBare: true });
-  const carbs = grabMacroGrams('(?:\\btotal\\s+)?\\bcarbohydrates?', { allowBare: true });
+  const protCands = grabMacroRaw(normalized, '\\bproteins?', 'protein');
+  const carbCands = grabMacroRaw(normalized, '(?:\\btotal\\s+)?\\bcarbohydrates?', 'carbs');
 
-  // Sodium: mg before/after -> g before/after (*1000) -> Salt g (*393.4) -> bare mg in header table
+  const resolved = resolveClientMacrosWithEnergy(calories, protCands, carbCands, fatCands);
+  let sugars = sugarCands.length ? sugarCands[0] : null;
+  const fat = resolved.fat;
+  const protein = resolved.protein;
+  const carbs = resolved.carbs;
+
   let sodium_mg: number | null = null;
   const sodMgBefore = normalized.match(/\bsodium\s*\(\s*mg\s*\)\s*[:|\-]?\s*(\d+(?:\.\d+)?)(?!\s*%)/i);
   const sodMgAfter = normalized.match(/\bsodium\s*[:|\-]?\s*(\d+(?:\.\d+)?)\s*mg\b/i);
@@ -646,7 +693,6 @@ export function parseNutritionTextClient(text: string): {
   const foundCount = [sugars, fat, protein, sodium_mg, carbs].filter((v) => v !== null).length;
   if (foundCount < 1) return null;
 
-  // Guard against dropped decimal dot on sugars when carbohydrates are parsed (Total Sugars <= Total Carbohydrate)
   if (
     sugars !== null &&
     carbs !== null &&
