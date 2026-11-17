@@ -7,7 +7,7 @@ app.use('/api', (_req, res) => {
   res.status(404).json({ ok: false, error: 'API endpoint not found.' });
 });
 
-export default async function handler(req: any, res: any) {
+export default async function handler(req, res) {
   if (
     typeof req?.url === 'string' &&
     (req.url === '/api/index' || req.url.startsWith('/api/index?'))
