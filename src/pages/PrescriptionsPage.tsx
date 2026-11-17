@@ -163,10 +163,14 @@ export function PrescriptionsPage({
   const [testContinued, setTestContinued] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const onProfileSyncedRef = useRef(onProfileSynced);
+  useEffect(() => {
+    onProfileSyncedRef.current = onProfileSynced;
+  }, [onProfileSynced]);
 
   const pushExtensionSync = useCallback(
     (summary: ActivePrescriptionSummary) => {
-      onProfileSynced?.(summary);
+      onProfileSyncedRef.current?.(summary);
       if (typeof window !== 'undefined') {
         window.postMessage(
           { type: 'NUTRICHECK_SYNC_PRESCRIPTIONS', userId, summary },
@@ -174,7 +178,7 @@ export function PrescriptionsPage({
         );
       }
     },
-    [onProfileSynced, userId]
+    [userId]
   );
 
   const loadPrescriptions = useCallback(async () => {
@@ -224,7 +228,7 @@ export function PrescriptionsPage({
       setOcrPct(55);
       setOcrStatus(
         params.pages && params.pages.length > 0
-          ? `Running Google Cloud Vision OCR & Gemini Vision across ${params.pages.length} page${params.pages.length > 1 ? 's' : ''}...`
+          ? `Extracting handwritten text & clinical fields across ${params.pages.length} page${params.pages.length > 1 ? 's' : ''}...`
           : 'Interpreting prescription text with Gemini...'
       );
 
@@ -1309,7 +1313,15 @@ export function PrescriptionsPage({
                 open={draftDoctorVerifyRecommended || Boolean(draftRawOcr)}
               >
                 <summary>
-                  Preserved Original Extracted Text ({draftOcrProvider === 'manual_entry' ? 'Manual' : 'Google Cloud Vision DOCUMENT_TEXT_DETECTION'})
+                  Preserved Original Extracted Text (
+                  {draftOcrProvider === 'manual_entry'
+                    ? 'Manual'
+                    : draftOcrProvider === 'gemini_vision_ocr'
+                    ? 'Gemini Vision Multimodal OCR'
+                    : draftOcrProvider === 'gemini_structured_text'
+                    ? 'Gemini Structured Text'
+                    : 'Google Cloud Vision DOCUMENT_TEXT_DETECTION'}
+                  )
                 </summary>
                 <textarea
                   className="rx-raw-pre rx-raw-readonly"

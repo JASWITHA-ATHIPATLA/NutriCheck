@@ -1,6 +1,12 @@
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import mongoose from 'mongoose';
-import { UserModel, connectMongoDB } from './mongodb.mjs';
+import {
+  CartEventModel,
+  FoodLogModel,
+  PrescriptionModel,
+  UserModel,
+  connectMongoDB,
+} from './mongodb.mjs';
 
 const VALID_CONDITIONS = new Set([
   'diabetes',
@@ -60,6 +66,7 @@ export function sanitizeUserDoc(doc) {
   const rawId = doc._id ? String(doc._id) : String(doc.id);
   return {
     id: rawId,
+    ...(doc.legacyId ? { legacyId: String(doc.legacyId) } : {}),
     fullName: String(doc.fullName || '').trim(),
     email: String(doc.email || '').trim().toLowerCase(),
     age: Number(doc.age) || 30,
@@ -73,11 +80,43 @@ export function sanitizeUserDoc(doc) {
   };
 }
 
+async function migrateUserOwnedRecords(fromUserId, toUserId) {
+  const fromId = String(fromUserId || '').trim();
+  const toId = String(toUserId || '').trim();
+  if (!fromId || !toId || fromId === toId) return;
+
+  for (const Model of [PrescriptionModel, CartEventModel, FoodLogModel]) {
+    try {
+      await Model.updateMany({ userId: fromId }, { $set: { userId: toId } });
+    } catch {
+      // Ignore individual duplicate-key edge cases on already-synced items
+    }
+  }
+}
+
+async function findUserDoc(cleanId, fallbackEmail = '') {
+  if (mongoose.Types.ObjectId.isValid(cleanId)) {
+    const byId = await UserModel.findById(cleanId);
+    if (byId) return byId;
+  }
+  if (cleanId) {
+    const byLegacy = await UserModel.findOne({ legacyId: cleanId });
+    if (byLegacy) return byLegacy;
+  }
+  const cleanEmail = String(fallbackEmail || '').trim().toLowerCase();
+  if (cleanEmail) {
+    const byEmail = await UserModel.findOne({ email: cleanEmail });
+    if (byEmail) return byEmail;
+  }
+  return null;
+}
+
 export async function registerUser(input) {
   const fullName = String(input?.fullName || '').trim();
   const email = String(input?.email || '').trim().toLowerCase();
   const password = String(input?.password || '');
   const age = Number(input?.age);
+  const legacyId = String(input?.legacyId || '').trim() || null;
 
   if (!fullName) {
     return { ok: false, status: 400, error: 'Please enter your full name.' };
@@ -118,12 +157,19 @@ export async function registerUser(input) {
       otherConditions,
       allergies,
       dietaryNotes,
+      ...(legacyId ? { legacyId } : {}),
     });
+
+    const sanitized = sanitizeUserDoc(created);
+    if (legacyId) {
+      await migrateUserOwnedRecords(legacyId, sanitized.id);
+    }
+
     return {
       ok: true,
       status: 201,
       storage: 'mongodb',
-      user: sanitizeUserDoc(created),
+      user: sanitized,
     };
   }
 
@@ -136,7 +182,7 @@ export async function registerUser(input) {
   }
 
   const fallbackUser = {
-    id: `user-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    id: legacyId || `user-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
     fullName,
     email,
     passwordHash,
@@ -158,6 +204,88 @@ export async function registerUser(input) {
   };
 }
 
+export async function syncOrUpsertUser(input) {
+  const fullName = String(input?.fullName || '').trim();
+  const email = String(input?.email || '').trim().toLowerCase();
+  const rawPassword = String(input?.password || '');
+  const legacyId = String(input?.legacyId || input?.id || '').trim() || null;
+  const ageRaw = Number(input?.age);
+  const age = Number.isFinite(ageRaw) && ageRaw >= 1 && ageRaw <= 120 ? Math.round(ageRaw) : 30;
+
+  if (!email || !email.includes('@')) {
+    return { ok: false, status: 400, error: 'Valid user email is required to sync account.' };
+  }
+
+  const conditions = cleanConditions(input?.conditions);
+  const otherConditions = cleanStringArray(input?.otherConditions);
+  const allergies = cleanStringArray(input?.allergies);
+  const dietaryNotes = String(input?.dietaryNotes || '').trim();
+
+  const mongo = await connectMongoDB();
+  if (mongo.connected) {
+    let doc = await findUserDoc(legacyId || '', email);
+    if (doc) {
+      if (legacyId && !mongoose.Types.ObjectId.isValid(legacyId) && !doc.legacyId) {
+        doc.legacyId = legacyId;
+      }
+      if (fullName) doc.fullName = fullName;
+      if (Number.isFinite(ageRaw) && ageRaw >= 1 && ageRaw <= 120) doc.age = Math.round(ageRaw);
+      if (Array.isArray(input?.conditions)) doc.conditions = conditions;
+      if (Array.isArray(input?.otherConditions)) doc.otherConditions = otherConditions;
+      if (Array.isArray(input?.allergies)) doc.allergies = allergies;
+      if (input?.dietaryNotes !== undefined) doc.dietaryNotes = dietaryNotes;
+      await doc.save();
+
+      const sanitized = sanitizeUserDoc(doc);
+      if (legacyId && legacyId !== sanitized.id) {
+        await migrateUserOwnedRecords(legacyId, sanitized.id);
+      }
+
+      return {
+        ok: true,
+        status: 200,
+        storage: 'mongodb',
+        migratedFromId: legacyId && legacyId !== sanitized.id ? legacyId : undefined,
+        user: sanitized,
+      };
+    }
+
+    const passwordHash = hashPassword(
+      rawPassword.length >= 6 ? rawPassword : randomBytes(16).toString('hex')
+    );
+    const created = await UserModel.create({
+      fullName: fullName || email.split('@')[0] || 'NutriCheck User',
+      email,
+      passwordHash,
+      age,
+      conditions,
+      otherConditions,
+      allergies,
+      dietaryNotes,
+      ...(legacyId && !mongoose.Types.ObjectId.isValid(legacyId) ? { legacyId } : {}),
+    });
+
+    const sanitized = sanitizeUserDoc(created);
+    if (legacyId && legacyId !== sanitized.id) {
+      await migrateUserOwnedRecords(legacyId, sanitized.id);
+    }
+
+    return {
+      ok: true,
+      status: 201,
+      storage: 'mongodb',
+      migratedFromId: legacyId && legacyId !== sanitized.id ? legacyId : undefined,
+      user: sanitized,
+    };
+  }
+
+  return {
+    ok: false,
+    status: 503,
+    error: 'MongoDB is not currently connected on the backend.',
+  };
+}
+
 export async function loginUser(input) {
   const email = String(input?.email || '').trim().toLowerCase();
   const password = String(input?.password || '');
@@ -176,6 +304,7 @@ export async function loginUser(input) {
         ok: false,
         status: 401,
         storage: 'mongodb',
+        reason: 'not_found',
         error: 'No account found with that email address.',
       };
     }
@@ -184,6 +313,7 @@ export async function loginUser(input) {
         ok: false,
         status: 401,
         storage: 'mongodb',
+        reason: 'invalid_password',
         error: 'Incorrect password. Please try again.',
       };
     }
@@ -239,8 +369,13 @@ export async function getUserById(userId) {
 
   const mongo = await connectMongoDB();
   if (mongo.connected) {
-    if (!mongoose.Types.ObjectId.isValid(cleanId)) return null;
-    const found = await UserModel.findById(cleanId).lean();
+    let found = null;
+    if (mongoose.Types.ObjectId.isValid(cleanId)) {
+      found = await UserModel.findById(cleanId).lean();
+    }
+    if (!found) {
+      found = await UserModel.findOne({ legacyId: cleanId }).lean();
+    }
     return found ? { user: sanitizeUserDoc(found), storage: 'mongodb' } : null;
   }
 
@@ -279,23 +414,42 @@ export async function updateUserProfile(userId, input) {
 
   const mongo = await connectMongoDB();
   if (mongo.connected) {
-    if (!mongoose.Types.ObjectId.isValid(cleanId)) {
-      return { ok: false, status: 404, error: 'User not found.' };
+    const fallbackEmail = String(input?.email || '').trim().toLowerCase();
+    const existingDoc = await findUserDoc(cleanId, fallbackEmail);
+
+    if (existingDoc) {
+      Object.assign(existingDoc, updates);
+      if (!mongoose.Types.ObjectId.isValid(cleanId) && !existingDoc.legacyId) {
+        existingDoc.legacyId = cleanId;
+      }
+      await existingDoc.save();
+
+      const sanitized = sanitizeUserDoc(existingDoc);
+      if (cleanId !== sanitized.id) {
+        await migrateUserOwnedRecords(cleanId, sanitized.id);
+      }
+
+      return {
+        ok: true,
+        status: 200,
+        storage: 'mongodb',
+        migratedFromId: cleanId !== sanitized.id ? cleanId : undefined,
+        user: sanitized,
+      };
     }
-    const updated = await UserModel.findByIdAndUpdate(
-      cleanId,
-      { $set: updates },
-      { new: true, runValidators: true }
-    ).lean();
-    if (!updated) {
-      return { ok: false, status: 404, error: 'User not found.' };
+
+    // Auto-migrate locally cached account into MongoDB if email is provided
+    if (fallbackEmail && fallbackEmail.includes('@')) {
+      return await syncOrUpsertUser({
+        ...input,
+        legacyId: cleanId,
+        email: fallbackEmail,
+        fullName: updates.fullName || input?.fullName || fallbackEmail.split('@')[0],
+        age: updates.age ?? input?.age ?? 30,
+      });
     }
-    return {
-      ok: true,
-      status: 200,
-      storage: 'mongodb',
-      user: sanitizeUserDoc(updated),
-    };
+
+    return { ok: false, status: 404, error: 'User not found.' };
   }
 
   const existing = memoryUsersById.get(cleanId);

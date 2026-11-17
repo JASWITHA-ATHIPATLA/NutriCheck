@@ -9,10 +9,12 @@ import {
   SEEDED_CATALOG_PRODUCTS,
   evaluateProductForProfile,
 } from '../utils/healthProfileEngine';
+import { buildNonJsonErrorMessage, readJsonResponse } from '../utils/safeFetchJson';
 
 const USERS_STORAGE_KEY = 'nutricheck_users_v1';
 const ACTIVE_USER_ID_KEY = 'nutricheck_active_user_id_v1';
 const CUSTOM_PRODUCTS_KEY = 'nutricheck_custom_products_v1';
+const AMAZON_STORAGE_PREFIX = 'nutricheck_amazon_events_v1_';
 
 interface RegisterInput {
   fullName: string;
@@ -54,7 +56,7 @@ interface AuthContextValue {
     overrides?: LoginOverrides
   ) => Promise<AuthActionResult>;
   logout: () => void;
-  updateProfile: (input: UpdateProfileInput) => Promise<void>;
+  updateProfile: (input: UpdateProfileInput) => Promise<AuthActionResult>;
   addCustomProduct: (product: Omit<CatalogProduct, 'id' | 'isCustom'>) => CatalogProduct;
   evaluateProduct: (product: CatalogProduct) => PersonalizedCheckResult;
 }
@@ -81,6 +83,34 @@ function normalizeUser(user: UserHealthProfile): UserHealthProfile {
   };
 }
 
+function migrateLocalUserStorage(oldId: string, newId: string) {
+  if (!oldId || !newId || oldId === newId) return;
+  try {
+    const oldKey = `${AMAZON_STORAGE_PREFIX}${oldId}`;
+    const newKey = `${AMAZON_STORAGE_PREFIX}${newId}`;
+    const oldRaw = window.localStorage.getItem(oldKey);
+    if (!oldRaw) return;
+    const oldEvents = JSON.parse(oldRaw);
+    if (!Array.isArray(oldEvents) || oldEvents.length === 0) return;
+
+    const existingRaw = window.localStorage.getItem(newKey);
+    const existingEvents = existingRaw ? JSON.parse(existingRaw) : [];
+    const mergedMap = new Map<string, Record<string, unknown>>();
+    for (const ev of Array.isArray(existingEvents) ? existingEvents : []) {
+      if (ev?.event_id) mergedMap.set(ev.event_id, ev);
+    }
+    for (const ev of oldEvents) {
+      if (ev?.event_id && !mergedMap.has(ev.event_id)) {
+        mergedMap.set(ev.event_id, { ...ev, user_id: newId });
+      }
+    }
+    window.localStorage.setItem(newKey, JSON.stringify(Array.from(mergedMap.values()).slice(0, 30)));
+    window.localStorage.removeItem(oldKey);
+  } catch {
+    // ignore storage errors
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [users, setUsers] = useState<UserHealthProfile[]>(() =>
     typeof window !== 'undefined'
@@ -103,39 +133,85 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       : []
   );
 
-  function upsertCachedUser(user: UserHealthProfile) {
+  function upsertCachedUser(user: UserHealthProfile, replaceId?: string) {
     const clean = normalizeUser(user);
     setUsers((prev) => {
       const idx = prev.findIndex(
-        (u) => u.id === clean.id || u.email.toLowerCase() === clean.email.toLowerCase()
+        (u) =>
+          u.id === clean.id ||
+          (replaceId && u.id === replaceId) ||
+          u.email.toLowerCase() === clean.email.toLowerCase()
       );
       if (idx === -1) return [...prev, clean];
       const next = [...prev];
       next[idx] = { ...next[idx], ...clean };
       return next;
     });
+    if (replaceId && replaceId !== clean.id) {
+      migrateLocalUserStorage(replaceId, clean.id);
+      setActiveUserId((curr) => (curr === replaceId ? clean.id : curr));
+    }
   }
 
   useEffect(() => {
     if (!activeUserId) return;
     const userId = activeUserId;
     let cancelled = false;
+
     async function refreshSession() {
       try {
         const res = await fetch(`/api/auth/me/${encodeURIComponent(userId)}`);
-        if (!res.ok) return;
-        const body = (await res.json()) as { ok?: boolean; user?: UserHealthProfile };
-        if (!cancelled && body.ok && body.user) {
-          upsertCachedUser(body.user);
+        if (res.ok) {
+          const { data: body } = await readJsonResponse<{
+            ok?: boolean;
+            user?: UserHealthProfile;
+          }>(res);
+          if (!cancelled && body?.ok && body.user) {
+            upsertCachedUser(body.user, userId);
+          }
+          return;
+        }
+
+        // Auto-migrate legacy client-cached user (e.g. user-...) to MongoDB
+        if (res.status === 404) {
+          const cached = users.find((u) => u.id === userId);
+          if (cached && cached.email) {
+            const syncRes = await fetch('/api/auth/sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                legacyId: cached.id,
+                fullName: cached.fullName,
+                email: cached.email,
+                password: cached.password,
+                age: cached.age,
+                conditions: cached.conditions,
+                otherConditions: cached.otherConditions || [],
+                allergies: cached.allergies,
+                dietaryNotes: cached.dietaryNotes,
+              }),
+            });
+            if (syncRes.ok) {
+              const { data: syncBody } = await readJsonResponse<{
+                ok?: boolean;
+                user?: UserHealthProfile;
+              }>(syncRes);
+              if (!cancelled && syncBody?.ok && syncBody.user) {
+                upsertCachedUser(syncBody.user, userId);
+              }
+            }
+          }
         }
       } catch {
         // Offline / static preview mode relies on local cache
       }
     }
+
     void refreshSession();
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeUserId]);
 
   useEffect(() => {
@@ -200,11 +276,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }),
       });
 
-      const body = (await res.json().catch(() => null)) as {
+      const { data: body } = await readJsonResponse<{
         ok?: boolean;
         user?: UserHealthProfile;
         error?: string;
-      } | null;
+      }>(res);
 
       if (res.ok && body?.ok && body.user) {
         upsertCachedUser(body.user);
@@ -212,36 +288,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { ok: true };
       }
 
-      if (res.status >= 400 && res.status < 500 && body?.error) {
-        return { ok: false, error: body.error };
-      }
-    } catch {
-      // Fall back to browser storage when running without API server
-    }
-
-    if (users.some((u) => u.email.toLowerCase() === cleanEmail)) {
       return {
         ok: false,
-        error: 'An account with this email already exists. Please sign in instead.',
+        error: body?.error || buildNonJsonErrorMessage(res, 'Unable to create account in backend'),
+      };
+    } catch {
+      return {
+        ok: false,
+        error: 'Unable to reach NutriCheck backend server to save your account.',
       };
     }
-
-    const newUser: UserHealthProfile = {
-      id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      fullName: cleanName,
-      email: cleanEmail,
-      password: input.password,
-      age: Math.round(input.age),
-      conditions: input.conditions,
-      otherConditions: input.otherConditions || [],
-      allergies: input.allergies,
-      dietaryNotes: input.dietaryNotes.trim(),
-      createdAt: new Date().toISOString(),
-    };
-
-    setUsers((prev) => [...prev, newUser]);
-    setActiveUserId(newUser.id);
-    return { ok: true };
   }
 
   async function login(
@@ -263,12 +319,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }),
       });
 
-      const body = (await res.json().catch(() => null)) as {
+      const { data: body } = await readJsonResponse<{
         ok?: boolean;
         user?: UserHealthProfile;
         storage?: string;
+        reason?: string;
         error?: string;
-      } | null;
+      }>(res);
 
       if (res.ok && body?.ok && body.user) {
         upsertCachedUser(body.user);
@@ -276,84 +333,70 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { ok: true };
       }
 
-      // If MongoDB explicitly rejects credentials, respect it immediately;
-      // If memory-fallback had no record yet, check legacy localStorage cache as well.
-      if (
-        res.status >= 400 &&
-        res.status < 500 &&
-        body?.error &&
-        body.storage === 'mongodb'
-      ) {
-        return { ok: false, error: body.error };
+      // If MongoDB rejected password for an existing account, fail immediately
+      if (body?.reason === 'invalid_password') {
+        return { ok: false, error: body.error || 'Incorrect password. Please try again.' };
       }
 
+      // If user only existed in legacy browser localStorage, migrate them into MongoDB now
       const cachedFound = users.find((u) => u.email.toLowerCase() === cleanEmail);
-      if (cachedFound && cachedFound.password === password) {
+      if (cachedFound && (!cachedFound.password || cachedFound.password === password)) {
         const mergedConditions = Array.from(
           new Set([...(cachedFound.conditions || []), ...(overrides?.conditions || [])])
         );
         const mergedOther = Array.from(
           new Set([...(cachedFound.otherConditions || []), ...(overrides?.otherConditions || [])])
         );
-        upsertCachedUser({
-          ...cachedFound,
-          conditions: mergedConditions,
-          otherConditions: mergedOther,
+
+        const syncRes = await fetch('/api/auth/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            legacyId: cachedFound.id,
+            fullName: cachedFound.fullName,
+            email: cachedFound.email,
+            password,
+            age: cachedFound.age,
+            conditions: mergedConditions,
+            otherConditions: mergedOther,
+            allergies: cachedFound.allergies,
+            dietaryNotes: cachedFound.dietaryNotes,
+          }),
         });
-        setActiveUserId(cachedFound.id);
-        return { ok: true };
+        const { data: syncBody } = await readJsonResponse<{
+          ok?: boolean;
+          user?: UserHealthProfile;
+        }>(syncRes);
+
+        if (syncRes.ok && syncBody?.ok && syncBody.user) {
+          upsertCachedUser(syncBody.user, cachedFound.id);
+          setActiveUserId(syncBody.user.id);
+          return { ok: true };
+        }
       }
 
-      if (body?.error) {
-        return { ok: false, error: body.error };
-      }
+      return {
+        ok: false,
+        error: body?.error || buildNonJsonErrorMessage(res, 'Sign in failed'),
+      };
     } catch {
-      // Offline fallback below
+      return {
+        ok: false,
+        error: 'Unable to reach NutriCheck backend server to sign in.',
+      };
     }
-
-    const found = users.find((u) => u.email.toLowerCase() === cleanEmail);
-    if (!found) {
-      return { ok: false, error: 'No account found with that email address.' };
-    }
-    if (found.password !== password) {
-      return { ok: false, error: 'Incorrect password. Please try again.' };
-    }
-
-    const hasConditionOverrides =
-      (overrides?.conditions && overrides.conditions.length > 0) ||
-      (overrides?.otherConditions && overrides.otherConditions.length > 0);
-
-    if (hasConditionOverrides) {
-      const mergedConditions = Array.from(
-        new Set([...(found.conditions || []), ...(overrides?.conditions || [])])
-      );
-      const mergedOther = Array.from(
-        new Set([...(found.otherConditions || []), ...(overrides?.otherConditions || [])])
-      );
-      setUsers((prev) =>
-        prev.map((u) =>
-          u.id === found.id
-            ? {
-                ...u,
-                conditions: mergedConditions,
-                otherConditions: mergedOther,
-              }
-            : u
-        )
-      );
-    }
-
-    setActiveUserId(found.id);
-    return { ok: true };
   }
 
   function logout() {
     setActiveUserId(null);
   }
 
-  async function updateProfile(input: UpdateProfileInput): Promise<void> {
-    if (!activeUserId) return;
+  async function updateProfile(input: UpdateProfileInput): Promise<AuthActionResult> {
+    if (!activeUserId) {
+      return { ok: false, error: 'No signed-in user session.' };
+    }
 
+    const targetUser = users.find((u) => u.id === activeUserId);
     const cleanUpdates = {
       fullName: input.fullName.trim(),
       age: Number.isFinite(input.age) ? Math.round(input.age) : undefined,
@@ -361,23 +404,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       otherConditions: input.otherConditions ?? [],
       allergies: input.allergies,
       dietaryNotes: input.dietaryNotes.trim(),
+      ...(targetUser?.email ? { email: targetUser.email } : {}),
+      ...(targetUser?.password ? { password: targetUser.password } : {}),
     };
-
-    setUsers((prev) =>
-      prev.map((u) =>
-        u.id === activeUserId
-          ? {
-              ...u,
-              fullName: cleanUpdates.fullName || u.fullName,
-              age: cleanUpdates.age ?? u.age,
-              conditions: cleanUpdates.conditions,
-              otherConditions: input.otherConditions ?? u.otherConditions ?? [],
-              allergies: cleanUpdates.allergies,
-              dietaryNotes: cleanUpdates.dietaryNotes,
-            }
-          : u
-      )
-    );
 
     try {
       const res = await fetch(`/api/users/${encodeURIComponent(activeUserId)}/profile`, {
@@ -385,14 +414,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(cleanUpdates),
       });
-      if (res.ok) {
-        const body = (await res.json()) as { ok?: boolean; user?: UserHealthProfile };
-        if (body.ok && body.user) {
-          upsertCachedUser(body.user);
-        }
+
+      const { data: body } = await readJsonResponse<{
+        ok?: boolean;
+        user?: UserHealthProfile;
+        error?: string;
+      }>(res);
+
+      if (res.ok && body?.ok && body.user) {
+        upsertCachedUser(body.user, activeUserId);
+        return { ok: true };
       }
+
+      return {
+        ok: false,
+        error: body?.error || buildNonJsonErrorMessage(res, 'Unable to save profile details to backend'),
+      };
     } catch {
-      // Keep local update if backend unreachable
+      return {
+        ok: false,
+        error: 'Network error: unable to reach backend server to save your profile.',
+      };
     }
   }
 

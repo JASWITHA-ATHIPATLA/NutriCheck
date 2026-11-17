@@ -305,6 +305,11 @@ const PRESCRIPTION_JSON_SCHEMA = {
       type: Type.BOOLEAN,
       description: 'True only if this document/text contains a readable medical prescription.',
     },
+    transcribedText: {
+      type: Type.STRING,
+      description:
+        'Exact verbatim text visible across the prescription pages (preserve spelling, numbers, abbreviations; mark unreadable handwritten words as [unclear]).',
+    },
     handwritingQuality: {
       type: Type.STRING,
       enum: ['clear', 'partially_unclear', 'unreadable'],
@@ -395,6 +400,7 @@ const PRESCRIPTION_JSON_SCHEMA = {
   },
   required: [
     'isReadablePrescription',
+    'transcribedText',
     'handwritingQuality',
     'overallConfidence',
     'doctorVerificationRecommended',
@@ -412,19 +418,20 @@ const PRESCRIPTION_JSON_SCHEMA = {
 };
 
 const SYSTEM_INSTRUCTION = `You are a careful clinical document extraction assistant for NutriCheck.
-Your job is to interpret doctor prescriptions using BOTH the prescription image(s) (when provided) AND the Google Cloud Vision DOCUMENT_TEXT_DETECTION OCR transcript.
+Your job is to interpret doctor prescriptions using the prescription image(s) (when provided) AND any Google Cloud Vision DOCUMENT_TEXT_DETECTION OCR transcript (when available).
 
 CRITICAL SAFETY RULES — FOLLOW WITHOUT EXCEPTION:
 1. NEVER guess, autocomplete, or invent unclear handwritten medicine names, dosages, frequencies, patient names, or diagnoses.
 2. NEVER fabricate missing medical information. If a field is absent or illegible, return an empty string "" or omit the item.
-3. If a medicine name or diagnosis is partially legible but ambiguous (e.g., handwritten letters look like multiple drugs or OCR text has garbled characters):
+3. Always populate "transcribedText" with an exact verbatim transcription of all readable text on the prescription page(s) (preserving line breaks, dates, Rx symbols, and marking unreadable words as "[unclear]"). If an OCR transcript was already provided, preserve it accurately.
+4. If a medicine name or diagnosis is partially legible but ambiguous (e.g., handwritten letters look like multiple drugs or OCR text has garbled characters):
    - Preserve ONLY what is clearly readable (or write "[Unclear handwritten entry — verify with doctor]" if a visible Rx line cannot be deciphered safely).
    - Set confidence to "low", needsVerification to true, and give a specific uncertaintyReason.
    - Set doctorVerificationRecommended to true.
-4. For medicines: extract exact name, dosage (e.g. "650 mg", "5 ml", "" if absent), frequency (e.g. "OD", "BD", "TDS", "1-0-1", "SOS", "Twice daily after food", "" if absent), and duration (e.g. "5 days", "" if absent).
-5. For diagnosed conditions: extract ONLY conditions explicitly stated by the doctor in diagnosis/chief complaints/clinical notes. Do NOT infer unstated diseases solely from a generic drug unless clearly diagnosed. Choose validDays (typically 5-14 for acute conditions like fever/gastritis, 90-180 for chronic conditions).
-6. For dietary restrictions: extract ONLY dietary advice or food/drink restrictions explicitly mentioned by the doctor (e.g., "Avoid cold drinks and ice cream", "Low salt diet", "Soft bland food").
-7. If the handwriting across the page(s) is unreadable or the image is too blurry or not a medical prescription, set handwritingQuality="unreadable", overallConfidence="low", doctorVerificationRecommended=true, and instruct the user in verificationPrompt to verify the prescription directly with their doctor or pharmacist.`;
+5. For medicines: extract exact name, dosage (e.g. "650 mg", "5 ml", "" if absent), frequency (e.g. "OD", "BD", "TDS", "1-0-1", "SOS", "Twice daily after food", "" if absent), and duration (e.g. "5 days", "" if absent).
+6. For diagnosed conditions: extract ONLY conditions explicitly stated by the doctor in diagnosis/chief complaints/clinical notes. Do NOT infer unstated diseases solely from a generic drug unless clearly diagnosed. Choose validDays (typically 5-14 for acute conditions like fever/gastritis, 90-180 for chronic conditions).
+7. For dietary restrictions: extract ONLY dietary advice or food/drink restrictions explicitly mentioned by the doctor (e.g., "Avoid cold drinks and ice cream", "Low salt diet", "Soft bland food").
+8. If the handwriting across the page(s) is unreadable or the image is too blurry or not a medical prescription, set handwritingQuality="unreadable", overallConfidence="low", doctorVerificationRecommended=true, and instruct the user in verificationPrompt to verify the prescription directly with their doctor or pharmacist.`;
 
 async function callGeminiStructuredInterpreter({
   geminiApiKey,
@@ -432,6 +439,7 @@ async function callGeminiStructuredInterpreter({
   ocrPages,
   combinedRawText,
   qualityWarnings,
+  usedCloudVision,
 }) {
   const ai = createGeminiClient(geminiApiKey);
 
@@ -440,24 +448,40 @@ async function callGeminiStructuredInterpreter({
       ? ocrPages
           .map(
             (p) =>
-              `Page ${p.pageNumber} (${p.fileName}): OCR confidence=${p.confidence ?? 'unknown'}%, sharpness=${p.sharpnessScore}/100, blurry=${p.isBlurry}, lowConfWords=${p.lowConfidenceWordCount}`
+              `Page ${p.pageNumber} (${p.fileName}): OCR confidence=${p.confidence ?? 'Gemini Vision'}%, sharpness=${p.sharpnessScore}/100, blurry=${p.isBlurry}, lowConfWords=${p.lowConfidenceWordCount}`
+          )
+          .join('\n')
+      : preparedPages.length > 0
+      ? preparedPages
+          .map(
+            (p) =>
+              `Page ${p.pageNumber} (${p.fileName}): sharpness=${p.sharpnessScore}/100, blurry=${p.isBlurry}`
           )
           .join('\n')
       : 'Source: Direct text input (no image attached).';
 
+  const ocrTranscriptBlock = usedCloudVision
+    ? `Exact Google Cloud Vision DOCUMENT_TEXT_DETECTION Transcript (preserve meaning, never invent missing facts):
+"""
+${combinedRawText || '[No OCR text extracted]'}
+"""`
+    : combinedRawText
+    ? `Provided Prescription Text:
+"""
+${combinedRawText}
+"""`
+    : `No external OCR transcript was attached. Read the attached prescription image(s) directly: first transcribe every readable line verbatim into "transcribedText" (marking illegible handwriting as "[unclear]"), and extract the structured fields strictly from what is clearly visible.`;
+
   const promptText = `Analyze the attached prescription ${
-    preparedPages.length > 0 ? 'image(s) and ' : ''
-  }OCR transcript and return structured JSON matching the schema.
+    preparedPages.length > 0 ? 'image(s)' : 'text'
+  }${usedCloudVision ? ' and Cloud Vision OCR transcript' : ''} and return structured JSON matching the schema.
 
 Document Quality Summary:
 ${pageMetaSummary}
 ${qualityWarnings.length > 0 ? `Quality Warnings:\n- ${qualityWarnings.join('\n- ')}\n` : ''}
-Exact Google Cloud Vision DOCUMENT_TEXT_DETECTION Transcript (preserve meaning, never invent missing facts):
-"""
-${combinedRawText || '[No OCR text extracted]'}
-"""
+${ocrTranscriptBlock}
 
-Return strict JSON with patientName, prescriptionDate (YYYY-MM-DD or ""), diagnosed conditions, medicines (with dosage & frequency), dietaryRestrictions, confidence levels ("high" | "medium" | "low"), needsVerification flags, and doctorVerificationRecommended.`;
+Return strict JSON with transcribedText, patientName, prescriptionDate (YYYY-MM-DD or ""), diagnosed conditions, medicines (with dosage & frequency), dietaryRestrictions, confidence levels ("high" | "medium" | "low"), needsVerification flags, and doctorVerificationRecommended.`;
 
   const parts = [];
   for (const page of preparedPages) {
@@ -538,19 +562,21 @@ export async function analyzePrescriptionDocument({ pages = [], rawTextInput = '
   }
 
   const geminiApiKey = getGeminiApiKey();
+  const hasValidGeminiKey = Boolean(geminiApiKey && geminiApiKey !== 'MY_GEMINI_API_KEY');
+  const visionApiKey = getVisionApiKey();
 
   let preparedPages = [];
   let ocrPages = [];
   let combinedRawText = trimmedTextInput;
   const qualityWarnings = [];
+  let usedCloudVision = false;
 
   if (cleanedPages.length > 0) {
-    const visionApiKey = getVisionApiKey();
-    if (!visionApiKey) {
+    if (!visionApiKey && !hasValidGeminiKey) {
       throw new PrescriptionServiceError(
-        'GOOGLE_CLOUD_VISION_API_KEY is not configured in backend environment variables. Google Cloud Vision DOCUMENT_TEXT_DETECTION requires this key on the server.',
+        'Neither GOOGLE_CLOUD_VISION_API_KEY nor GEMINI_API_KEY is configured in backend environment variables. Configure at least GEMINI_API_KEY in Settings > Secrets to extract prescriptions.',
         503,
-        'MISSING_VISION_API_KEY'
+        'MISSING_VISION_AND_GEMINI_KEYS'
       );
     }
 
@@ -558,27 +584,58 @@ export async function analyzePrescriptionDocument({ pages = [], rawTextInput = '
       cleanedPages.map((page, idx) => analyzeAndPrepareImage(page, idx))
     );
 
-    ocrPages = await runCloudVisionDocumentOcr(preparedPages, visionApiKey);
+    if (visionApiKey) {
+      try {
+        ocrPages = await runCloudVisionDocumentOcr(preparedPages, visionApiKey);
+        usedCloudVision = true;
 
-    for (const p of ocrPages) {
-      for (const w of p.warnings || []) {
-        if (!qualityWarnings.includes(w)) qualityWarnings.push(w);
+        for (const p of ocrPages) {
+          for (const w of p.warnings || []) {
+            if (!qualityWarnings.includes(w)) qualityWarnings.push(w);
+          }
+        }
+
+        if (ocrPages.length === 1) {
+          combinedRawText = ocrPages[0].rawText;
+        } else {
+          combinedRawText = ocrPages
+            .map((p) => `--- Page ${p.pageNumber} (${p.fileName}) ---\n${p.rawText}`.trim())
+            .join('\n\n');
+        }
+      } catch (visionErr) {
+        if (!hasValidGeminiKey) {
+          throw visionErr;
+        }
+        qualityWarnings.push(
+          'Google Cloud Vision OCR was unavailable; Gemini Vision Multimodal OCR read the prescription image(s) directly. Please verify uncertain fields.'
+        );
       }
     }
 
-    if (ocrPages.length === 1) {
-      combinedRawText = ocrPages[0].rawText;
-    } else {
-      combinedRawText = ocrPages
-        .map((p) => `--- Page ${p.pageNumber} (${p.fileName}) ---\n${p.rawText}`.trim())
-        .join('\n\n');
+    if (!usedCloudVision) {
+      ocrPages = preparedPages.map((page) => {
+        for (const w of page.warnings || []) {
+          if (!qualityWarnings.includes(w)) qualityWarnings.push(w);
+        }
+        return {
+          pageNumber: page.pageNumber,
+          fileName: page.fileName,
+          rawText: '',
+          confidence: null,
+          wordCount: 0,
+          lowConfidenceWordCount: 0,
+          sharpnessScore: page.sharpnessScore,
+          isBlurry: page.isBlurry,
+          warnings: [...(page.warnings || [])],
+        };
+      });
     }
   }
 
   let geminiResult = null;
   let usedOcrFallback = false;
 
-  if (geminiApiKey && geminiApiKey !== 'MY_GEMINI_API_KEY') {
+  if (hasValidGeminiKey) {
     try {
       geminiResult = await callGeminiStructuredInterpreter({
         geminiApiKey,
@@ -586,7 +643,17 @@ export async function analyzePrescriptionDocument({ pages = [], rawTextInput = '
         ocrPages,
         combinedRawText,
         qualityWarnings,
+        usedCloudVision,
       });
+
+      if (!combinedRawText.trim() && String(geminiResult?.transcribedText || '').trim()) {
+        combinedRawText = String(geminiResult.transcribedText).trim();
+        if (ocrPages.length === 1) {
+          ocrPages[0].rawText = combinedRawText;
+        } else if (ocrPages.length > 1) {
+          ocrPages[0].rawText = combinedRawText;
+        }
+      }
     } catch (err) {
       if (
         err instanceof PrescriptionServiceError &&
@@ -617,6 +684,7 @@ export async function analyzePrescriptionDocument({ pages = [], rawTextInput = '
     const parsed = extractPrescriptionFields(combinedRawText);
     geminiResult = {
       isReadablePrescription: Boolean(combinedRawText.trim()),
+      transcribedText: combinedRawText,
       handwritingQuality: 'partially_unclear',
       overallConfidence: 'low',
       doctorVerificationRecommended: true,
@@ -781,7 +849,9 @@ export async function analyzePrescriptionDocument({ pages = [], rawTextInput = '
     rawText: combinedRawText,
     ocrProvider:
       cleanedPages.length > 0
-        ? 'google_cloud_vision_document_text + gemini_vision'
+        ? usedCloudVision
+          ? 'google_cloud_vision_document_text + gemini_vision'
+          : 'gemini_vision_ocr'
         : 'gemini_structured_text',
     ocrConfidence: avgVisionConfidence,
     pagesCount: Math.max(1, ocrPages.length),

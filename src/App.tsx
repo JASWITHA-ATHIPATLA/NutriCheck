@@ -172,6 +172,19 @@ function NutriCheckShell() {
       const merged = Array.from(byId.values())
         .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''))
         .slice(0, 30);
+
+      const unchanged =
+        merged.length === prev.length &&
+        merged.every(
+          (item, i) =>
+            item.event_id === prev[i]?.event_id &&
+            item.timestamp === prev[i]?.timestamp &&
+            item.status === prev[i]?.status &&
+            item.queued_food_log_id === prev[i]?.queued_food_log_id &&
+            item.analysis?.health_score === prev[i]?.analysis?.health_score
+        );
+      if (unchanged) return prev;
+
       writeStoredAmazonEvents(userId, merged);
       return merged;
     });
@@ -294,7 +307,14 @@ function NutriCheckShell() {
       if (!msg) return;
       if (msg.type === 'NUTRICHECK_SYNC_PRESCRIPTIONS') {
         if (!activeUserId || msg.userId === activeUserId || msg.userId === null) {
-          setActivePrescriptionSummary(msg.summary || null);
+          const nextSummary = msg.summary || null;
+          setActivePrescriptionSummary((prev) => {
+            if (prev === nextSummary) return prev;
+            if (prev && nextSummary && JSON.stringify(prev) === JSON.stringify(nextSummary)) {
+              return prev;
+            }
+            return nextSummary;
+          });
         }
         return;
       }
@@ -849,7 +869,7 @@ function NutriCheckShell() {
             element={
               <RequireAuth>
                 <PrescriptionsPage
-                  onProfileSynced={(summary) => setActivePrescriptionSummary(summary)}
+                  onProfileSynced={setActivePrescriptionSummary}
                 />
               </RequireAuth>
             }

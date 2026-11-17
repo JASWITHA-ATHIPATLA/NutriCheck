@@ -7,6 +7,7 @@ import {
   getUserById,
   loginUser,
   registerUser,
+  syncOrUpsertUser,
   updateUserProfile,
 } from './db/userStore.mjs';
 import {
@@ -561,12 +562,31 @@ export function createApiApp() {
         ok: result.ok,
         ...(result.user ? { user: result.user } : {}),
         ...(result.storage ? { storage: result.storage } : {}),
+        ...(result.reason ? { reason: result.reason } : {}),
         ...(result.error ? { error: result.error } : {}),
       });
     } catch (err) {
       res.status(500).json({
         ok: false,
         error: err instanceof Error ? err.message : 'Unable to sign in.',
+      });
+    }
+  });
+
+  app.post('/api/auth/sync', async (req, res) => {
+    try {
+      const result = await syncOrUpsertUser(req.body || {});
+      res.status(result.status || (result.ok ? 200 : 400)).json({
+        ok: result.ok,
+        ...(result.user ? { user: result.user } : {}),
+        ...(result.storage ? { storage: result.storage } : {}),
+        ...(result.migratedFromId ? { migratedFromId: result.migratedFromId } : {}),
+        ...(result.error ? { error: result.error } : {}),
+      });
+    } catch (err) {
+      res.status(500).json({
+        ok: false,
+        error: err instanceof Error ? err.message : 'Unable to sync user account.',
       });
     }
   });
@@ -594,6 +614,7 @@ export function createApiApp() {
         ok: result.ok,
         ...(result.user ? { user: result.user } : {}),
         ...(result.storage ? { storage: result.storage } : {}),
+        ...(result.migratedFromId ? { migratedFromId: result.migratedFromId } : {}),
         ...(result.error ? { error: result.error } : {}),
       });
     } catch (err) {

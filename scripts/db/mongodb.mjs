@@ -39,6 +39,11 @@ const UserSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    legacyId: {
+      type: String,
+      default: null,
+      index: true,
+    },
     dietaryNotes: {
       type: String,
       default: '',

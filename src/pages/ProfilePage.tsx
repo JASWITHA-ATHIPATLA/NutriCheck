@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, LogOut, UserCheck } from 'lucide-react';
+import { AlertCircle, CheckCircle2, LogOut, UserCheck } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import type { HealthCondition } from '../types';
@@ -30,6 +30,8 @@ export function ProfilePage() {
   );
   const [dietaryNotes, setDietaryNotes] = useState(currentUser?.dietaryNotes || '');
   const [savedBanner, setSavedBanner] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (currentUser) {
@@ -71,6 +73,7 @@ export function ProfilePage() {
 
   function toggleCondition(key: HealthCondition) {
     setSavedBanner(false);
+    setSaveError(null);
     setConditions((prev) =>
       prev.includes(key) ? prev.filter((c) => c !== key) : [...prev, key]
     );
@@ -79,18 +82,47 @@ export function ProfilePage() {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!currentUser) return;
+    setSavedBanner(false);
+    setSaveError(null);
+
+    const trimmedName = fullName.trim();
+    if (!trimmedName) {
+      setSaveError('Please enter your full name.');
+      return;
+    }
+
     const numericAge = Number(age);
-    await updateProfile({
-      fullName: fullName.trim() || currentUser.fullName,
-      age: Number.isFinite(numericAge) && numericAge > 0 ? numericAge : currentUser.age,
-      conditions,
-      otherConditions: hasOtherDisease
-        ? parseCustomConditionsInput(otherDiseaseInput)
-        : [],
-      allergies: parseAllergiesInput(allergiesInput),
-      dietaryNotes,
-    });
-    setSavedBanner(true);
+    if (!Number.isFinite(numericAge) || numericAge < 1 || numericAge > 120) {
+      setSaveError('Please enter a valid age between 1 and 120.');
+      return;
+    }
+
+    if (hasOtherDisease && !otherDiseaseInput.trim()) {
+      setSaveError('Please enter your other disease name(s) or uncheck "Other disease".');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const res = await updateProfile({
+        fullName: trimmedName,
+        age: Math.round(numericAge),
+        conditions,
+        otherConditions: hasOtherDisease
+          ? parseCustomConditionsInput(otherDiseaseInput)
+          : [],
+        allergies: parseAllergiesInput(allergiesInput),
+        dietaryNotes,
+      });
+
+      if (!res.ok) {
+        setSaveError(res.error || 'Unable to save your profile to the backend.');
+        return;
+      }
+      setSavedBanner(true);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -156,7 +188,28 @@ export function ProfilePage() {
           </div>
         )}
 
+        {saveError && (
+          <div className="error-banner" role="alert" style={{ marginBottom: '18px' }}>
+            <AlertCircle size={16} />
+            <span>{saveError}</span>
+          </div>
+        )}
+
         <form className="form-stack" onSubmit={handleSave}>
+          <div className="field">
+            <label htmlFor="prof-email" className="field-label">
+              Account email
+            </label>
+            <input
+              id="prof-email"
+              type="email"
+              className="field-input"
+              value={currentUser.email}
+              readOnly
+              disabled
+            />
+          </div>
+
           <div className="field">
             <label htmlFor="prof-name" className="field-label">
               Name
@@ -168,6 +221,7 @@ export function ProfilePage() {
               value={fullName}
               onChange={(e) => {
                 setSavedBanner(false);
+                setSaveError(null);
                 setFullName(e.target.value);
               }}
               required
@@ -280,8 +334,8 @@ export function ProfilePage() {
             />
           </div>
 
-          <button type="submit" className="btn-primary auth-submit-btn">
-            Save profile
+          <button type="submit" className="btn-primary auth-submit-btn" disabled={saving}>
+            {saving ? 'Saving to backend...' : 'Save profile'}
           </button>
         </form>
       </div>
