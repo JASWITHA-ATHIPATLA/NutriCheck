@@ -8,6 +8,18 @@ app.use('/api', (_req, res) => {
 });
 
 export default async function handler(req: any, res: any) {
+  if (
+    typeof req?.url === 'string' &&
+    (req.url === '/api/index' || req.url.startsWith('/api/index?'))
+  ) {
+    const orig =
+      req.headers?.['x-vercel-original-uri'] ||
+      req.headers?.['x-forwarded-uri'] ||
+      req.headers?.['x-invoke-path'];
+    if (typeof orig === 'string' && orig.startsWith('/api/')) {
+      req.url = orig;
+    }
+  }
   await connectMongoDB().catch(() => {});
   return app(req, res);
 }

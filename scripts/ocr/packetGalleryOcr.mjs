@@ -1,13 +1,22 @@
-import sharp from 'sharp';
-import { createWorker, PSM } from 'tesseract.js';
 import { extractIngredientsFromOcrText, parseNutritionText } from './nutritionParser.mjs';
 
 let sharedWorkerPromise = null;
 let ocrQueue = Promise.resolve();
+let cachedTesseractMod = null;
+
+async function getTesseractModule() {
+  if (!cachedTesseractMod) {
+    cachedTesseractMod = await import('tesseract.js');
+  }
+  return cachedTesseractMod;
+}
 
 async function getOcrWorker() {
   if (!sharedWorkerPromise) {
-    sharedWorkerPromise = createWorker('eng').catch((err) => {
+    sharedWorkerPromise = (async () => {
+      const { createWorker } = await getTesseractModule();
+      return createWorker('eng');
+    })().catch((err) => {
       sharedWorkerPromise = null;
       throw err;
     });
@@ -22,7 +31,18 @@ function enqueueOcrTask(fn) {
 }
 
 export async function preprocessImageBufferForOcr(imgBuffer) {
-  const meta = await sharp(imgBuffer).metadata();
+  let sharpFn = null;
+  try {
+    const mod = await import('sharp');
+    sharpFn = mod?.default || null;
+  } catch {
+    sharpFn = null;
+  }
+  if (!sharpFn) {
+    return imgBuffer;
+  }
+
+  const meta = await sharpFn(imgBuffer).metadata();
   const w = meta.width || 0;
   const h = meta.height || 0;
   if (w < 100 || h < 100) {
@@ -30,7 +50,7 @@ export async function preprocessImageBufferForOcr(imgBuffer) {
   }
 
   const targetWidth = Math.max(1200, Math.min(2000, w < 950 ? w * 2 : w));
-  return sharp(imgBuffer)
+  return sharpFn(imgBuffer)
     .flatten({ background: '#ffffff' })
     .grayscale()
     .normalize()
@@ -48,6 +68,7 @@ export async function ocrPacketBuffer(imgBuffer) {
   }
 
   return enqueueOcrTask(async () => {
+    const { PSM } = await getTesseractModule();
     const worker = await getOcrWorker();
     await worker.setParameters({ tessedit_pageseg_mode: PSM.AUTO });
     const res = await worker.recognize(pngBuffer);

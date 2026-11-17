@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "api/index.ts": {
+      "includeFiles": "{scripts/**,extension/food_catalog.json}"
+    }
+  },
   "headers": [
     {
       "source": "/api/(.*)",

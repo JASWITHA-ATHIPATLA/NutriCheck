@@ -1,7 +1,8 @@
 import 'dotenv/config';
 import express from 'express';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { connectMongoDB, getMongoStatus } from './db/mongodb.mjs';
 import {
   getUserById,
@@ -161,10 +162,18 @@ function round1(val) {
 
 function loadFoodCatalog() {
   try {
-    const filePath = path.resolve(process.cwd(), 'extension/food_catalog.json');
-    const raw = readFileSync(filePath, 'utf8');
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+    const candidates = [
+      path.resolve(moduleDir, '../extension/food_catalog.json'),
+      path.resolve(process.cwd(), 'extension/food_catalog.json'),
+    ];
+    for (const filePath of candidates) {
+      if (!existsSync(filePath)) continue;
+      const raw = readFileSync(filePath, 'utf8');
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+    return [];
   } catch {
     return [];
   }
@@ -528,16 +537,26 @@ export function createApiApp() {
     }
     next();
   });
+  app.use((req, _res, next) => {
+    if (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)) {
+      req._body = true;
+    }
+    next();
+  });
   app.use(express.json({ limit: '25mb' }));
 
   app.get('/api/health', async (_req, res) => {
-    await connectMongoDB();
+    const mongoResult = await connectMongoDB();
+    const mongoStatus = getMongoStatus();
     res.json({
       status: 'ok',
       engine: 'node-express',
       environment: process.env.VERCEL ? 'vercel' : 'node',
       ocrKeys: getConfiguredOcrCapabilities(),
-      mongodb: getMongoStatus(),
+      mongodb: {
+        ...mongoStatus,
+        ...(mongoResult?.reason ? { reason: mongoResult.reason } : {}),
+      },
     });
   });
 

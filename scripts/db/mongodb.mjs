@@ -281,7 +281,14 @@ export const FoodLogModel =
   mongoose.models.FoodLog || mongoose.model('FoodLog', FoodLogSchema);
 
 function getMongoUri() {
-  return String(process.env.MONGODB_URI || process.env.MONGO_URI || '').trim();
+  const raw = String(
+    process.env.MONGODB_URI ||
+      process.env.MONGO_URI ||
+      process.env.MONGODB_URL ||
+      (String(process.env.DATABASE_URL || '').startsWith('mongodb') ? process.env.DATABASE_URL : '') ||
+      ''
+  ).trim();
+  return raw;
 }
 
 function getDbName() {
