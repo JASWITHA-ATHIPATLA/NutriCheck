@@ -111,6 +111,7 @@ export function PrescriptionsPage({
     disclaimer: PRESCRIPTION_DISCLAIMER,
   });
   const [isLoading, setIsLoading] = useState(true);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
@@ -164,12 +165,16 @@ export function PrescriptionsPage({
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const onProfileSyncedRef = useRef(onProfileSynced);
+  const lastSyncedSummaryRef = useRef<string>('');
   useEffect(() => {
     onProfileSyncedRef.current = onProfileSynced;
   }, [onProfileSynced]);
 
   const pushExtensionSync = useCallback(
     (summary: ActivePrescriptionSummary) => {
+      const serialized = JSON.stringify({ userId, summary });
+      if (lastSyncedSummaryRef.current === serialized) return;
+      lastSyncedSummaryRef.current = serialized;
       onProfileSyncedRef.current?.(summary);
       if (typeof window !== 'undefined') {
         window.postMessage(
@@ -182,7 +187,11 @@ export function PrescriptionsPage({
   );
 
   const loadPrescriptions = useCallback(async () => {
-    if (!userId) return;
+    if (!userId) {
+      setIsLoading(false);
+      setHasLoadedOnce(true);
+      return;
+    }
     setIsLoading(true);
     setPageError(null);
     try {
@@ -209,6 +218,7 @@ export function PrescriptionsPage({
       setPageError(err instanceof Error ? err.message : 'Unable to load prescriptions.');
     } finally {
       setIsLoading(false);
+      setHasLoadedOnce(true);
     }
   }, [pushExtensionSync, userId]);
 
@@ -386,12 +396,18 @@ export function PrescriptionsPage({
     const trimmed = newConditionName.trim();
     if (!trimmed) return;
     const days = Math.min(365, Math.max(1, parseInt(newConditionDays, 10) || 7));
+    const lower = trimmed.toLowerCase();
+    const normalizedKey = /\b(fever|feaver|fiver|feverish|pyrexia|febril|febrile|body\s+heat)\b/i.test(lower)
+      ? 'fever'
+      : /\b(cold|cough|throat|pharyngitis|tonsillitis|sinus)\b/i.test(lower)
+      ? 'throat_cold'
+      : lower.replace(/[^a-z0-9]+/g, '_');
     setDraftConditions((prev) => [
       ...prev,
       {
         id: `cond-custom-${Date.now().toString(36)}`,
         name: trimmed,
-        canonicalKey: trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '_'),
+        canonicalKey: normalizedKey,
         category: days >= 60 ? 'chronic' : 'acute',
         validDays: days,
         prescribedDate: draftDate,
@@ -987,6 +1003,35 @@ export function PrescriptionsPage({
                 </div>
               </div>
 
+              {draftConditions.some((c) => {
+                const ms = new Date(`${draftDate}T00:00:00`).getTime();
+                return Number.isFinite(ms) && Date.now() > ms + (c.validDays || 7) * 86400000;
+              }) && (
+                <div className="rx-doctor-verify-banner" role="note" style={{ marginTop: 10 }}>
+                  <div className="rx-doctor-verify-head">
+                    <Clock size={16} color="#b45309" />
+                    <span>Prescription Date Is Older Than Recovery Window</span>
+                  </div>
+                  <p className="rx-doctor-verify-body">
+                    The prescription date ({draftDate}) plus valid days is already in the past, so saving with this date will mark conditions as Expired without Store Connect warnings. If you are still recovering today, update the date or extend Valid days.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{ marginTop: 6, padding: '6px 11px', fontSize: '12.5px' }}
+                    onClick={() => {
+                      const today = new Date().toISOString().slice(0, 10);
+                      setDraftDate(today);
+                      setDraftConditions((prev) =>
+                        prev.map((c) => ({ ...c, prescribedDate: today }))
+                      );
+                    }}
+                  >
+                    Use Today&apos;s Date ({new Date().toISOString().slice(0, 10)})
+                  </button>
+                </div>
+              )}
+
               {/* Diagnosed Conditions Editor */}
               <div className="rx-draft-section">
                 <div className="rx-draft-label">
@@ -1386,7 +1431,7 @@ export function PrescriptionsPage({
               </span>
             </div>
 
-            {isLoading ? (
+            {!hasLoadedOnce && isLoading ? (
               <div className="rx-loading-state">
                 <Loader2 size={18} className="spin-icon" />
                 <span>Loading prescription profile...</span>

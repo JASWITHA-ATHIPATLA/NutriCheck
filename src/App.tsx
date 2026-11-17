@@ -181,7 +181,13 @@ function NutriCheckShell() {
             item.timestamp === prev[i]?.timestamp &&
             item.status === prev[i]?.status &&
             item.queued_food_log_id === prev[i]?.queued_food_log_id &&
-            item.analysis?.health_score === prev[i]?.analysis?.health_score
+            item.analysis?.health_score === prev[i]?.analysis?.health_score &&
+            Boolean(item.prescription_alerts?.hasWarnings) ===
+              Boolean(prev[i]?.prescription_alerts?.hasWarnings) &&
+            (item.prescription_alerts?.warnings?.length || 0) ===
+              (prev[i]?.prescription_alerts?.warnings?.length || 0) &&
+            item.prescription_alerts?.warnings?.[0]?.headline ===
+              prev[i]?.prescription_alerts?.warnings?.[0]?.headline
         );
       if (unchanged) return prev;
 
@@ -232,7 +238,12 @@ function NutriCheckShell() {
       .then((r) => (r.ok ? r.json() : null))
       .then((summary) => {
         if (cancelled || !summary) return;
-        setActivePrescriptionSummary(summary);
+        setActivePrescriptionSummary((prev) => {
+          if (prev && JSON.stringify(prev) === JSON.stringify(summary)) {
+            return prev;
+          }
+          return summary;
+        });
         window.postMessage(
           { type: 'NUTRICHECK_SYNC_PRESCRIPTIONS', userId: activeUserId, summary },
           window.location.origin
@@ -298,6 +309,34 @@ function NutriCheckShell() {
       cancelled = true;
     };
   }, [activeUserId]);
+
+  // Refresh active prescription summary when navigating to Store Connect so card & popup stay current
+  useEffect(() => {
+    if (!activeUserId) return;
+    if (location.pathname !== '/amazon' && location.pathname !== '/connect') return;
+    let cancelled = false;
+    fetch(`/api/prescriptions/active?userId=${encodeURIComponent(activeUserId)}`, {
+      headers: { 'X-User-Id': activeUserId },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((summary) => {
+        if (cancelled || !summary) return;
+        setActivePrescriptionSummary((prev) => {
+          if (prev && JSON.stringify(prev) === JSON.stringify(summary)) {
+            return prev;
+          }
+          return summary;
+        });
+        window.postMessage(
+          { type: 'NUTRICHECK_SYNC_PRESCRIPTIONS', userId: activeUserId, summary },
+          window.location.origin
+        );
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [activeUserId, location.pathname]);
 
   // Listen to real-time Chrome Extension tab bridge sync strictly for the active user
   useEffect(() => {
@@ -605,19 +644,30 @@ function NutriCheckShell() {
     activePrescriptionSummary === null
       ? Boolean(popupEvent?.prescription_alerts?.hasWarnings)
       : activePrescriptionSummary.activeConditions.length > 0 ||
-        activePrescriptionSummary.dietaryRestrictions.length > 0;
+        activePrescriptionSummary.dietaryRestrictions.length > 0 ||
+        activePrescriptionSummary.medicines.length > 0;
+
+  const clientEvaluatedPopupRx =
+    popupEvent &&
+    activePrescriptionSummary &&
+    (activePrescriptionSummary.activeConditions.length > 0 ||
+      activePrescriptionSummary.dietaryRestrictions.length > 0)
+      ? evaluateProductAgainstActiveProfileClient({
+          productTitle: popupEvent.product_title,
+          ingredientsText: popupEvent.ingredients_text || '',
+          nutrition: popupAnalysis?.nutrition || null,
+          activeConditions: activePrescriptionSummary.activeConditions,
+          dietaryRestrictions: activePrescriptionSummary.dietaryRestrictions,
+        })
+      : null;
 
   const popupRxAlert =
     popupEvent && hasUploadedPrescription
-      ? popupEvent.prescription_alerts?.hasWarnings
+      ? clientEvaluatedPopupRx?.hasWarnings
+        ? clientEvaluatedPopupRx
+        : popupEvent.prescription_alerts?.hasWarnings
         ? popupEvent.prescription_alerts
-        : evaluateProductAgainstActiveProfileClient({
-            productTitle: popupEvent.product_title,
-            ingredientsText: popupEvent.ingredients_text || '',
-            nutrition: popupAnalysis?.nutrition || null,
-            activeConditions: activePrescriptionSummary?.activeConditions || [],
-            dietaryRestrictions: activePrescriptionSummary?.dietaryRestrictions || [],
-          })
+        : null
       : null;
 
   const showRxWarningPopup = Boolean(
@@ -652,11 +702,22 @@ function NutriCheckShell() {
             <strong>{formatRxConditionPhrase(popupRxAlert.warnings)}</strong>.
           </p>
           <p className="atc-rx-warn-copy">
-            You are trying to add {popupEvent.product_title} to your {popupStore} cart.
+            You are trying to add <strong>{popupEvent.product_title}</strong> to your{' '}
+            {popupStore} cart.
           </p>
-          <p className="atc-rx-warn-copy">
-            Consider whether this product is suitable for your current health condition.
-          </p>
+
+          {popupRxAlert.warnings.slice(0, 2).map((w, idx) => (
+            <div key={idx} className="atc-rx-warn-reason-box">
+              <div className="atc-rx-warn-reason-title">{w.headline}</div>
+              {w.detail && <div className="atc-rx-warn-reason-detail">{w.detail}</div>}
+            </div>
+          ))}
+
+          {popupRxAlert.alternatives.length > 0 && (
+            <p className="atc-rx-warn-copy" style={{ marginTop: 6 }}>
+              <strong>Safer options:</strong> {popupRxAlert.alternatives.slice(0, 2).join(' · ')}
+            </p>
+          )}
 
           <p className="atc-rx-warn-disclaimer">
             This is a precautionary reminder, not a medical diagnosis or a confirmed food

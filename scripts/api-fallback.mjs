@@ -812,8 +812,32 @@ export function createApiApp() {
         res.json([]);
         return;
       }
-      const events = await listCartEventsForUser(userId);
-      res.json(events);
+      const [events, activeProfile] = await Promise.all([
+        listCartEventsForUser(userId),
+        getActivePrescriptionSummaryForUser(userId),
+      ]);
+      const hasActiveRx =
+        activeProfile.activeConditions.length > 0 ||
+        activeProfile.dietaryRestrictions.length > 0;
+      const enriched = events.map((ev) => ({
+        ...ev,
+        prescription_alerts: hasActiveRx
+          ? evaluateProductAgainstPrescriptions({
+              productTitle: ev.product_title,
+              ingredientsText: ev.ingredients_text || '',
+              nutrition: ev.analysis?.nutrition || null,
+              activeConditions: activeProfile.activeConditions,
+              dietaryRestrictions: activeProfile.dietaryRestrictions,
+            })
+          : {
+              hasWarnings: false,
+              warnings: [],
+              alternatives: [],
+              activeConditionCount: 0,
+              disclaimer: PRESCRIPTION_DISCLAIMER,
+            },
+      }));
+      res.json(enriched);
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Unable to load cart.' });
     }
@@ -956,8 +980,36 @@ export function createApiApp() {
           skipGenericFallback: true,
         }
       );
-      const saved = await saveCartEventForUser(userId, ev);
-      res.json(saved);
+
+      let prescriptionAlerts = {
+        hasWarnings: false,
+        warnings: [],
+        alternatives: [],
+        activeConditionCount: 0,
+        disclaimer: PRESCRIPTION_DISCLAIMER,
+      };
+      const activeProfile = await getActivePrescriptionSummaryForUser(userId);
+      if (
+        activeProfile.activeConditions.length > 0 ||
+        activeProfile.dietaryRestrictions.length > 0
+      ) {
+        prescriptionAlerts = evaluateProductAgainstPrescriptions({
+          productTitle: ev.product_title,
+          ingredientsText: ev.ingredients_text || '',
+          nutrition: ev.analysis?.nutrition || null,
+          activeConditions: activeProfile.activeConditions,
+          dietaryRestrictions: activeProfile.dietaryRestrictions,
+        });
+      }
+
+      const saved = await saveCartEventForUser(userId, {
+        ...ev,
+        prescription_alerts: prescriptionAlerts,
+      });
+      res.json({
+        ...saved,
+        prescription_alerts: prescriptionAlerts,
+      });
     } catch (err) {
       res.status(500).json({
         ok: false,

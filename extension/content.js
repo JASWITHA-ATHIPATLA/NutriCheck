@@ -1487,6 +1487,35 @@
       p3.textContent = 'Consider whether this product is suitable for your current health condition.';
       card.appendChild(p3);
 
+      const primaryWarning = prescriptionAlerts.warnings[0];
+      if (primaryWarning && (primaryWarning.headline || primaryWarning.detail)) {
+        const reasonBox = document.createElement('div');
+        reasonBox.style.cssText =
+          'margin:0 0 10px 0;padding:10px 12px;border-radius:8px;background:#fffbeb;border:1px solid #fde68a;';
+        if (primaryWarning.headline) {
+          const reasonTitle = document.createElement('div');
+          reasonTitle.style.cssText =
+            'font-size:13.5px;font-weight:700;color:#78350f;line-height:1.38;';
+          reasonTitle.textContent = primaryWarning.headline;
+          reasonBox.appendChild(reasonTitle);
+        }
+        if (primaryWarning.detail) {
+          const reasonDetail = document.createElement('div');
+          reasonDetail.style.cssText =
+            'margin-top:4px;font-size:12.5px;color:#475569;line-height:1.4;';
+          reasonDetail.textContent = primaryWarning.detail;
+          reasonBox.appendChild(reasonDetail);
+        }
+        card.appendChild(reasonBox);
+      }
+
+      if (Array.isArray(prescriptionAlerts.alternatives) && prescriptionAlerts.alternatives.length > 0) {
+        const altEl = document.createElement('p');
+        altEl.style.cssText = 'margin:0 0 8px 0;font-size:12.5px;color:#146c43;line-height:1.4;font-weight:600;';
+        altEl.textContent = `Safer options: ${prescriptionAlerts.alternatives.slice(0, 2).join(' · ')}`;
+        card.appendChild(altEl);
+      }
+
       const disclaimerEl = document.createElement('p');
       disclaimerEl.style.cssText = 'margin:0 0 14px 0;font-size:11.5px;color:#64748b;line-height:1.4;';
       disclaimerEl.textContent =

@@ -143,8 +143,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           u.email.toLowerCase() === clean.email.toLowerCase()
       );
       if (idx === -1) return [...prev, clean];
+      const merged = { ...prev[idx], ...clean };
+      if (JSON.stringify(prev[idx]) === JSON.stringify(merged)) {
+        return prev;
+      }
       const next = [...prev];
-      next[idx] = { ...next[idx], ...clean };
+      next[idx] = merged;
       return next;
     });
     if (replaceId && replaceId !== clean.id) {

@@ -22,7 +22,7 @@ const CLIENT_CONDITION_RULES: ClientRuleDef[] = [
     category: 'acute',
     matchesProduct: (hay, nutrition) => {
       if (
-        /\b(ice cream|kulfi|gelato|sorbet|popsicle|cold coffee|milkshake|thick shake|iced tea|cold drink|soft drink|soda|cola|pepsi|sprite|fanta|thums up|slush|falooda|chilled)\b/i.test(
+        /\b(ice[\s-]*cream|icecream|kulfi|gelato|sorbet|popsicle|frozen\s+dessert|sundae|cornetto|magnum|chocobar|cassata|cold\s+coffee|milkshake|thick\s+shake|iced\s+tea|cold\s+drink|soft\s+drink|soda|cola|pepsi|sprite|fanta|thums\s+up|slush|falooda|chilled)\b/i.test(
           hay
         )
       ) {
@@ -51,7 +51,7 @@ const CLIENT_CONDITION_RULES: ClientRuleDef[] = [
     category: 'acute',
     matchesProduct: (hay) => {
       if (
-        /\b(ice cream|kulfi|gelato|cold drink|soft drink|soda|cola|pepsi|sprite|milkshake|cold coffee|iced|slush|falooda|chips|kurkure|spicy|chilli|fried)\b/i.test(
+        /\b(ice[\s-]*cream|icecream|kulfi|gelato|frozen\s+dessert|sundae|cornetto|magnum|chocobar|cassata|cold\s+drink|soft\s+drink|soda|cola|pepsi|sprite|milkshake|cold\s+coffee|iced|slush|falooda|chips|kurkure|spicy|chilli|fried)\b/i.test(
           hay
         )
       ) {
@@ -92,7 +92,7 @@ const CLIENT_CONDITION_RULES: ClientRuleDef[] = [
     category: 'acute',
     matchesProduct: (hay, nutrition) => {
       if (
-        /\b(ice cream|cheese|paneer|butter|ghee|biryani|pizza|burger|fries|chips|namkeen|spicy|chilli|fried|milkshake|cola|soda|juice|chocolate)\b/i.test(
+        /\b(ice[\s-]*cream|icecream|cheese|paneer|butter|ghee|biryani|pizza|burger|fries|chips|namkeen|spicy|chilli|fried|milkshake|cola|soda|juice|chocolate)\b/i.test(
           hay
         ) ||
         (nutrition && ((nutrition.fat || 0) >= 15 || (nutrition.sugars || 0) >= 18))
@@ -136,12 +136,12 @@ const CLIENT_CONDITION_RULES: ClientRuleDef[] = [
       const isWholeNutOrBerry =
         /\b(walnuts?|akhrot|almonds?|badam|blueberr(?:y|ies)|strawberr(?:y|ies)|raspberr(?:y|ies)|avocado)\b/i.test(
           hay
-        ) && !/\b(sugar|chocolate|syrup|jam|juice|candy|ice cream|cake)\b/i.test(hay);
+        ) && !/\b(sugar|chocolate|syrup|jam|juice|candy|ice[\s-]*cream|icecream|cake)\b/i.test(hay);
       if (isWholeNutOrBerry) return null;
 
       if (
         (nutrition && (nutrition.sugars || 0) >= 12) ||
-        /\b(sugar syrup|sharbat|rooh afza|cola|soft drink|candy|chocolate|laddu|gulab jamun|rasgulla|soan papdi|ice cream|jam|honey|jaggery|cake|pastry|milkshake)\b/i.test(
+        /\b(sugar syrup|sharbat|rooh afza|cola|soft drink|candy|chocolate|laddu|gulab jamun|rasgulla|soan papdi|ice[\s-]*cream|icecream|jam|honey|jaggery|cake|pastry|milkshake)\b/i.test(
           hay
         )
       ) {
@@ -228,6 +228,24 @@ const CLIENT_CONDITION_RULES: ClientRuleDef[] = [
   },
 ];
 
+function getClientWarningProductSubject(hay: string): string {
+  if (
+    /\b(ice[\s-]*cream|icecream|kulfi|gelato|frozen\s+dessert|sundae|cornetto|magnum|chocobar|cassata)\b/i.test(
+      hay
+    )
+  ) {
+    return 'ice cream';
+  }
+  if (
+    /\b(cold\s+drink|soft\s+drink|soda|cola|pepsi|sprite|fanta|thums\s+up|milkshake|cold\s+coffee|iced\s+tea|slush|falooda)\b/i.test(
+      hay
+    )
+  ) {
+    return 'cold drinks';
+  }
+  return 'this product';
+}
+
 export function evaluateProductAgainstActiveProfileClient(params: {
   productTitle: string;
   ingredientsText?: string;
@@ -238,6 +256,7 @@ export function evaluateProductAgainstActiveProfileClient(params: {
   const hay = `${params.productTitle || ''} ${params.ingredientsText || ''}`.toLowerCase();
   const warnings: PrescriptionAlertWarning[] = [];
   const alternativeSet = new Set<string>();
+  const itemSubject = getClientWarningProductSubject(hay);
 
   for (const cond of params.activeConditions || []) {
     if (cond.status && cond.status !== 'active') continue;
@@ -247,7 +266,9 @@ export function evaluateProductAgainstActiveProfileClient(params: {
     const rule =
       CLIENT_CONDITION_RULES.find((r) => r.key === key) ||
       CLIENT_CONDITION_RULES.find((r) => labelLower.includes(r.key)) ||
-      ((key.includes('cold') || key.includes('cough') || key.includes('throat') || /\bcold\b|\bcough\b|\bthroat\b/i.test(labelLower))
+      (/\b(fever|feaver|fiver|feverish|pyrexia|febril|febrile|body\s+heat)\b/i.test(`${key} ${labelLower}`)
+        ? CLIENT_CONDITION_RULES.find((r) => r.key === 'fever')
+        : (key.includes('cold') || key.includes('cough') || key.includes('throat') || /\bcold\b|\bcough\b|\bthroat\b/i.test(labelLower))
         ? CLIENT_CONDITION_RULES.find((r) => r.key === 'throat_cold')
         : undefined);
 
@@ -258,18 +279,18 @@ export function evaluateProductAgainstActiveProfileClient(params: {
         const shortCondLabel = rule.key === 'fever' ? 'fever' : displayName.toLowerCase();
         warnings.push({
           conditionKey: rule.key,
-          conditionName: displayName,
+          conditionName: rule.key === 'fever' ? 'Fever' : displayName,
           prescribedDate: cond.prescribedDate,
           daysRemaining: cond.daysRemaining ?? null,
           severity: rule.category === 'acute' ? 'warning' : 'caution',
-          headline: `You recently reported ${shortCondLabel}. Consider whether this product is suitable for your current condition.`,
+          headline: `You recently reported ${shortCondLabel} — ${itemSubject} is not good for your health right now.`,
           detail: reason,
         });
         rule.alternatives.forEach((a) => alternativeSet.add(a));
       }
     } else {
       const isUltraProcessed =
-        /\b(chips|instant noodles|maggi|soda|cola|ice cream|fried|candy|chocolate|pickle|bhujia)\b/i.test(
+        /\b(chips|instant noodles|maggi|soda|cola|ice[\s-]*cream|icecream|fried|candy|chocolate|pickle|bhujia)\b/i.test(
           hay
         ) ||
         (params.nutrition &&
@@ -281,7 +302,7 @@ export function evaluateProductAgainstActiveProfileClient(params: {
           prescribedDate: cond.prescribedDate,
           daysRemaining: cond.daysRemaining ?? null,
           severity: 'caution',
-          headline: `You recently reported ${label.toLowerCase()}. Consider whether this product is suitable for your current condition.`,
+          headline: `You recently reported ${label.toLowerCase()} — ${itemSubject} is not good for your health right now.`,
           detail: `High sugar, sodium, or heavily processed ingredients detected while "${label}" is active.`,
         });
         alternativeSet.add('Minimally processed home-style meals, oats, or fresh fruit');
@@ -292,8 +313,8 @@ export function evaluateProductAgainstActiveProfileClient(params: {
   for (const ruleText of params.dietaryRestrictions || []) {
     const rLower = (ruleText || '').toLowerCase();
     if (
-      /cold|ice cream|chilled/i.test(rLower) &&
-      /\b(ice cream|kulfi|gelato|cold drink|soft drink|cola|pepsi|sprite|milkshake|cold coffee|iced)\b/i.test(
+      /cold|ice[\s-]*cream|icecream|chilled/i.test(rLower) &&
+      /\b(ice[\s-]*cream|icecream|kulfi|gelato|frozen\s+dessert|sundae|cornetto|magnum|chocobar|cassata|cold\s+drink|soft\s+drink|soda|cola|pepsi|sprite|milkshake|cold\s+coffee|iced)\b/i.test(
         hay
       )
     ) {
@@ -302,8 +323,7 @@ export function evaluateProductAgainstActiveProfileClient(params: {
           conditionKey: 'avoid_cold',
           conditionName: 'Avoid cold drinks & ice cream',
           severity: 'caution',
-          headline:
-            'Prescription dietary note (Avoid cold drinks & ice cream): consider whether this product fits your current restrictions.',
+          headline: `Prescription note: ${itemSubject} conflicts with your active dietary guidance (avoid cold drinks & ice cream).`,
           detail: `Rule applied: ${ruleText}`,
         });
       }

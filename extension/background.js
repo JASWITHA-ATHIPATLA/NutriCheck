@@ -908,6 +908,24 @@ async function analyzeInExtensionFallback(payload) {
   };
 }
 
+function getWorkerWarningProductSubject(hay) {
+  if (
+    /\b(ice[\s-]*cream|icecream|kulfi|gelato|frozen\s+dessert|sundae|cornetto|magnum|chocobar|cassata)\b/i.test(
+      hay
+    )
+  ) {
+    return 'ice cream';
+  }
+  if (
+    /\b(cold\s+drink|soft\s+drink|soda|cola|pepsi|sprite|fanta|thums\s+up|milkshake|cold\s+coffee|iced\s+tea|slush|falooda)\b/i.test(
+      hay
+    )
+  ) {
+    return 'cold drinks';
+  }
+  return 'this product';
+}
+
 function evaluatePrescriptionAlertsInWorker(productTitle, ingredientsText, nutrition, activeSummary) {
   const disclaimer =
     'This is a precautionary reminder, not a medical diagnosis or a confirmed food restriction.';
@@ -926,70 +944,73 @@ function evaluatePrescriptionAlertsInWorker(productTitle, ingredientsText, nutri
   }
 
   const hay = `${productTitle || ''} ${ingredientsText || ''}`.toLowerCase();
+  const itemSubject = getWorkerWarningProductSubject(hay);
   const warnings = [];
   const alts = new Set();
 
   for (const cond of activeConds) {
     const key = String(cond.canonicalKey || cond.name || '').toLowerCase();
     const label = cond.name || 'this condition';
-    if (key.includes('fever')) {
+    const labelLower = label.toLowerCase();
+    const combined = `${key} ${labelLower}`;
+    if (/\b(fever|feaver|fiver|feverish|pyrexia|febril|febrile|body\s+heat)\b/i.test(combined)) {
       if (
-        /\b(ice cream|kulfi|gelato|sorbet|popsicle|cold drink|soft drink|soda|cola|pepsi|sprite|fanta|thums up|milkshake|cold coffee|iced|slush|falooda|chips|kurkure|namkeen|fried|samosa|pakora|spicy|maggi|instant noodles)\b/i.test(
+        /\b(ice[\s-]*cream|icecream|kulfi|gelato|sorbet|popsicle|frozen\s+dessert|sundae|cornetto|magnum|chocobar|cassata|cold\s+drink|soft\s+drink|soda|cola|pepsi|sprite|fanta|thums\s+up|milkshake|cold\s+coffee|iced|slush|falooda|chips|kurkure|namkeen|fried|samosa|pakora|spicy|maggi|instant\s+noodles)\b/i.test(
           hay
         )
       ) {
         warnings.push({
           conditionKey: 'fever',
-          conditionName: cond.name || 'Fever',
-          headline: `You recently reported ${(cond.name || 'fever').toLowerCase()}. Consider whether this product is suitable for your current condition.`,
+          conditionName: 'Fever',
+          headline: `You recently reported fever — ${itemSubject} is not good for your health right now.`,
           detail: 'Chilled desserts, carbonated cold drinks, or fried/spicy snacks may feel uncomfortable while recovering.',
         });
         alts.add('Warm oats or soft khichdi');
         alts.add('Room-temperature tender coconut water');
       }
-    } else if (key.includes('throat') || key.includes('cold') || key.includes('cough')) {
+    } else if (key.includes('throat') || key.includes('cold') || key.includes('cough') || /\bcold\b|\bcough\b|\bthroat\b/i.test(labelLower)) {
       if (
-        /\b(ice cream|kulfi|gelato|sorbet|popsicle|cold drink|soft drink|soda|cola|pepsi|sprite|fanta|milkshake|cold coffee|iced|slush|falooda|chips|kurkure|namkeen|fried|spicy|chilli)\b/i.test(
+        /\b(ice[\s-]*cream|icecream|kulfi|gelato|sorbet|popsicle|frozen\s+dessert|sundae|cornetto|magnum|chocobar|cassata|cold\s+drink|soft\s+drink|soda|cola|pepsi|sprite|fanta|milkshake|cold\s+coffee|iced|slush|falooda|chips|kurkure|namkeen|fried|spicy|chilli)\b/i.test(
           hay
         )
       ) {
         warnings.push({
           conditionKey: 'throat_cold',
           conditionName: cond.name || 'Cold',
-          headline: `You recently reported ${(cond.name || 'cold').toLowerCase()}. Consider whether this product is suitable for your current condition.`,
+          headline: `You recently reported ${(cond.name || 'cold').toLowerCase()} — ${itemSubject} is not good for your health right now.`,
           detail: 'Chilled desserts, carbonated drinks, or spicy/fried snacks can aggravate throat irritation.',
         });
         alts.add('Warm ginger-tulsi herbal tea');
         alts.add('Soft steamed idli or warm porridge');
       }
     } else if (key.includes('gastrit') || key.includes('acid') || key.includes('gerd')) {
-      if (/\b(spicy|chilli|masala|pickle|achaar|fried|chips|kurkure|namkeen|instant noodles|maggi|coffee|cola|soda|chocolate|pizza|burger)\b/i.test(hay)) {
+      if (/\b(spicy|chilli|masala|pickle|achaar|fried|chips|kurkure|namkeen|instant\s+noodles|maggi|coffee|cola|soda|chocolate|pizza|burger)\b/i.test(hay)) {
         warnings.push({
           conditionKey: 'gastritis',
           conditionName: label,
-          headline: `You recently reported ${label.toLowerCase()}. Consider whether this product is suitable for your current condition.`,
+          headline: `You recently reported ${label.toLowerCase()} — ${itemSubject} is not good for your health right now.`,
           detail: 'Spicy, fried, caffeinated, or carbonated foods commonly aggravate acidity.',
         });
         alts.add('Plain yogurt / curd or steamed idli');
       }
     } else if (key.includes('gastroenteritis') || key.includes('diarrhea') || key.includes('stomach')) {
-      if (/\b(ice cream|cheese|paneer|butter|ghee|biryani|pizza|burger|fries|chips|namkeen|spicy|chilli|fried|milkshake|cola|soda|juice|chocolate)\b/i.test(hay)) {
+      if (/\b(ice[\s-]*cream|icecream|cheese|paneer|butter|ghee|biryani|pizza|burger|fries|chips|namkeen|spicy|chilli|fried|milkshake|cola|soda|juice|chocolate)\b/i.test(hay)) {
         warnings.push({
           conditionKey: 'gastroenteritis',
           conditionName: label,
-          headline: `You recently reported ${label.toLowerCase()}. Consider whether this product is suitable for your current condition.`,
+          headline: `You recently reported ${label.toLowerCase()} — ${itemSubject} is not good for your health right now.`,
           detail: 'High-fat, rich dairy, spicy, or sugary items may worsen digestive upset.',
         });
         alts.add('Plain curd rice or soft khichdi');
       }
     } else if (key.includes('diabetes') && (
       (nutrition && nutrition.sugars >= 12) ||
-      /\b(sugar syrup|sharbat|rooh afza|cola|soft drink|candy|chocolate|laddu|gulab jamun|rasgulla|soan papdi|ice cream|jam|honey|jaggery|cake|pastry|milkshake)\b/i.test(hay)
+      /\b(sugar\s+syrup|sharbat|rooh\s+afza|cola|soft\s+drink|candy|chocolate|laddu|gulab\s+jamun|rasgulla|soan\s+papdi|ice[\s-]*cream|icecream|jam|honey|jaggery|cake|pastry|milkshake)\b/i.test(hay)
     )) {
       warnings.push({
         conditionKey: 'diabetes',
         conditionName: label,
-        headline: `You recently reported ${label.toLowerCase()}. Consider whether this product is suitable for your current condition.`,
+        headline: `You recently reported ${label.toLowerCase()} — ${itemSubject} is not good for your health right now.`,
         detail: nutrition && nutrition.sugars >= 12
           ? `Contains ${nutrition.sugars}g sugar which can spike blood glucose.`
           : 'Contains high free sugar listed on your blood sugar plan.',
@@ -997,25 +1018,25 @@ function evaluatePrescriptionAlertsInWorker(productTitle, ingredientsText, nutri
       alts.add('Unsalted walnuts, almonds, or plain oats');
     } else if ((key.includes('hypertension') || key.includes('bp')) && (
       (nutrition && nutrition.sodium_mg >= 350) ||
-      /\b(pickle|achaar|papad|instant noodles|maggi|ramen|salted|potato chips|lays|kurkure|namkeen|bhujia|soy sauce|ketchup|salted butter)\b/i.test(hay)
+      /\b(pickle|achaar|papad|instant\s+noodles|maggi|ramen|salted|potato\s+chips|lays|kurkure|namkeen|bhujia|soy\s+sauce|ketchup|salted\s+butter)\b/i.test(hay)
     )) {
       warnings.push({
         conditionKey: 'hypertension',
         conditionName: label,
-        headline: `You recently reported ${label.toLowerCase()}. Consider whether this product is suitable for your current condition.`,
+        headline: `You recently reported ${label.toLowerCase()} — ${itemSubject} is not good for your health right now.`,
         detail: nutrition && nutrition.sodium_mg >= 350
           ? `High sodium (${Math.round(nutrition.sodium_mg)}mg) conflicts with low-salt guidance.`
           : 'Salty snack or condiment high in sodium.',
       });
       alts.add('Unsalted nuts or fresh whole fruits');
     } else if (
-      /\b(chips|instant noodles|maggi|soda|cola|ice cream|fried|candy|chocolate|pickle|bhujia)\b/i.test(hay) ||
+      /\b(chips|instant\s+noodles|maggi|soda|cola|ice[\s-]*cream|icecream|fried|candy|chocolate|pickle|bhujia)\b/i.test(hay) ||
       (nutrition && (nutrition.sugars >= 18 || nutrition.sodium_mg >= 600))
     ) {
       warnings.push({
         conditionKey: key || 'custom',
         conditionName: label,
-        headline: `You recently reported ${label.toLowerCase()}. Consider whether this product is suitable for your current condition.`,
+        headline: `You recently reported ${label.toLowerCase()} — ${itemSubject} is not good for your health right now.`,
         detail: `Consider whether this product suits your current ${label} prescription.`,
       });
     }
@@ -1024,20 +1045,21 @@ function evaluatePrescriptionAlertsInWorker(productTitle, ingredientsText, nutri
   for (const ruleText of dietaryRestrictions) {
     const rLower = String(ruleText || '').toLowerCase();
     if (
-      /cold|ice cream|chilled/i.test(rLower) &&
-      /\b(ice cream|kulfi|gelato|cold drink|soft drink|soda|cola|pepsi|sprite|milkshake|cold coffee|iced)\b/i.test(hay)
+      /cold|ice[\s-]*cream|icecream|chilled/i.test(rLower) &&
+      /\b(ice[\s-]*cream|icecream|kulfi|gelato|frozen\s+dessert|sundae|cornetto|magnum|chocobar|cassata|cold\s+drink|soft\s+drink|soda|cola|pepsi|sprite|milkshake|cold\s+coffee|iced)\b/i.test(hay)
     ) {
       if (!warnings.some((w) => w.conditionKey === 'avoid_cold')) {
         warnings.push({
           conditionKey: 'avoid_cold',
           conditionName: 'Avoid cold drinks & ice cream',
-          headline: 'Prescription dietary note (Avoid cold drinks & ice cream).',
+          headline: `Prescription note: ${itemSubject} conflicts with your active dietary guidance (avoid cold drinks & ice cream).`,
           detail: `Rule applied: ${ruleText}`,
         });
       }
+      alts.add('Warm herbal tea or room-temperature coconut water');
     } else if (
       /spicy|oily|fried/i.test(rLower) &&
-      /\b(spicy|chilli|masala|fried|deep fried|chips|kurkure|namkeen|bhujia|samosa|pakora|pickle|achaar|instant noodles)\b/i.test(hay)
+      /\b(spicy|chilli|masala|fried|deep\s+fried|chips|kurkure|namkeen|bhujia|samosa|pakora|pickle|achaar|instant\s+noodles)\b/i.test(hay)
     ) {
       if (!warnings.some((w) => w.conditionKey === 'avoid_spicy_oily')) {
         warnings.push({
@@ -1299,7 +1321,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       }
 
       const localPrescriptionAlerts =
-        !fromBackend && activeUserId && cachedRxSummary
+        (!fromBackend || !eventData?.prescription_alerts?.hasWarnings) && activeUserId && cachedRxSummary
           ? evaluatePrescriptionAlertsInWorker(
               eventData?.product_title || productTitle,
               eventData?.ingredients_text || payloadIngredients,
@@ -1315,7 +1337,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         if (!eventData.ingredients_text && payloadIngredients) {
           eventData.ingredients_text = payloadIngredients;
         }
-        if (!eventData.prescription_alerts && localPrescriptionAlerts?.hasWarnings) {
+        if (!eventData.prescription_alerts?.hasWarnings && localPrescriptionAlerts?.hasWarnings) {
           eventData.prescription_alerts = localPrescriptionAlerts;
         }
       }

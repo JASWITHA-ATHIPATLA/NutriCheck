@@ -604,7 +604,13 @@ export function AmazonConnectView({
                   ? 'Fits well with your saved health profile in normal portions.'
                   : 'Consider unsweetened oats, plain nuts, or minimally processed snacks as alternatives.';
 
-              const rxAlerts =
+              const hasAnyPrescription =
+                !activePrescriptions ||
+                activePrescriptions.activeConditions.length > 0 ||
+                activePrescriptions.dietaryRestrictions.length > 0 ||
+                activePrescriptions.medicines.length > 0;
+
+              const clientRxAlerts =
                 activePrescriptions &&
                 (activePrescriptions.activeConditions.length > 0 ||
                   activePrescriptions.dietaryRestrictions.length > 0)
@@ -615,7 +621,15 @@ export function AmazonConnectView({
                       activeConditions: activePrescriptions.activeConditions,
                       dietaryRestrictions: activePrescriptions.dietaryRestrictions,
                     })
-                  : ev.prescription_alerts || null;
+                  : null;
+
+              const rxAlerts = !hasAnyPrescription
+                ? null
+                : clientRxAlerts?.hasWarnings
+                ? clientRxAlerts
+                : ev.prescription_alerts?.hasWarnings
+                ? ev.prescription_alerts
+                : clientRxAlerts;
 
               const showRxCardWarning = Boolean(
                 rxAlerts?.hasWarnings && !dismissedRxIds[ev.event_id]
@@ -671,6 +685,59 @@ export function AmazonConnectView({
                       </span>
                     </div>
                   </div>
+
+                  {/* Active Prescription Alert prominently at top of Store Connect card */}
+                  {showRxCardWarning && rxAlerts && (
+                    <div
+                      className="rx-warning-popup is-alert"
+                      role="alert"
+                      style={{ marginTop: 12, marginBottom: 4 }}
+                    >
+                      <div className="rx-warning-head">
+                        <AlertTriangle size={16} color="#92400e" />
+                        <span>NutriCheck – Prescription Health Alert</span>
+                      </div>
+                      {rxAlerts.warnings.map((w, idx) => (
+                        <div key={idx} className="rx-warning-item">
+                          <div className="rx-warning-headline">{w.headline}</div>
+                          <div className="rx-warning-detail">{w.detail}</div>
+                        </div>
+                      ))}
+                      {rxAlerts.alternatives.length > 0 && (
+                        <div className="rx-alt-box">
+                          <div className="rx-alt-title">Safer alternatives:</div>
+                          <ul>
+                            {rxAlerts.alternatives.map((alt, idx) => (
+                              <li key={idx}>{alt}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      <p className="rx-disclaimer-mini">{rxAlerts.disclaimer}</p>
+                      <div className="rx-popup-actions">
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          style={{ padding: '6px 11px', fontSize: '12px' }}
+                          onClick={() =>
+                            setDismissedRxIds((prev) => ({ ...prev, [ev.event_id]: true }))
+                          }
+                        >
+                          Dismiss Warning
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          style={{ flex: 'none', padding: '6px 11px', fontSize: '12px' }}
+                          onClick={() =>
+                            setContinuedRxIds((prev) => ({ ...prev, [ev.event_id]: true }))
+                          }
+                        >
+                          {continuedRxIds[ev.event_id] ? 'Continued ✓' : 'Continue Ordering'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {isEstimated && !isEditingPacket && (
                     <div className="pa-estimate-banner">
@@ -1002,55 +1069,6 @@ export function AmazonConnectView({
                       </div>
                     </div>
                   </div>
-
-                  {/* Active Prescription Alert inside Store Connect card */}
-                  {showRxCardWarning && rxAlerts && (
-                    <div className="rx-warning-popup is-alert" style={{ marginTop: 12 }}>
-                      <div className="rx-warning-head">
-                        <AlertTriangle size={16} color="#92400e" />
-                        <span>Prescription Health Alert</span>
-                      </div>
-                      {rxAlerts.warnings.map((w, idx) => (
-                        <div key={idx} className="rx-warning-item">
-                          <div className="rx-warning-headline">{w.headline}</div>
-                          <div className="rx-warning-detail">{w.detail}</div>
-                        </div>
-                      ))}
-                      {rxAlerts.alternatives.length > 0 && (
-                        <div className="rx-alt-box">
-                          <div className="rx-alt-title">Safer alternatives:</div>
-                          <ul>
-                            {rxAlerts.alternatives.map((alt, idx) => (
-                              <li key={idx}>{alt}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      <p className="rx-disclaimer-mini">{rxAlerts.disclaimer}</p>
-                      <div className="rx-popup-actions">
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          style={{ padding: '6px 11px', fontSize: '12px' }}
-                          onClick={() =>
-                            setDismissedRxIds((prev) => ({ ...prev, [ev.event_id]: true }))
-                          }
-                        >
-                          Dismiss Warning
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-primary"
-                          style={{ flex: 'none', padding: '6px 11px', fontSize: '12px' }}
-                          onClick={() =>
-                            setContinuedRxIds((prev) => ({ ...prev, [ev.event_id]: true }))
-                          }
-                        >
-                          {continuedRxIds[ev.event_id] ? 'Continued ✓' : 'Continue Ordering'}
-                        </button>
-                      </div>
-                    </div>
-                  )}
 
                   {ev.tracker_eligibility && (
                     <div className="sc-tracker-eligibility">
