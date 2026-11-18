@@ -19,7 +19,9 @@
 
   function filterEventsForUser(events, userId) {
     if (!Array.isArray(events) || !userId) return [];
-    return events.filter((ev) => ev && ev.user_id && ev.user_id === userId);
+    return events
+      .filter((ev) => ev && (!ev.user_id || ev.user_id === userId))
+      .map((ev) => (ev.user_id ? ev : { ...ev, user_id: userId }));
   }
 
   function syncEventsToPage(events, userId) {

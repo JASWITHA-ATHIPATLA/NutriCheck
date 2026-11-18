@@ -6095,4 +6095,377 @@ textarea {
   }
 }
 
+/* ==================== Daily Tracker: Clean Initial State & Big Good vs. Bad Pie Chart ==================== */
+.pie-card-large {
+  padding: 22px 24px;
+  border: 1.5px solid var(--border-subtle);
+  background: linear-gradient(180deg, #ffffff 0%, #fafaf9 100%);
+}
+
+.pie-layout-large {
+  gap: 24px;
+  align-items: center;
+}
+
+.pie-svg-large {
+  width: 216px;
+  height: 216px;
+  flex-shrink: 0;
+}
+
+.tracker-empty-hero {
+  margin-top: 18px;
+  padding: 36px 28px;
+  border-radius: var(--radius-lg);
+  border: 1.5px dashed var(--border-strong);
+  background-color: var(--bg-surface);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.tracker-empty-icon-ring {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background-color: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #146c43;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tracker-empty-title {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.tracker-empty-desc {
+  max-width: 620px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.tracker-sim-box {
+  margin-top: 8px;
+  width: 100%;
+  max-width: 780px;
+  padding: 16px 18px;
+  border-radius: var(--radius-md);
+  background-color: var(--bg-muted);
+  border: 1px solid var(--border-subtle);
+  text-align: left;
+}
+
+.tracker-sim-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.tracker-sim-title {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+.tracker-sim-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.tracker-sim-btn {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background-color: var(--bg-surface);
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.tracker-sim-btn:hover:not(:disabled) {
+  border-color: #146c43;
+  background-color: #f0fdf4;
+}
+
+.tracker-sim-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.tracker-sim-btn-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.tracker-sim-btn-meta {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.tracker-hero-quality-grid {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: 1.08fr 1.12fr;
+  gap: 16px;
+  align-items: stretch;
+}
+
+.tracker-good-bad-split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.tracker-quality-panel {
+  padding: 18px;
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tracker-quality-panel.is-good-panel {
+  border-top: 4px solid #15803d;
+}
+
+.tracker-quality-panel.is-bad-panel {
+  border-top: 4px solid #be123c;
+}
+
+.tracker-quality-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tracker-quality-title {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.tracker-quality-pct-badge {
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.tracker-quality-pct-badge.is-good {
+  background-color: #dcfce7;
+  color: #166534;
+}
+
+.tracker-quality-pct-badge.is-bad {
+  background-color: #ffe4e6;
+  color: #9f1239;
+}
+
+.tracker-quality-nut-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.tracker-quality-nut-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tracker-quality-nut-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 12.5px;
+}
+
+.tracker-charts-grid-3 {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.tracker-nutrient-chips {
+  margin-top: 7px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.tracker-nut-chip {
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  background-color: var(--bg-subtle);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+
+.tracker-nut-chip.is-good {
+  background-color: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #065f46;
+}
+
+.tracker-nut-chip.is-bad {
+  background-color: #fff1f2;
+  border-color: #fecdd3;
+  color: #9f1239;
+}
+
+.store-chip.is-zomato {
+  background-color: #fff1f2;
+  border-color: #fecdd3;
+  color: #be123c;
+  font-weight: 700;
+}
+
+.store-chip.is-swiggy {
+  background-color: #fff7ed;
+  border-color: #fed7aa;
+  color: #c2410c;
+  font-weight: 700;
+}
+
+@media (max-width: 1040px) {
+  .tracker-hero-quality-grid,
+  .tracker-charts-grid-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  .tracker-good-bad-split,
+  .tracker-sim-grid {
+    grid-template-columns: 1fr;
+  }
+  .pie-svg-large {
+    width: 180px;
+    height: 180px;
+  }
+}
+
+/* Eathy Style Daily Tracker Card */
+.eathy-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04);
+}
+
+.eathy-week-row {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.eathy-day-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 4px;
+  border-radius: 14px;
+  background: var(--bg-muted);
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--text-secondary);
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+.eathy-day-pill.is-active {
+  background: var(--bg-surface);
+  border-color: #146c43;
+  color: #146c43;
+  box-shadow: 0 4px 12px rgba(20, 108, 67, 0.12);
+}
+
+.eathy-day-num {
+  font-size: 16px;
+  font-weight: 800;
+  margin-top: 2px;
+}
+
+.eathy-day-indicator {
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+  margin-top: 4px;
+}
+
+.eathy-main-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 16px;
+}
+
+.eathy-protein-box {
+  background: var(--bg-muted);
+  border-radius: 16px;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border: 1px solid var(--border-subtle);
+}
+
+.eathy-stats-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.eathy-stat-tile {
+  background: var(--bg-muted);
+  border-radius: 14px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid var(--border-subtle);
+}
+
+@media (max-width: 768px) {
+  .eathy-main-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+
 

@@ -396,6 +396,8 @@ export interface FullNutrients {
   protein_g: number;
   carbs_g: number;
   fat_g: number;
+  saturated_fat_g?: number;
+  unsaturated_fat_g?: number;
   fiber_g: number;
   sugar_g: number;
   sodium_mg: number;
@@ -453,6 +455,50 @@ export interface DailySeriesEntry extends FullNutrients {
   itemsCount: number;
 }
 
+export interface FoodItemQualityEval {
+  log_id: string;
+  foodName: string;
+  platform: string;
+  healthScore: number;
+  verdict: 'Good' | 'Moderate' | 'Bad';
+  goodCalories: number;
+  moderateCalories: number;
+  badCalories: number;
+  goodHighlights: string[];
+  badHighlights: string[];
+}
+
+export interface QualityBreakdownReport {
+  goodCalories: number;
+  moderateCalories: number;
+  badCalories: number;
+  goodPct: number;
+  moderatePct: number;
+  badPct: number;
+  overallHealthScore: number;
+  overallVerdict: 'Good' | 'Moderate' | 'Bad';
+  goodItemsCount: number;
+  moderateItemsCount: number;
+  badItemsCount: number;
+  goodNutrients: {
+    key: string;
+    label: string;
+    consumed: number;
+    target: number;
+    unit: string;
+    pct: number;
+  }[];
+  badNutrients: {
+    key: string;
+    label: string;
+    consumed: number;
+    limit: number;
+    unit: string;
+    pct: number;
+  }[];
+  itemEvaluations: FoodItemQualityEval[];
+}
+
 export interface NutritionSummaryReport {
   range: TrackerRange;
   startDate: string;
@@ -467,6 +513,7 @@ export interface NutritionSummaryReport {
   deficiencies: NutrientComparisonRow[];
   excesses: NutrientComparisonRow[];
   remaining: NutrientComparisonRow[];
+  qualityBreakdown?: QualityBreakdownReport;
   mealSlots: MealSlotSummary[];
   platformBreakdown: { platform: string; count: number }[];
   dailySeries: DailySeriesEntry[];

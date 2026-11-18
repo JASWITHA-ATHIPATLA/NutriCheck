@@ -157,3 +157,19 @@ export async function deleteFoodLogForUser(userId, logId) {
   saveLocalMap(store);
   return next.length < prev.length;
 }
+
+export async function clearFoodLogsForUser(userId) {
+  const cleanUserId = String(userId || '').trim();
+  if (!cleanUserId) return false;
+
+  const mongo = await connectMongoDB();
+  if (mongo.connected) {
+    await FoodLogModel.deleteMany({ userId: cleanUserId });
+    return true;
+  }
+
+  const store = loadLocalMap();
+  delete store[cleanUserId];
+  saveLocalMap(store);
+  return true;
+}

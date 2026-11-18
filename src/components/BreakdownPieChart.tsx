@@ -5,6 +5,7 @@ export interface PieSlice {
   value: number;
   color: string;
   displayValue?: string;
+  subLabel?: string;
 }
 
 interface BreakdownPieChartProps {
@@ -14,6 +15,7 @@ interface BreakdownPieChartProps {
   centerValue?: string;
   centerLabel?: string;
   emptyMessage?: string;
+  size?: 'normal' | 'large';
 }
 
 function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
@@ -56,13 +58,14 @@ export function BreakdownPieChart({
   centerValue,
   centerLabel,
   emptyMessage = 'No breakdown data available.',
+  size = 'normal',
 }: BreakdownPieChartProps) {
   const validSlices = slices.filter((s) => s.value > 0);
   const total = validSlices.reduce((acc, s) => acc + s.value, 0);
 
   if (total <= 0) {
     return (
-      <div className="pie-card">
+      <div className={`pie-card ${size === 'large' ? 'pie-card-large' : ''}`}>
         <div className="pie-header">
           <div className="pie-title">{title}</div>
           {subtitle && <div className="pie-subtitle">{subtitle}</div>}
@@ -72,10 +75,12 @@ export function BreakdownPieChart({
     );
   }
 
-  const cx = 82;
-  const cy = 82;
-  const outerR = 72;
-  const innerR = 44;
+  const isLarge = size === 'large';
+  const viewBoxSize = isLarge ? 236 : 164;
+  const cx = viewBoxSize / 2;
+  const cy = viewBoxSize / 2;
+  const outerR = isLarge ? 104 : 72;
+  const innerR = isLarge ? 60 : 44;
 
   let currentAngle = 0;
   const computed = validSlices.map((slice) => {
@@ -93,16 +98,18 @@ export function BreakdownPieChart({
   });
 
   return (
-    <div className="pie-card">
+    <div className={`pie-card ${isLarge ? 'pie-card-large' : ''}`}>
       <div className="pie-header">
-        <div className="pie-title">{title}</div>
+        <div className="pie-title" style={isLarge ? { fontSize: '18.5px', fontWeight: 800 } : undefined}>
+          {title}
+        </div>
         {subtitle && <div className="pie-subtitle">{subtitle}</div>}
       </div>
 
-      <div className="pie-layout">
+      <div className={`pie-layout ${isLarge ? 'pie-layout-large' : ''}`}>
         <svg
-          viewBox="0 0 164 164"
-          className="pie-svg"
+          viewBox={`0 0 ${viewBoxSize} ${viewBoxSize}`}
+          className={`pie-svg ${isLarge ? 'pie-svg-large' : ''}`}
           role="img"
           aria-label={title}
         >
@@ -122,37 +129,64 @@ export function BreakdownPieChart({
                 d={describeDonutArc(cx, cy, outerR, innerR, s.startAngle, s.endAngle)}
                 fill={s.color}
                 stroke="#ffffff"
-                strokeWidth="2"
+                strokeWidth={isLarge ? '3' : '2'}
               />
             ))
           )}
 
           {centerValue && (
-            <text x={cx} y={centerLabel ? cy - 2 : cy + 5} textAnchor="middle" className="pie-center-val">
+            <text
+              x={cx}
+              y={centerLabel ? cy - 2 : cy + 6}
+              textAnchor="middle"
+              className="pie-center-val"
+              style={isLarge ? { fontSize: '26px', fontWeight: 800 } : undefined}
+            >
               {centerValue}
             </text>
           )}
           {centerLabel && (
-            <text x={cx} y={cy + 15} textAnchor="middle" className="pie-center-lbl">
+            <text
+              x={cx}
+              y={cy + (isLarge ? 19 : 15)}
+              textAnchor="middle"
+              className="pie-center-lbl"
+              style={isLarge ? { fontSize: '12px', fontWeight: 700 } : undefined}
+            >
               {centerLabel}
             </text>
           )}
         </svg>
 
-        <div className="pie-legend">
+        <div className="pie-legend" style={isLarge ? { gap: '12px' } : undefined}>
           {computed.map((s) => (
-            <div key={s.label} className="pie-legend-row">
-              <div className="pie-legend-left">
-                <span
-                  className="pie-swatch"
-                  style={{ backgroundColor: s.color }}
-                  aria-hidden="true"
-                />
-                <span className="pie-legend-name">{s.label}</span>
+            <div key={s.label} className="pie-legend-row" style={isLarge ? { padding: '8px 10px', borderRadius: '8px', backgroundColor: 'var(--bg-muted)', border: '1px solid var(--border-subtle)' } : undefined}>
+              <div className="pie-legend-left" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span
+                    className="pie-swatch"
+                    style={{
+                      backgroundColor: s.color,
+                      width: isLarge ? 12 : 10,
+                      height: isLarge ? 12 : 10,
+                    }}
+                    aria-hidden="true"
+                  />
+                  <span className="pie-legend-name" style={isLarge ? { fontWeight: 700, fontSize: '14px' } : undefined}>
+                    {s.label}
+                  </span>
+                </div>
+                {s.subLabel && (
+                  <span style={{ fontSize: '11.5px', color: 'var(--text-muted)', paddingLeft: isLarge ? '20px' : '18px' }}>
+                    {s.subLabel}
+                  </span>
+                )}
               </div>
-              <div className="pie-legend-right tabular">
+              <div className="pie-legend-right tabular" style={isLarge ? { fontSize: '14px', fontWeight: 700 } : undefined}>
                 <span>{s.displayValue || s.value}</span>
-                <span className="pie-legend-pct">({Math.round(s.pct)}%)</span>
+                <span className="pie-legend-pct" style={isLarge ? { fontSize: '13.5px', fontWeight: 800, color: s.color } : undefined}>
+                  ({Math.round(s.pct)}%)
+                </span>
               </div>
             </div>
           ))}

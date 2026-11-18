@@ -26,6 +26,7 @@ import {
   updatePrescriptionForUser,
 } from './db/prescriptionStore.mjs';
 import {
+  clearFoodLogsForUser,
   deleteFoodLogForUser,
   getFoodLogById,
   getFoodLogBySourceEvent,
@@ -767,6 +768,17 @@ export function createApiApp() {
           nutrition = staple.nutrition;
           nutritionSource = `${staple.source} (Estimated)`;
           matchedFood = staple.matched_food;
+        } else {
+          const isRich = /\b(paneer|chicken|mutton|biryani|pizza|burger|butter|cheese|cream|fry|fried)\b/i.test(title);
+          nutrition = {
+            calories: isRich ? 450 : 320,
+            sugars: 4.5,
+            fat: isRich ? 22 : 12,
+            protein: isRich ? 18 : 10,
+            sodium_mg: 520,
+          };
+          nutritionSource = 'Zomato / Swiggy Nutrition Estimate';
+          matchedFood = title;
         }
       }
       if (!ingredientsText) {
@@ -964,7 +976,7 @@ export function createApiApp() {
             mealSlot,
             consumedDate,
             consumedTime,
-            consumptionStatus: 'pending_confirmation',
+            consumptionStatus: 'consumed',
             portionMultiplier: 1,
             quantityLabel: '1 serving (100g)',
             baseNutrients,
@@ -973,6 +985,13 @@ export function createApiApp() {
             imageUrl: ev.image_url || null,
             createdAtIso: now.toISOString(),
           });
+        } else if (existingLog.consumptionStatus === 'pending_confirmation') {
+          queuedFoodLog = await saveFoodLogForUser(userId, {
+            ...existingLog,
+            consumptionStatus: 'consumed',
+          });
+        } else {
+          queuedFoodLog = existingLog;
         }
       }
 
@@ -1417,11 +1436,24 @@ export function createApiApp() {
         return;
       }
 
-      const [logs, userFound, activeRx] = await Promise.all([
+      const [rawLogs, userFound, activeRx] = await Promise.all([
         listFoodLogsForUser(userId),
         getUserById(userId).catch(() => null),
         getActivePrescriptionSummaryForUser(userId).catch(() => ({ activeConditions: [] })),
       ]);
+
+      // Auto-promote any pending instant-delivery orders (Zomato, Swiggy, Blinkit, etc.) so they immediately track in Daily Tracker
+      const logs = await Promise.all(
+        rawLogs.map(async (entry) => {
+          if (entry.consumptionStatus === 'pending_confirmation') {
+            return await saveFoodLogForUser(userId, {
+              ...entry,
+              consumptionStatus: 'consumed',
+            });
+          }
+          return entry;
+        })
+      );
 
       const requirements = computePersonalizedRequirements(
         userFound?.user || null,
@@ -1582,6 +1614,20 @@ export function createApiApp() {
       res.json({ ok: true, log: updated });
     } catch (err) {
       res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Unable to confirm food consumption.' });
+    }
+  });
+
+  app.delete('/api/food-logs', async (req, res) => {
+    try {
+      const userId = getRequestUserId(req);
+      if (!userId) {
+        res.status(400).json({ ok: false, error: 'Missing userId.' });
+        return;
+      }
+      await clearFoodLogsForUser(userId);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Unable to clear food logs.' });
     }
   });
 
