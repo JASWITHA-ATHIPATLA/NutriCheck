@@ -960,7 +960,13 @@ export function createApiApp() {
           const consumedTime = now.toTimeString().slice(0, 5);
           const hour = now.getHours();
           const mealSlot =
-            hour < 11 ? 'breakfast' : hour < 16 ? 'lunch' : hour < 19 ? 'snack' : 'dinner';
+            hour >= 4 && hour < 11
+              ? 'breakfast'
+              : hour >= 11 && hour < 16
+              ? 'lunch'
+              : hour >= 16 && hour < 19
+              ? 'snack'
+              : 'dinner';
           const baseNutrients = buildFullNutrientProfile({
             productTitle: ev.product_title,
             baseNutrition: ev.analysis.nutrition,

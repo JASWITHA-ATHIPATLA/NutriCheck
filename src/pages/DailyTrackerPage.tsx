@@ -321,7 +321,13 @@ export function DailyTrackerPage() {
           const consumedTime = validDate.toTimeString().slice(0, 5);
           const hour = validDate.getHours();
           const mealSlot: MealSlot =
-            hour < 11 ? 'breakfast' : hour < 16 ? 'lunch' : hour < 19 ? 'snack' : 'dinner';
+            hour >= 4 && hour < 11
+              ? 'breakfast'
+              : hour >= 11 && hour < 16
+              ? 'lunch'
+              : hour >= 16 && hour < 19
+              ? 'snack'
+              : 'dinner';
 
           const res = await fetch('/api/food-logs', {
             method: 'POST',
@@ -817,11 +823,6 @@ export function DailyTrackerPage() {
             DAILY NUTRITION &amp; ZOMATO / SWIGGY ORDER TRACKER · {range.toUpperCase()} VIEW
           </p>
           <h1 className="page-title">Daily Food &amp; Nutrition Tracker</h1>
-          <p className="page-subtitle">
-            Starts clean with zero pre-filled data. Automatically tracks nutrients, good vs.
-            bad fats, and shows a big Good vs. Bad consumption pie chart when you order from{' '}
-            <strong>Zomato, Swiggy, Blinkit, or Amazon Fresh</strong>.
-          </p>
         </div>
 
         <div className="tracker-header-actions">
@@ -856,15 +857,6 @@ export function DailyTrackerPage() {
             <span>Refresh</span>
           </button>
         </div>
-      </div>
-
-      {/* Instant-consumable scope banner */}
-      <div className="info-callout" role="note">
-        <Info size={16} style={{ verticalAlign: 'text-bottom', marginRight: 6 }} />
-        <strong>Live Zomato &amp; Swiggy Tracking:</strong> Orders placed on{' '}
-        <strong>Zomato, Swiggy, Swiggy Instamart, Blinkit, and Amazon Fresh</strong> are
-        automatically tracked here with a complete Good vs. Bad pie chart, saturated vs.
-        unsaturated fats, and 13 nutrient metrics.
       </div>
 
       {errorMsg && (
@@ -1484,7 +1476,16 @@ export function DailyTrackerPage() {
                               : 'is-moderate';
 
                           return (
-                            <div key={item.log_id} className="tracker-food-entry">
+                            <div key={item.log_id} className="tracker-food-entry" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                              <div style={{ width: 46, height: 46, borderRadius: 10, overflow: 'hidden', flexShrink: 0, backgroundColor: 'var(--bg-muted)' }}>
+                                {item.imageUrl ? (
+                                  <img src={item.imageUrl} alt={item.foodName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} referrerPolicy="no-referrer" />
+                                ) : (
+                                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <Utensils size={18} color="var(--text-muted)" />
+                                  </div>
+                                )}
+                              </div>
                               <div className="tracker-food-main" style={{ width: '100%' }}>
                                 <div className="tracker-food-title">
                                   <span>{item.foodName}</span>
