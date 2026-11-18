@@ -1,4 +1,5 @@
 import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
+import { ocrPacketBuffer } from '../ocr/packetGalleryOcr.mjs';
 import {
   extractPrescriptionFields,
   resolveCanonicalConditionMeta,
@@ -6,7 +7,7 @@ import {
 
 const VISION_ENDPOINT = 'https://vision.googleapis.com/v1/images:annotate';
 const MAX_PAGES = 6;
-const MAX_IMAGE_EDGE = 2200;
+const MAX_IMAGE_EDGE = 1280;
 
 export class PrescriptionServiceError extends Error {
   constructor(message, status = 500, code = 'PRESCRIPTION_EXTRACT_ERROR') {
@@ -70,7 +71,7 @@ function createGeminiClient(apiKey) {
   return new GoogleGenAI({
     apiKey,
     httpOptions: {
-      timeout: 12000,
+      timeout: 10000,
       headers: {
         'User-Agent': 'aistudio-build',
       },
@@ -180,16 +181,17 @@ async function analyzeAndPrepareImage(page, idx) {
     );
   }
 
-  // Produce high-clarity normalized PNG buffer for Vision & Gemini
+  // Produce compact high-clarity normalized JPEG buffer for fast Vision & Gemini upload
   const preparedBuffer = await sharpFn(inputBuffer)
     .rotate()
+    .flatten({ background: '#ffffff' })
     .resize({
       width: MAX_IMAGE_EDGE,
       height: MAX_IMAGE_EDGE,
       fit: 'inside',
       withoutEnlargement: true,
     })
-    .png({ compressionLevel: 6 })
+    .jpeg({ quality: 82, mozjpeg: true })
     .toBuffer();
 
   return {
@@ -201,7 +203,7 @@ async function analyzeAndPrepareImage(page, idx) {
     isBlurry,
     isLowResolution,
     warnings,
-    mimeType: 'image/png',
+    mimeType: 'image/jpeg',
     base64: preparedBuffer.toString('base64'),
   };
 }
@@ -354,6 +356,52 @@ async function runCloudVisionDocumentOcr(preparedPages, visionApiKey) {
       'VISION_NETWORK_ERROR'
     )
   );
+}
+
+async function runTesseractDocumentOcr(preparedPages) {
+  const results = [];
+  for (const page of preparedPages) {
+    try {
+      const buf = Buffer.from(page.base64, 'base64');
+      const ocrRes = await ocrPacketBuffer(buf);
+      const rawText = String(ocrRes?.text || '').trim();
+      const confidence =
+        typeof ocrRes?.confidence === 'number' && ocrRes.confidence > 0
+          ? Math.round(ocrRes.confidence)
+          : null;
+      const wordCount = rawText ? rawText.split(/\s+/).filter(Boolean).length : 0;
+      const pageWarnings = [...(page.warnings || [])];
+      if (!rawText) {
+        pageWarnings.push(
+          `Page ${page.pageNumber} had no clearly machine-readable text; please enter or verify prescription details manually below.`
+        );
+      }
+      results.push({
+        pageNumber: page.pageNumber,
+        fileName: page.fileName,
+        rawText,
+        confidence,
+        wordCount,
+        lowConfidenceWordCount: confidence !== null && confidence < 70 ? Math.max(1, Math.round(wordCount * 0.25)) : 0,
+        sharpnessScore: page.sharpnessScore,
+        isBlurry: page.isBlurry,
+        warnings: pageWarnings,
+      });
+    } catch {
+      results.push({
+        pageNumber: page.pageNumber,
+        fileName: page.fileName,
+        rawText: '',
+        confidence: null,
+        wordCount: 0,
+        lowConfidenceWordCount: 0,
+        sharpnessScore: page.sharpnessScore,
+        isBlurry: page.isBlurry,
+        warnings: [...(page.warnings || [])],
+      });
+    }
+  }
+  return results;
 }
 
 const PRESCRIPTION_JSON_SCHEMA = {
@@ -552,10 +600,11 @@ Return strict JSON with transcribedText, patientName, prescriptionDate (YYYY-MM-
   }
   parts.push({ text: promptText });
 
-  const modelsToTry = ['gemini-4-hydrogen', 'gemini-3.1-flash-lite'];
+  const modelsToTry = ['gemini-3.1-flash-lite', 'gemini-4-hydrogen'];
   let lastError = null;
 
-  for (const modelName of modelsToTry) {
+  for (let i = 0; i < modelsToTry.length; i += 1) {
+    const modelName = modelsToTry[i];
     try {
       const response = await ai.models.generateContent({
         model: modelName,
@@ -588,7 +637,6 @@ Return strict JSON with transcribedText, patientName, prescriptionDate (YYYY-MM-
           'GEMINI_AUTH_ERROR'
         );
       }
-      // Transient 429/503/timeout: try fallback model immediately
     }
   }
 
@@ -630,14 +678,6 @@ export async function analyzePrescriptionDocument({ pages = [], rawTextInput = '
   let usedCloudVision = false;
 
   if (cleanedPages.length > 0) {
-    if (!visionApiKey && !hasValidGeminiKey) {
-      throw new PrescriptionServiceError(
-        buildMissingKeysMessage(true),
-        503,
-        'MISSING_VISION_AND_GEMINI_KEYS'
-      );
-    }
-
     preparedPages = await Promise.all(
       cleanedPages.map((page, idx) => analyzeAndPrepareImage(page, idx))
     );
@@ -660,12 +700,9 @@ export async function analyzePrescriptionDocument({ pages = [], rawTextInput = '
             .map((p) => `--- Page ${p.pageNumber} (${p.fileName}) ---\n${p.rawText}`.trim())
             .join('\n\n');
         }
-      } catch (visionErr) {
-        if (!hasValidGeminiKey) {
-          throw visionErr;
-        }
+      } catch {
         qualityWarnings.push(
-          'Google Cloud Vision OCR was unavailable; Gemini Vision Multimodal OCR read the prescription image(s) directly. Please verify uncertain fields.'
+          'Google Cloud Vision OCR was unavailable; reading prescription image(s) with multimodal/local OCR. Please verify uncertain fields.'
         );
       }
     }
@@ -706,35 +743,41 @@ export async function analyzePrescriptionDocument({ pages = [], rawTextInput = '
 
       if (!combinedRawText.trim() && String(geminiResult?.transcribedText || '').trim()) {
         combinedRawText = String(geminiResult.transcribedText).trim();
-        if (ocrPages.length === 1) {
-          ocrPages[0].rawText = combinedRawText;
-        } else if (ocrPages.length > 1) {
+        if (ocrPages.length >= 1) {
           ocrPages[0].rawText = combinedRawText;
         }
       }
-    } catch (err) {
-      if (
-        err instanceof PrescriptionServiceError &&
-        (err.code === 'GEMINI_AUTH_ERROR' || !combinedRawText.trim())
-      ) {
-        throw err;
+    } catch {
+      // If Gemini Vision had a temporary 503 high-demand spike or error and we don't have OCR text yet, run local Tesseract OCR on the prepared pages
+      if (!combinedRawText.trim() && preparedPages.length > 0) {
+        const tessPages = await runTesseractDocumentOcr(preparedPages);
+        ocrPages = tessPages;
+        combinedRawText =
+          tessPages.length === 1
+            ? tessPages[0].rawText
+            : tessPages
+                .map((p) => `--- Page ${p.pageNumber} (${p.fileName}) ---\n${p.rawText}`.trim())
+                .join('\n\n');
       }
-      // Transient 503/429/timeout from Gemini: preserve extracted OCR transcript with manual review required
       usedOcrFallback = true;
       qualityWarnings.push(
-        'Gemini Vision was temporarily busy; preliminary fields were parsed directly from the OCR transcript and require your manual verification.'
+        'Gemini Vision was temporarily busy; preliminary fields were parsed via OCR and require your manual verification before saving.'
       );
     }
-  } else if (combinedRawText.trim()) {
+  } else {
+    if (!combinedRawText.trim() && preparedPages.length > 0) {
+      const tessPages = await runTesseractDocumentOcr(preparedPages);
+      ocrPages = tessPages;
+      combinedRawText =
+        tessPages.length === 1
+          ? tessPages[0].rawText
+          : tessPages
+              .map((p) => `--- Page ${p.pageNumber} (${p.fileName}) ---\n${p.rawText}`.trim())
+              .join('\n\n');
+    }
     usedOcrFallback = true;
     qualityWarnings.push(
-      'GEMINI_API_KEY is not configured; preliminary fields were parsed from OCR text and require manual verification.'
-    );
-  } else {
-    throw new PrescriptionServiceError(
-      buildMissingKeysMessage(false),
-      503,
-      'MISSING_GEMINI_API_KEY'
+      'Preliminary fields were extracted via local OCR; please review and verify all conditions, medicines, and dates before saving.'
     );
   }
 
