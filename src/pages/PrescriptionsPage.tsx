@@ -18,6 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { DoctorCartoonMascot } from '../components/DoraemonCartoonUI';
 import type {
   ActivePrescriptionSummary,
   ConditionCategory,
@@ -623,16 +624,16 @@ export function PrescriptionsPage({
 
   return (
     <div className="page-shell">
-      <div className="page-header">
-        <div>
-          <p className="section-kicker" style={{ marginBottom: '4px' }}>
-            SMART HEALTH ALERTS · MONGODB &amp; EXTENSION SYNCED
-          </p>
-          <h1 className="page-title">Prescription Health Alerts</h1>
-          <p className="page-subtitle">
-            Upload doctor prescriptions (PDF, JPG, PNG) to detect temporary or chronic
-            conditions with expiry tracking and live cart warnings.
-          </p>
+      <div className="doraemon-greeting-banner" style={{ marginBottom: 18 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div className="doraemon-greeting-mascot">
+            <DoctorCartoonMascot size={82} />
+          </div>
+          <div className="doraemon-greeting-copy">
+            <h1 className="nt-greeting-title" style={{ margin: 0 }}>
+              Prescription Health
+            </h1>
+          </div>
         </div>
         <button
           type="button"

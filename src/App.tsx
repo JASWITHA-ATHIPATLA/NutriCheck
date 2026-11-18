@@ -192,6 +192,11 @@ function NutriCheckShell() {
       if (unchanged) return prev;
 
       writeStoredAmazonEvents(userId, merged);
+      window.setTimeout(() => {
+        window.dispatchEvent(
+          new CustomEvent('nutricheck:cart-updated', { detail: { events: merged, userId } })
+        );
+      }, 0);
       return merged;
     });
   }
@@ -360,9 +365,9 @@ function NutriCheckShell() {
       if (msg.type !== 'NUTRICHECK_AMAZON_SYNC' || !Array.isArray(msg.events)) return;
       if (!activeUserId) return;
 
-      const incoming = (msg.events as AmazonCartEvent[]).filter(
-        (ev) => ev?.event_id && ev.user_id && ev.user_id === activeUserId
-      );
+      const incoming = (msg.events as AmazonCartEvent[])
+        .filter((ev) => ev?.event_id && (!ev.user_id || ev.user_id === activeUserId))
+        .map((ev) => ({ ...ev, user_id: activeUserId }));
       if (incoming.length === 0) return;
 
       const unseen = incoming.filter((ev) => !seenEventIdsRef.current.has(ev.event_id));
@@ -371,6 +376,58 @@ function NutriCheckShell() {
 
       if (unseen.length > 0) {
         triggerTopPopup(unseen[0]);
+        // Ensure any extension-captured item is also persisted to backend & Daily Tracker with local time
+        for (const ev of unseen) {
+          if (!ev.queued_food_log_id && backendAvailableRef.current) {
+            const d = ev.timestamp ? new Date(ev.timestamp) : new Date();
+            const validD = Number.isNaN(d.getTime()) ? new Date() : d;
+            const localDate = `${validD.getFullYear()}-${String(validD.getMonth() + 1).padStart(2, '0')}-${String(validD.getDate()).padStart(2, '0')}`;
+            const localTime = `${String(validD.getHours()).padStart(2, '0')}:${String(validD.getMinutes()).padStart(2, '0')}`;
+            const localHour = validD.getHours();
+            const mealSlot =
+              localHour >= 4 && localHour < 11
+                ? 'breakfast'
+                : localHour >= 11 && localHour < 16
+                ? 'lunch'
+                : localHour >= 16 && localHour < 19
+                ? 'snack'
+                : 'dinner';
+            void fetch('/api/amazon/add-to-cart', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-User-Id': activeUserId,
+              },
+              body: JSON.stringify({
+                user_id: activeUserId,
+                product_title: ev.product_title,
+                product_url: ev.product_url || undefined,
+                image_url: ev.image_url || undefined,
+                ingredients_text: ev.ingredients_text || undefined,
+                source: ev.source || 'store_browser_extension',
+                source_platform: ev.source_platform || 'Zomato',
+                calories: ev.analysis?.nutrition?.calories,
+                sugars: ev.analysis?.nutrition?.sugars,
+                fat: ev.analysis?.nutrition?.fat,
+                protein: ev.analysis?.nutrition?.protein,
+                sodium_mg: ev.analysis?.nutrition?.sodium_mg,
+                timestamp: validD.toISOString(),
+                local_date: localDate,
+                local_time: localTime,
+                local_hour: localHour,
+                tz_offset_min: validD.getTimezoneOffset(),
+                meal_slot: mealSlot,
+              }),
+            })
+              .then((r) => (r.ok ? r.json() : null))
+              .then((savedEv) => {
+                if (savedEv && savedEv.event_id) {
+                  mergeAmazonEvents([savedEv], activeUserId);
+                }
+              })
+              .catch(() => {});
+          }
+        }
       }
     }
 
@@ -437,6 +494,19 @@ function NutriCheckShell() {
     setAmazonError(null);
     try {
       let ev: AmazonCartEvent | null = null;
+      const nowD = new Date();
+      const localDate = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}-${String(nowD.getDate()).padStart(2, '0')}`;
+      const localTime = `${String(nowD.getHours()).padStart(2, '0')}:${String(nowD.getMinutes()).padStart(2, '0')}`;
+      const localHour = nowD.getHours();
+      const mealSlot =
+        localHour >= 4 && localHour < 11
+          ? 'breakfast'
+          : localHour >= 11 && localHour < 16
+          ? 'lunch'
+          : localHour >= 16 && localHour < 19
+          ? 'snack'
+          : 'dinner';
+
       if (backendAvailableRef.current) {
         const res = await fetch('/api/amazon/add-to-cart', {
           method: 'POST',
@@ -448,6 +518,12 @@ function NutriCheckShell() {
             ...payload,
             user_id: activeUserId,
             source: 'amazon_web_intake',
+            timestamp: nowD.toISOString(),
+            local_date: localDate,
+            local_time: localTime,
+            local_hour: localHour,
+            tz_offset_min: nowD.getTimezoneOffset(),
+            meal_slot: mealSlot,
           }),
         }).catch(() => null);
         if (res?.ok) {

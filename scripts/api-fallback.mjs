@@ -660,7 +660,9 @@ export function createApiApp() {
     }
   });
 
-  const getRequestUserId = (req, payload = {}) => {
+  let lastActiveServerUserId = '';
+
+  const getRequestUserId = (req, payload = {}, { allowLastActiveFallback = false } = {}) => {
     const raw =
       payload?.user_id ||
       payload?.userId ||
@@ -668,8 +670,114 @@ export function createApiApp() {
       req.query?.user_id ||
       req.headers['x-user-id'] ||
       '';
-    return String(raw).trim();
+    const cleaned = String(raw).trim();
+    if (cleaned) {
+      lastActiveServerUserId = cleaned;
+      return cleaned;
+    }
+    if (allowLastActiveFallback && lastActiveServerUserId) {
+      return lastActiveServerUserId;
+    }
+    return '';
   };
+
+  function getMealSlotFromHour(hour) {
+    const h = Number(hour);
+    if (h >= 4 && h < 11) return 'breakfast';
+    if (h >= 11 && h < 16) return 'lunch';
+    if (h >= 16 && h < 19) return 'snack';
+    return 'dinner';
+  }
+
+  function resolveLocalOrderDateTime(payload = {}, fallbackIso = null) {
+    const now = new Date();
+    const rawDate = payload.local_date || payload.consumedDate || '';
+    const rawTime = payload.local_time || payload.consumedTime || '';
+    const hasExplicitDate = /^\d{4}-\d{2}-\d{2}$/.test(String(rawDate));
+    const hasExplicitTime = /^\d{2}:\d{2}$/.test(String(rawTime));
+
+    const baseInstant =
+      payload.timestamp || fallbackIso
+        ? new Date(payload.timestamp || fallbackIso)
+        : now;
+    const validInstant = Number.isNaN(baseInstant.getTime()) ? now : baseInstant;
+
+    // If running on a UTC server (timezoneOffset === 0), shift by client tz_offset_min or IST (-330 => +5h30m)
+    const serverOffsetMin = now.getTimezoneOffset();
+    const clientOffsetMin =
+      typeof payload.tz_offset_min === 'number' && Number.isFinite(payload.tz_offset_min)
+        ? payload.tz_offset_min
+        : serverOffsetMin === 0
+        ? -330
+        : serverOffsetMin;
+
+    const deltaMinutes = serverOffsetMin - clientOffsetMin;
+    const localShifted = new Date(validInstant.getTime() + deltaMinutes * 60 * 1000);
+
+    const yyyy = localShifted.getFullYear();
+    const mm = String(localShifted.getMonth() + 1).padStart(2, '0');
+    const dd = String(localShifted.getDate()).padStart(2, '0');
+    const hh = String(localShifted.getHours()).padStart(2, '0');
+    const min = String(localShifted.getMinutes()).padStart(2, '0');
+
+    const consumedDate = hasExplicitDate ? String(rawDate) : `${yyyy}-${mm}-${dd}`;
+    const consumedTime = hasExplicitTime ? String(rawTime) : `${hh}:${min}`;
+    const parsedHour = hasExplicitTime
+      ? parseInt(String(rawTime).slice(0, 2), 10)
+      : typeof payload.local_hour === 'number'
+      ? payload.local_hour
+      : localShifted.getHours();
+    const hour = Number.isFinite(parsedHour) ? parsedHour : localShifted.getHours();
+
+    const mealSlot = ['breakfast', 'lunch', 'snack', 'dinner'].includes(payload.meal_slot)
+      ? payload.meal_slot
+      : ['breakfast', 'lunch', 'snack', 'dinner'].includes(payload.mealSlot)
+      ? payload.mealSlot
+      : getMealSlotFromHour(hour);
+
+    return {
+      consumedDate,
+      consumedTime,
+      hour,
+      mealSlot,
+      createdAtIso: validInstant.toISOString(),
+    };
+  }
+
+  function inferDefaultFoodImage(title = '') {
+    const lower = String(title || '').toLowerCase();
+    if (/\b(idli|vada|sambar|upma|pongal|dhokla)\b/.test(lower)) {
+      return 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=300&q=80';
+    }
+    if (/\b(dosa|masala dosa|uttapam)\b/.test(lower)) {
+      return 'https://images.unsplash.com/photo-1668236543090-82eba5ee5976?auto=format&fit=crop&w=300&q=80';
+    }
+    if (/\b(biryani|pulao|pulav|fried rice|jeera rice|rice)\b/.test(lower)) {
+      return 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?auto=format&fit=crop&w=300&q=80';
+    }
+    if (/\b(paneer|butter chicken|curry|dal|tadka|makhani|rajma|chole|thali|roti|naan|paratha)\b/.test(lower)) {
+      return 'https://images.unsplash.com/photo-1631452180519-c014fe946bc7?auto=format&fit=crop&w=300&q=80';
+    }
+    if (/\b(pizza|margherita|pepperoni)\b/.test(lower)) {
+      return 'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=300&q=80';
+    }
+    if (/\b(burger|fries|sandwich|wrap|roll|shawarma)\b/.test(lower)) {
+      return 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=300&q=80';
+    }
+    if (/\b(salad|quinoa|avocado|bowl|sprouts)\b/.test(lower)) {
+      return 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=300&q=80';
+    }
+    if (/\b(walnut|almond|cashew|pistachio|nuts|dry fruit|oats|muesli)\b/.test(lower)) {
+      return 'https://images.unsplash.com/photo-1508061253366-f7da158b6d46?auto=format&fit=crop&w=300&q=80';
+    }
+    if (/\b(ice cream|kulfi|gelato|brownie|cake|dessert|chocolate|sweet)\b/.test(lower)) {
+      return 'https://images.unsplash.com/photo-1563805042-7684c019e1cb?auto=format&fit=crop&w=300&q=80';
+    }
+    if (/\b(noodles|maggi|ramen|momos|manchurian)\b/.test(lower)) {
+      return 'https://images.unsplash.com/photo-1612929633738-8fe44f7ec841?auto=format&fit=crop&w=300&q=80';
+    }
+    return 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=300&q=80';
+  }
 
   function inferDefaultIngredients(title) {
     const lower = (title || '').toLowerCase();
@@ -791,6 +899,9 @@ export function createApiApp() {
       if (!imageUrl && off?.image_url) {
         imageUrl = off.image_url;
       }
+      if (!imageUrl) {
+        imageUrl = inferDefaultFoodImage(title);
+      }
     }
 
     if (!nutrition && existingEvent?.analysis?.nutrition && skipGenericFallback) {
@@ -798,36 +909,26 @@ export function createApiApp() {
       nutritionSource = existingEvent.nutrition_source || 'Back of Packet (Verified)';
     }
 
-    const baseNutrition = nutrition || { calories: 150, sugars: 0, fat: 0, protein: 0, sodium_mg: 0 };
-    const analysis = nutrition ? scoreNutrition(title, baseNutrition) : null;
-    const ingredientScan = ingredientsText ? scanIngredients(title, ingredientsText, analysis) : null;
+    if (!imageUrl) {
+      imageUrl = inferDefaultFoodImage(title);
+    }
+
+    const baseNutrition = nutrition || {
+      calories: 280,
+      sugars: 3.5,
+      fat: 10.5,
+      protein: 9.5,
+      sodium_mg: 390,
+    };
+    const finalAnalysis = scoreNutrition(title, baseNutrition);
+    const ingredientScan = ingredientsText ? scanIngredients(title, ingredientsText, finalAnalysis) : null;
     const eventId =
       existingEvent?.event_id ||
       `api-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
-    if (!analysis && !ingredientScan) {
-      return {
-        event_id: eventId,
-        timestamp: existingEvent?.timestamp || new Date().toISOString(),
-        source: resolvedSource,
-        source_platform: platform,
-        status: 'needs_nutrition',
-        product_title: title,
-        product_url: payload.product_url ?? existingEvent?.product_url ?? null,
-        image_url: imageUrl || null,
-        nutrition_source: 'Nutrition Label Not Found on Page',
-        matched_food: null,
-        message: `Captured "${title}" from ${platform}. Enter back-of-packet label numbers or scan the packet.`,
-        analysis: null,
-        ingredients_text: ingredientsText || null,
-        ingredient_scan: null,
-      };
-    }
-
-    const finalAnalysis = analysis || scoreNutrition(title, baseNutrition);
-    if (ingredientScan && !analysis) {
-      nutritionSource = `${platform} Ingredients Scan`;
-    } else if (ingredientScan && analysis && !nutritionSource.includes('Ingredients Scan')) {
+    if (!nutritionSource) {
+      nutritionSource = `${platform} Dish Estimate`;
+    } else if (ingredientScan && !nutritionSource.includes('Ingredients Scan')) {
       nutritionSource = `${nutritionSource} + Ingredients Scan`;
     }
 
@@ -839,7 +940,7 @@ export function createApiApp() {
       status: 'analyzed',
       product_title: title,
       product_url: payload.product_url ?? existingEvent?.product_url ?? null,
-      image_url: imageUrl || null,
+      image_url: imageUrl || inferDefaultFoodImage(title),
       nutrition_source: nutritionSource || 'Analyzed',
       matched_food: matchedFood,
       message: ingredientScan
@@ -916,8 +1017,9 @@ export function createApiApp() {
   app.post('/api/amazon/add-to-cart', async (req, res) => {
     try {
       const payload = req.body || {};
-      const userId = getRequestUserId(req, payload);
+      const userId = getRequestUserId(req, payload, { allowLastActiveFallback: true });
       const ev = await buildAnalyzedCartEvent(payload);
+      const timeMeta = resolveLocalOrderDateTime(payload, ev.timestamp);
 
       // Feature 1: Check active prescription conditions & dietary rules
       let prescriptionAlerts = {
@@ -943,30 +1045,21 @@ export function createApiApp() {
         }
       }
 
-      // Feature 2: Instant-consumption filter for Daily Food & Nutrition Tracker
-      const intakeCheck = classifyInstantConsumable({
-        productTitle: ev.product_title,
-        platform: ev.source_platform,
-        productUrl: ev.product_url || '',
-        source: ev.source || '',
-      });
+      // Feature 2: Always log cart additions to Daily Food & Nutrition Tracker categorized by local time
+      const intakeCheck = {
+        ...classifyInstantConsumable({
+          productTitle: ev.product_title,
+          platform: ev.source_platform,
+          productUrl: ev.product_url || '',
+          source: ev.source || '',
+        }),
+        isInstantConsumable: true,
+      };
 
       let queuedFoodLog = null;
-      if (userId && intakeCheck.isInstantConsumable && ev.analysis?.nutrition) {
+      if (userId && ev.analysis?.nutrition) {
         const existingLog = await getFoodLogBySourceEvent(userId, ev.event_id);
         if (!existingLog) {
-          const now = new Date();
-          const consumedDate = now.toISOString().slice(0, 10);
-          const consumedTime = now.toTimeString().slice(0, 5);
-          const hour = now.getHours();
-          const mealSlot =
-            hour >= 4 && hour < 11
-              ? 'breakfast'
-              : hour >= 11 && hour < 16
-              ? 'lunch'
-              : hour >= 16 && hour < 19
-              ? 'snack'
-              : 'dinner';
           const baseNutrients = buildFullNutrientProfile({
             productTitle: ev.product_title,
             baseNutrition: ev.analysis.nutrition,
@@ -977,24 +1070,28 @@ export function createApiApp() {
             log_id: `log-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
             sourceEventId: ev.event_id,
             foodName: ev.product_title,
-            platform: intakeCheck.normalizedPlatform,
+            platform: intakeCheck.normalizedPlatform || ev.source_platform || 'Zomato',
             isInstantConsumable: true,
-            mealSlot,
-            consumedDate,
-            consumedTime,
+            mealSlot: timeMeta.mealSlot,
+            consumedDate: timeMeta.consumedDate,
+            consumedTime: timeMeta.consumedTime,
             consumptionStatus: 'consumed',
             portionMultiplier: 1,
             quantityLabel: '1 serving (100g)',
             baseNutrients,
             nutrients: baseNutrients,
             ingredientsText: ev.ingredients_text || '',
-            imageUrl: ev.image_url || null,
-            createdAtIso: now.toISOString(),
+            imageUrl: ev.image_url || inferDefaultFoodImage(ev.product_title),
+            createdAtIso: timeMeta.createdAtIso,
           });
         } else if (existingLog.consumptionStatus === 'pending_confirmation') {
           queuedFoodLog = await saveFoodLogForUser(userId, {
             ...existingLog,
             consumptionStatus: 'consumed',
+            mealSlot: timeMeta.mealSlot,
+            consumedDate: timeMeta.consumedDate,
+            consumedTime: timeMeta.consumedTime,
+            imageUrl: existingLog.imageUrl || ev.image_url || inferDefaultFoodImage(ev.product_title),
           });
         } else {
           queuedFoodLog = existingLog;
@@ -1003,6 +1100,11 @@ export function createApiApp() {
 
       const enrichedEvent = {
         ...ev,
+        user_id: userId || ev.user_id || undefined,
+        local_date: timeMeta.consumedDate,
+        local_time: timeMeta.consumedTime,
+        local_hour: timeMeta.hour,
+        meal_slot: timeMeta.mealSlot,
         prescription_alerts: prescriptionAlerts,
         tracker_eligibility: intakeCheck,
         queued_food_log_id: queuedFoodLog?.log_id || null,
@@ -1011,6 +1113,11 @@ export function createApiApp() {
       const saved = await saveCartEventForUser(userId, enrichedEvent);
       res.json({
         ...saved,
+        user_id: userId || saved?.user_id || undefined,
+        local_date: timeMeta.consumedDate,
+        local_time: timeMeta.consumedTime,
+        local_hour: timeMeta.hour,
+        meal_slot: timeMeta.mealSlot,
         prescription_alerts: prescriptionAlerts,
         tracker_eligibility: intakeCheck,
         queued_food_log_id: queuedFoodLog?.log_id || null,
@@ -1428,9 +1535,10 @@ export function createApiApp() {
       const range = ['daily', 'weekly', 'monthly'].includes(String(req.query?.range))
         ? String(req.query.range)
         : 'daily';
+      const defaultLocal = resolveLocalOrderDateTime({});
       const targetDate = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query?.date || ''))
         ? String(req.query.date)
-        : new Date().toISOString().slice(0, 10);
+        : defaultLocal.consumedDate;
 
       if (!userId) {
         const emptyReq = computePersonalizedRequirements(null, []);
@@ -1448,16 +1556,54 @@ export function createApiApp() {
         getActivePrescriptionSummaryForUser(userId).catch(() => ({ activeConditions: [] })),
       ]);
 
-      // Auto-promote any pending instant-delivery orders (Zomato, Swiggy, Blinkit, etc.) so they immediately track in Daily Tracker
+      // Auto-promote pending orders and heal any UTC-recorded timestamps or missing images
+      const serverIsUtc = new Date().getTimezoneOffset() === 0;
       const logs = await Promise.all(
         rawLogs.map(async (entry) => {
-          if (entry.consumptionStatus === 'pending_confirmation') {
-            return await saveFoodLogForUser(userId, {
-              ...entry,
-              consumptionStatus: 'consumed',
-            });
+          let needsSave = false;
+          const patched = { ...entry };
+
+          if (patched.consumptionStatus === 'pending_confirmation') {
+            patched.consumptionStatus = 'consumed';
+            needsSave = true;
           }
-          return entry;
+
+          if (!patched.imageUrl) {
+            patched.imageUrl = inferDefaultFoodImage(patched.foodName);
+            needsSave = true;
+          }
+
+          // If entry was saved with UTC time on a UTC server, shift it to local IST time and re-categorize mealSlot
+          if (serverIsUtc && patched.createdAtIso) {
+            const createdDate = new Date(patched.createdAtIso);
+            if (!Number.isNaN(createdDate.getTime())) {
+              const utcTimeStr = createdDate.toISOString().slice(11, 16);
+              if (patched.consumedTime === utcTimeStr) {
+                const localFixed = resolveLocalOrderDateTime({}, patched.createdAtIso);
+                patched.consumedDate = localFixed.consumedDate;
+                patched.consumedTime = localFixed.consumedTime;
+                patched.mealSlot = localFixed.mealSlot;
+                needsSave = true;
+              }
+            }
+          }
+
+          // Ensure mealSlot always matches consumedTime hour
+          if (/^\d{2}:\d{2}$/.test(String(patched.consumedTime || ''))) {
+            const hr = parseInt(String(patched.consumedTime).slice(0, 2), 10);
+            if (Number.isFinite(hr)) {
+              const expectedSlot = getMealSlotFromHour(hr);
+              if (patched.mealSlot !== expectedSlot) {
+                patched.mealSlot = expectedSlot;
+                needsSave = true;
+              }
+            }
+          }
+
+          if (needsSave) {
+            return await saveFoodLogForUser(userId, patched);
+          }
+          return patched;
         })
       );
 
@@ -1534,22 +1680,16 @@ export function createApiApp() {
         portionMultiplier,
       });
 
-      const now = new Date();
+      const timeMeta = resolveLocalOrderDateTime(body);
       const log = await saveFoodLogForUser(userId, {
         log_id: body.log_id || `log-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
         sourceEventId: body.sourceEventId || null,
         foodName,
         platform: intakeCheck.normalizedPlatform,
         isInstantConsumable: true,
-        mealSlot: ['breakfast', 'lunch', 'snack', 'dinner'].includes(body.mealSlot)
-          ? body.mealSlot
-          : 'lunch',
-        consumedDate: /^\d{4}-\d{2}-\d{2}$/.test(String(body.consumedDate || ''))
-          ? body.consumedDate
-          : now.toISOString().slice(0, 10),
-        consumedTime: /^\d{2}:\d{2}$/.test(String(body.consumedTime || ''))
-          ? body.consumedTime
-          : now.toTimeString().slice(0, 5),
+        mealSlot: timeMeta.mealSlot,
+        consumedDate: timeMeta.consumedDate,
+        consumedTime: timeMeta.consumedTime,
         consumptionStatus: ['pending_confirmation', 'consumed', 'skipped'].includes(
           body.consumptionStatus
         )
@@ -1560,8 +1700,8 @@ export function createApiApp() {
         baseNutrients,
         nutrients: scaledNutrients,
         ingredientsText: String(body.ingredientsText || '').trim(),
-        imageUrl: body.imageUrl || null,
-        createdAtIso: now.toISOString(),
+        imageUrl: body.imageUrl || inferDefaultFoodImage(foodName),
+        createdAtIso: timeMeta.createdAtIso,
       });
 
       res.status(201).json({ ok: true, log });

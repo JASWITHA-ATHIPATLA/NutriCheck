@@ -3,11 +3,23 @@
 
   let currentPageUserId = null;
 
+  function isStoreWebsiteOrigin() {
+    const h = (window.location.hostname || '').toLowerCase();
+    return (
+      h.includes('zomato.') ||
+      h.includes('swiggy.') ||
+      h.includes('blinkit.') ||
+      h.includes('grofers.') ||
+      h.includes('amazon.') ||
+      h.includes('flipkart.')
+    );
+  }
+
   function isNutriCheckOriginPage() {
     try {
-      const hasRoot = Boolean(document.getElementById('root'));
-      const titleMatch = /nutricheck|healthguard|food/i.test(document.title || '');
-      return hasRoot || titleMatch;
+      if (isStoreWebsiteOrigin()) return false;
+      const titleMatch = /nutricheck|healthguard/i.test(document.title || '');
+      return titleMatch;
     } catch {
       return false;
     }
@@ -18,13 +30,17 @@
   }
 
   function filterEventsForUser(events, userId) {
-    if (!Array.isArray(events) || !userId) return [];
+    if (!Array.isArray(events)) return [];
+    if (!userId) {
+      return events.filter(Boolean);
+    }
     return events
       .filter((ev) => ev && (!ev.user_id || ev.user_id === userId))
       .map((ev) => (ev.user_id ? ev : { ...ev, user_id: userId }));
   }
 
   function syncEventsToPage(events, userId) {
+    if (isStoreWebsiteOrigin()) return;
     const activeId = userId !== undefined ? userId : currentPageUserId;
     const filtered = filterEventsForUser(events, activeId);
     window.postMessage(
@@ -36,15 +52,20 @@
     );
   }
 
-  chrome.storage.local.get(['lastHealthGuardEvents', 'activeHealthGuardUserId'], (res) => {
-    const storedUserId = res?.activeHealthGuardUserId || null;
-    if (!currentPageUserId && storedUserId) {
-      currentPageUserId = storedUserId;
-    }
-    if (currentPageUserId && Array.isArray(res?.lastHealthGuardEvents)) {
-      syncEventsToPage(res.lastHealthGuardEvents, currentPageUserId);
-    }
-  });
+  function pullAndSyncLatestFromStorage() {
+    if (isStoreWebsiteOrigin()) return;
+    chrome.storage.local.get(['lastHealthGuardEvents', 'activeHealthGuardUserId'], (res) => {
+      const storedUserId = res?.activeHealthGuardUserId || null;
+      if (!currentPageUserId && storedUserId) {
+        currentPageUserId = storedUserId;
+      }
+      if (Array.isArray(res?.lastHealthGuardEvents) && res.lastHealthGuardEvents.length > 0) {
+        syncEventsToPage(res.lastHealthGuardEvents, currentPageUserId);
+      }
+    });
+  }
+
+  pullAndSyncLatestFromStorage();
 
   if (chrome.storage.onChanged) {
     chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -56,6 +77,14 @@
     });
   }
 
+  // Also sync immediately when user switches back from Zomato/Swiggy tab to NutriCheck tab
+  window.addEventListener('focus', pullAndSyncLatestFromStorage);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      pullAndSyncLatestFromStorage();
+    }
+  });
+
   window.addEventListener('message', (event) => {
     if (event.source !== window) return;
     const msg = event.data;
@@ -64,6 +93,9 @@
     if (msg.type === 'NUTRICHECK_SET_ACTIVE_USER') {
       currentPageUserId = msg.userId || null;
       const updates = { activeHealthGuardUserId: currentPageUserId };
+      if (!isStoreWebsiteOrigin() && /^https?:\/\//i.test(window.location.origin)) {
+        updates.lastActiveHealthGuardUrl = window.location.origin;
+      }
       if (!currentPageUserId) {
         updates.activePrescriptionSummary = null;
       }
@@ -72,9 +104,16 @@
         syncEventsToPage(res?.lastHealthGuardEvents || [], currentPageUserId);
       });
     } else if (msg.type === 'NUTRICHECK_REQUEST_SYNC') {
+      const updates = {};
+      if (!isStoreWebsiteOrigin() && /^https?:\/\//i.test(window.location.origin)) {
+        updates.lastActiveHealthGuardUrl = window.location.origin;
+      }
       if (msg.userId !== undefined) {
         currentPageUserId = msg.userId || null;
-        chrome.storage.local.set({ activeHealthGuardUserId: currentPageUserId });
+        updates.activeHealthGuardUserId = currentPageUserId;
+      }
+      if (Object.keys(updates).length > 0) {
+        chrome.storage.local.set(updates);
       }
       chrome.storage.local.get(['lastHealthGuardEvents', 'activeHealthGuardUserId'], (res) => {
         const uid = currentPageUserId || res?.activeHealthGuardUserId || null;

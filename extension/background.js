@@ -181,10 +181,35 @@ function inferPlatformName(url, explicit) {
   return 'Online Store';
 }
 
+function isValidNutriCheckBaseUrl(u) {
+  if (!u || typeof u !== 'string') return false;
+  const lower = u.toLowerCase();
+  if (
+    lower.includes('zomato.') ||
+    lower.includes('swiggy.') ||
+    lower.includes('blinkit.') ||
+    lower.includes('grofers.') ||
+    lower.includes('amazon.') ||
+    lower.includes('flipkart.')
+  ) {
+    return false;
+  }
+  return /^https?:\/\//i.test(u);
+}
+
 async function getHealthGuardUrl() {
-  const stored = await chrome.storage.sync.get(['healthguardUrl']);
   const local = await chrome.storage.local.get(['lastActiveHealthGuardUrl']);
-  const raw = stored.healthguardUrl || local.lastActiveHealthGuardUrl || DEFAULT_URL;
+  const stored = await chrome.storage.sync.get(['healthguardUrl']);
+  const activeUrl = isValidNutriCheckBaseUrl(local.lastActiveHealthGuardUrl)
+    ? local.lastActiveHealthGuardUrl
+    : '';
+  const syncUrl = isValidNutriCheckBaseUrl(stored.healthguardUrl)
+    ? stored.healthguardUrl
+    : '';
+  const raw =
+    (activeUrl && (!syncUrl || syncUrl.includes('localhost:3000')) ? activeUrl : syncUrl) ||
+    activeUrl ||
+    DEFAULT_URL;
   return raw.replace(/\/+$/, '');
 }
 
@@ -855,42 +880,53 @@ async function analyzeInExtensionFallback(payload) {
     capturedIngredients = inferDefaultIngredientsInWorker(title);
   }
 
-  const baseNutrition = nutrition || { calories: 150, sugars: 0, fat: 0, protein: 0, sodium_mg: 0 };
-  const analysis = nutrition ? scoreNutritionInWorker(title, baseNutrition) : null;
+  if (!imageUrl) {
+    const lower = (title || '').toLowerCase();
+    if (/idli|vada|sambar|upma|pongal/.test(lower)) {
+      imageUrl = 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=240&q=80';
+    } else if (/dosa|uttapam/.test(lower)) {
+      imageUrl = 'https://images.unsplash.com/photo-1668236543090-82eba5ee5976?auto=format&fit=crop&w=240&q=80';
+    } else if (/biryani|pulao|pulav|fried rice|rice/.test(lower)) {
+      imageUrl = 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?auto=format&fit=crop&w=240&q=80';
+    } else if (/paneer|tikka|curry|masala|dal|rajma|chole|chicken|mutton/.test(lower)) {
+      imageUrl = 'https://images.unsplash.com/photo-1565557623262-b51c2513a641?auto=format&fit=crop&w=240&q=80';
+    } else if (/pizza/.test(lower)) {
+      imageUrl = 'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=240&q=80';
+    } else if (/burger|sandwich|wrap|roll|shawarma/.test(lower)) {
+      imageUrl = 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=240&q=80';
+    } else if (/noodles|chowmein|maggi|ramen|pasta|momos/.test(lower)) {
+      imageUrl = 'https://images.unsplash.com/photo-1612929633738-8fe44f7ec841?auto=format&fit=crop&w=240&q=80';
+    } else if (/ice cream|kulfi|dessert|cake|brownie|sweet|gulab jamun/.test(lower)) {
+      imageUrl = 'https://images.unsplash.com/photo-1563805042-7684c019e1cb?auto=format&fit=crop&w=240&q=80';
+    } else if (/salad|bowl|oats|fruit|berry|avocado|almond|walnut/.test(lower)) {
+      imageUrl = 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=240&q=80';
+    } else {
+      imageUrl = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=240&q=80';
+    }
+  }
+
+  const baseNutrition = nutrition || {
+    calories: 280,
+    sugars: 3.5,
+    fat: 10.5,
+    protein: 9.5,
+    sodium_mg: 390,
+  };
+  const finalAnalysis = scoreNutritionInWorker(title, baseNutrition);
   const ingredientScan = capturedIngredients
-    ? scanIngredientsInWorker(title, capturedIngredients, analysis)
+    ? scanIngredientsInWorker(title, capturedIngredients, finalAnalysis)
     : null;
 
   const eventId = `ext-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-  if (!analysis && !ingredientScan) {
-    return {
-      event_id: eventId,
-      timestamp: new Date().toISOString(),
-      source: payload.source || 'store_browser_extension',
-      source_platform: platform,
-      status: 'needs_nutrition',
-      product_title: title,
-      product_url: payload.product_url || null,
-      image_url: imageUrl || null,
-      nutrition_source: 'Nutrition Label Not Found on Page',
-      matched_food: null,
-      message: `Captured "${title}" from ${platform}. Open NutriCheck to enter label numbers or scan packet photo.`,
-      analysis: null,
-      ingredients_text: null,
-      ingredient_scan: null,
-    };
-  }
-
-  const finalAnalysis = analysis || scoreNutritionInWorker(title, baseNutrition);
-  if (ingredientScan && !analysis) {
-    nutritionSource = `${platform} Ingredients Scan`;
-  } else if (ingredientScan && analysis) {
+  if (!nutritionSource) {
+    nutritionSource = `${platform} Dish Estimate`;
+  } else if (ingredientScan) {
     nutritionSource = `${nutritionSource} + Ingredients Scan`;
   }
 
   return {
     event_id: eventId,
-    timestamp: new Date().toISOString(),
+    timestamp: payload.timestamp || new Date().toISOString(),
     source: payload.source || 'store_browser_extension',
     source_platform: platform,
     status: 'analyzed',
@@ -1262,7 +1298,26 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         'activePrescriptionSummary',
       ]);
       const activeUserId = storedAuth?.activeHealthGuardUserId || null;
+      const nowD = new Date();
+      const fallbackLocalDate = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}-${String(nowD.getDate()).padStart(2, '0')}`;
+      const fallbackLocalTime = `${String(nowD.getHours()).padStart(2, '0')}:${String(nowD.getMinutes()).padStart(2, '0')}`;
+      const fallbackLocalHour = nowD.getHours();
+      const fallbackMealSlot =
+        fallbackLocalHour >= 4 && fallbackLocalHour < 11
+          ? 'breakfast'
+          : fallbackLocalHour >= 11 && fallbackLocalHour < 16
+          ? 'lunch'
+          : fallbackLocalHour >= 16 && fallbackLocalHour < 19
+          ? 'snack'
+          : 'dinner';
+
       const outboundPayload = {
+        timestamp: nowD.toISOString(),
+        local_date: fallbackLocalDate,
+        local_time: fallbackLocalTime,
+        local_hour: fallbackLocalHour,
+        tz_offset_min: nowD.getTimezoneOffset(),
+        meal_slot: fallbackMealSlot,
         ...(message.payload || {}),
         ...(activeUserId ? { user_id: activeUserId } : {}),
       };
@@ -1337,6 +1392,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         if (!eventData.ingredients_text && payloadIngredients) {
           eventData.ingredients_text = payloadIngredients;
         }
+        eventData.local_date = outboundPayload.local_date;
+        eventData.local_time = outboundPayload.local_time;
+        eventData.local_hour = outboundPayload.local_hour;
+        eventData.meal_slot = outboundPayload.meal_slot;
         if (!eventData.prescription_alerts?.hasWarnings && localPrescriptionAlerts?.hasWarnings) {
           eventData.prescription_alerts = localPrescriptionAlerts;
         }

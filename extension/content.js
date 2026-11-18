@@ -84,7 +84,7 @@
 
   function normalizeAddLabel(raw) {
     const label = String(raw || '').replace(/\s+/g, ' ').trim().toLowerCase();
-    if (!label || label.length > 85) return { label: '', stripped: '' };
+    if (!label || label.length > 95) return { label: '', stripped: '' };
     if (
       /\b(address|coupon|promo|tip|note|filter|sort|rating|veg only|bestseller|compare|share|cancel|close|view cart|go to cart|checkout|proceed|buy now|remove|delete|clear|instruction|cooking|delivery|restaurant|review|photo|payment|credit card|debit card|gift card|upi|account|profile|question|answer|comment)\b/i.test(
         label
@@ -94,14 +94,14 @@
     }
     const stripped = label
       .replace(/\badd\s+\d+\s+items?\b/gi, 'add item')
-      .replace(/(?:customisable|customizable|\badd-ons?\b|[₹$€£]\s*[\d,.]+|\|\s*[\d,.]+|\(\s*\d*\s*\)|[()+•|·\-])/g, ' ')
+      .replace(/(?:customisable|customizable|\badd-ons?\b|\boptions?\b|[₹$€£]\s*[\d,.]+|\|\s*[\d,.]+|\(\s*\d*\s*\)|[()+•|·\-])/gi, ' ')
       .replace(/\s+/g, ' ')
       .trim();
     return { label, stripped };
   }
 
   function matchesAddText(label, stripped) {
-    if (!stripped) return false;
+    if (!stripped && label !== '+') return false;
     if (
       stripped === 'add' ||
       stripped === 'add item' ||
@@ -114,6 +114,7 @@
       stripped === 'add to bag' ||
       stripped.startsWith('add to bag') ||
       stripped === 'add to order' ||
+      stripped.startsWith('add to order') ||
       stripped === 'add to list' ||
       stripped.startsWith('add to list') ||
       stripped === 'add to wish list' ||
@@ -129,7 +130,7 @@
     if (/^add(?:\s+(?:item|items|to\s+(?:cart|bag|basket|order|list|wish\s*list|grocery\s*list|pantry|registry|fresh\s*cart)))?$/i.test(stripped)) {
       return true;
     }
-    if (/^(?:add|\+\s*add|add\s*\+)$/i.test(label.replace(/\s+/g, ' ').trim())) {
+    if (/^(?:add|\+\s*add|add\s*\+|add\s*customis[a-z]*)$/i.test(label.replace(/\s+/g, ' ').trim())) {
       return true;
     }
     if (/^add\s+.{2,60}\s+to\s+(?:cart|bag|basket|order|list|wish\s*list)$/i.test(stripped)) {
@@ -182,6 +183,7 @@
           .join(' ');
       }
       const rawCandidates = [
+        btn.innerText || btn.textContent,
         btn.textContent,
         btn.getAttribute('aria-label'),
         labelledText,
@@ -197,13 +199,14 @@
       }
     }
 
-    // Stores & food apps often use styled <div>, <span>, or <a> as Add / Add to List buttons
+    // Stores & food apps (especially Zomato & Swiggy) use styled <div>, <span>, or <a> as "ADD +" / "Add item" buttons
     let node = target;
-    for (let depth = 0; depth < 6 && node; depth += 1) {
+    for (let depth = 0; depth < 8 && node; depth += 1) {
       if (node === document.body || node === document.documentElement) break;
       const rect = node.getBoundingClientRect();
-      if (rect.width > 0 && rect.width <= 400 && rect.height > 0 && rect.height <= 96) {
+      if (rect.width > 0 && rect.width <= 420 && rect.height > 0 && rect.height <= 110) {
         const rawCandidates = [
+          node.innerText || node.textContent,
           node.textContent,
           node.getAttribute('aria-label'),
           node.getAttribute('title'),
@@ -214,8 +217,17 @@
           if (matchesAddText(label, stripped)) {
             return node;
           }
+          // Zomato / Swiggy / Blinkit "+" increment button inside a dish card
+          if (
+            (platform === 'Zomato' || platform === 'Swiggy' || platform === 'Swiggy Instamart' || platform === 'Blinkit') &&
+            label === '+' &&
+            rect.width <= 56 &&
+            rect.height <= 56
+          ) {
+            return node;
+          }
         }
-      } else if (rect.width > 440 || rect.height > 120) {
+      } else if (rect.width > 460 || rect.height > 140) {
         break;
       }
       node = node.parentElement;
@@ -419,19 +431,40 @@
       }
     }
 
-    if (platform === 'Zomato') {
-      const direct = clickedEl.closest('[class*="sc-"][class*="item"], [data-testid*="dish"], li');
-      if (direct && (direct.querySelector('h4, h3, h2') || (direct.textContent || '').length > 25)) {
-        return direct;
+    if (platform === 'Zomato' || platform === 'Swiggy') {
+      // On Zomato & Swiggy, a menu dish row has the dish title (h4/h3/h2) on the left and the image + ADD button on the right.
+      // Never stop at the small right-hand image+ADD box (width < 220px); walk up to the full dish row (up to 1080px wide) that contains the dish title!
+      let zNode = clickedEl.parentElement;
+      for (let depth = 0; depth < 14 && zNode; depth += 1) {
+        if (zNode === document.body || zNode === document.documentElement || zNode.tagName === 'MAIN') break;
+        const rect = zNode.getBoundingClientRect();
+        const headingEls = zNode.querySelectorAll(
+          'h4, h3, h2, [data-testid*="item-name"], [class*="itemName"], [class*="dish-name" i], [class*="DishName" i]'
+        );
+        // If this container holds multiple dish headings (> 2), we walked too high (into the category section)
+        if (headingEls.length > 2) break;
+        if (
+          headingEls.length >= 1 &&
+          rect.width >= 220 &&
+          rect.width <= 1120 &&
+          rect.height >= 56 &&
+          rect.height <= 560
+        ) {
+          return zNode;
+        }
+        zNode = zNode.parentElement;
       }
     }
 
     let node = clickedEl.parentElement;
-    for (let depth = 0; depth < 10 && node; depth += 1) {
+    for (let depth = 0; depth < 12 && node; depth += 1) {
       if (node === document.body || node === document.documentElement) break;
       const rect = node.getBoundingClientRect();
       const rawText = (node.textContent || '').trim();
-      const textLen = rawText.length;
+      const strippedNonBtnText = rawText
+        .replace(/\b(?:add|customisable|customizable|options?|\+|-)\b/gi, '')
+        .trim();
+      const textLen = strippedNonBtnText.length;
       if (PROMO_COPY_RE.test(rawText)) {
         // Never treat "Why shop from Blinkit / Round The Clock Delivery" promo blocks as a product card
         return null;
@@ -442,15 +475,16 @@
         )
       );
       const hasMediaAndText =
-        Boolean(node.querySelector('img')) && textLen >= 18;
+        Boolean(node.querySelector('img')) && textLen >= 12 && rect.width >= 200;
+      const maxCardWidth = platform === 'Zomato' || platform === 'Swiggy' ? 1100 : 720;
       if (
         (hasHeading || hasMediaAndText) &&
         rect.width >= 130 &&
-        rect.width <= 680 &&
+        rect.width <= maxCardWidth &&
         rect.height >= 64 &&
-        rect.height < 480 &&
-        textLen > 10 &&
-        textLen < 900
+        rect.height < 520 &&
+        textLen >= 4 &&
+        rawText.length < 1200
       ) {
         return node;
       }
@@ -487,12 +521,15 @@
         : ['[class*="ProductTitle"]', '[class*="name"]', 'h3', 'h4', 'h2', 'img[alt]'];
 
     for (let i = 0; i < selectors.length; i += 1) {
-      const bonus = Math.max(0, 36 - i * 3);
+      const bonus = Math.max(0, 42 - i * 4);
       card.querySelectorAll(selectors[i]).forEach((el) => {
         if (selectors[i] === 'a[title]') {
           push(el.getAttribute('title'), bonus);
         } else if (selectors[i] === 'img[alt]') {
-          push(el.getAttribute('alt'), bonus);
+          const alt = (el.getAttribute('alt') || '').trim();
+          if (alt && !/^(?:dish|image|food|photo|item|restaurant)$/i.test(alt)) {
+            push(alt, bonus);
+          }
         } else {
           push(el.textContent || el.innerText, bonus);
         }
@@ -502,18 +539,21 @@
     // Zomato / Swiggy styled-components fallback: scan compact leaf text elements inside the card
     if ((platform === 'Zomato' || platform === 'Swiggy' || platform === 'Swiggy Instamart') && candidates.length === 0) {
       let leafIdx = 0;
-      card.querySelectorAll('p, span, div').forEach((el) => {
+      card.querySelectorAll('h4, h3, p, span, div').forEach((el) => {
         if (el.children.length > 0) return;
         const txt = (el.textContent || '').replace(/\s+/g, ' ').trim();
-        if (!txt || txt.length < 3 || txt.length > 75) return;
-        if (/^(?:customis|add|in stock|\+|−|-|\d)/i.test(txt)) return;
-        push(txt, Math.max(2, 24 - leafIdx * 3));
+        if (!txt || txt.length < 3 || txt.length > 85) return;
+        if (/^(?:customis|add|in stock|bestseller|must try|chef|new|\+|−|-|\d|₹|\$)/i.test(txt)) return;
+        push(txt, Math.max(2, 28 - leafIdx * 3));
         leafIdx += 1;
       });
     }
 
     card.querySelectorAll('img[alt]').forEach((img) => {
-      push(img.getAttribute('alt'), 4);
+      const alt = (img.getAttribute('alt') || '').trim();
+      if (alt && !/^(?:dish|image|food|photo|item|restaurant)$/i.test(alt)) {
+        push(alt, 4);
+      }
     });
 
     if (clickedEl) {
@@ -933,7 +973,14 @@
             'img[src]',
           ]
         : platform === 'Zomato'
-        ? ['img[src*="b.zmtcdn.com/data/dish_photos"]', 'img[src*="b.zmtcdn.com"]', 'img[src]']
+        ? [
+            'img[src*="b.zmtcdn.com/data/dish_photos"]',
+            'img[src*="zmtcdn.com/data/dish_photos"]',
+            'img[src*="b.zmtcdn.com/data/pictures"]',
+            'img[src*="b.zmtcdn.com"]',
+            'img[src*="zmtcdn.com"]',
+            'img[src]',
+          ]
         : platform === 'Swiggy' || platform === 'Swiggy Instamart'
         ? [
             'img[src*="media-assets.swiggy.com/swiggy/image/upload"]',
@@ -943,32 +990,22 @@
           ]
         : ['img[src]'];
 
-    if (!card) {
-      let bestCand = '';
-      let bestScore = -1;
-      for (let i = 0; i < selectors.length; i += 1) {
-        const imgs = scope.querySelectorAll(selectors[i]);
-        const priority = Math.max(0, selectors.length - i);
-        for (const img of imgs) {
-          const cand = extractCandidateFromImgElement(img);
-          if (!cand || isLikelyIconImg(img, cand, true)) continue;
-          const sc = scoreHeroCandidate(img, priority);
-          if (sc > bestScore) {
-            bestScore = sc;
-            bestCand = cand;
-          }
-        }
-      }
-      if (bestCand) return bestCand;
-    } else {
-      for (const sel of selectors) {
-        const imgs = scope.querySelectorAll(sel);
-        for (const img of imgs) {
-          const cand = extractCandidateFromImgElement(img);
-          if (cand && !isLikelyIconImg(img, cand, false)) return cand;
+    let bestCand = '';
+    let bestScore = -1;
+    for (let i = 0; i < selectors.length; i += 1) {
+      const imgs = scope.querySelectorAll(selectors[i]);
+      const priority = Math.max(0, selectors.length - i);
+      for (const img of imgs) {
+        const cand = extractCandidateFromImgElement(img);
+        if (!cand || isLikelyIconImg(img, cand, requireHeroSize)) continue;
+        const sc = scoreHeroCandidate(img, priority);
+        if (sc > bestScore) {
+          bestScore = sc;
+          bestCand = cand;
         }
       }
     }
+    if (bestCand) return bestCand;
 
     if (card) {
       for (const anyImg of card.querySelectorAll('img')) {
@@ -1791,6 +1828,32 @@
   let lastDispatchedKey = '';
   let lastDispatchedAt = 0;
 
+  function getClientLocalTimeMeta() {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    const hour = d.getHours();
+    const mealSlot =
+      hour >= 4 && hour < 11
+        ? 'breakfast'
+        : hour >= 11 && hour < 16
+        ? 'lunch'
+        : hour >= 16 && hour < 19
+        ? 'snack'
+        : 'dinner';
+    return {
+      timestamp: d.toISOString(),
+      local_date: `${yyyy}-${mm}-${dd}`,
+      local_time: `${hh}:${min}`,
+      local_hour: hour,
+      tz_offset_min: d.getTimezoneOffset(),
+      meal_slot: mealSlot,
+    };
+  }
+
   function sendForAnalysis(details, { force = false } = {}) {
     const title = cleanExtractedTitle(details.productTitle);
     if (!title) return;
@@ -1802,6 +1865,8 @@
     }
     lastDispatchedKey = dispatchKey;
     lastDispatchedAt = now;
+
+    const timeMeta = getClientLocalTimeMeta();
 
     chrome.runtime.sendMessage(
       {
@@ -1817,6 +1882,7 @@
           barcode: details.barcode || undefined,
           source: 'store_browser_extension',
           source_platform: details.platform,
+          ...timeMeta,
         },
       },
       (response) => {
